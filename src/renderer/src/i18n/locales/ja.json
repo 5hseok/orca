@@ -9045,7 +9045,7 @@
         },
         "PluginConsentDialog": {
           "workerTrust": "バックグラウンドワーカー — 独自のプロセスで実行",
-          "panelTrust": "パネルまたは非実行コンテンツ — ワーカープロセスなし",
+          "panelTrust": "パネルまたはホスト統合コンテンツ — バックグラウンドワーカーなし",
           "decisionFailed": "権限の選択を保存できませんでした。再試行してください。",
           "title": "権限を確認",
           "mixedTitle": "アクセスとコンテンツを確認",
@@ -9061,7 +9061,7 @@
           "warning": "これらの権限は、プラグインによる Orca API の使用を制限します。ただしワーカーはコンピューター上の通常のプロセスとして実行され、ファイル、ネットワーク、ほかのプロセスに完全にアクセスできます。",
           "enable": "プラグインを有効化",
           "keepDisabled": "無効のままにする",
-          "panelWarning": "これらの権限は、プラグインによる Orca API の使用を制限します。このプラグインにはワーカープロセスがありません。",
+          "panelWarning": "これらの権限は、プラグインによる Orca API の使用を制限します。このプラグインにはバックグラウンドワーカーがありません。",
           "instructionalWarning": "このプラグインにはワーカープロセスがありません。ただし、その指示コンテンツは、あなたやエージェントが使用したときに操作を実行させる可能性があります。有効にする前に、以下の指示とコマンドを確認してください。",
           "capability": {
             "workspaceRead": "選択中のワークツリーの名前、ブランチ、ターミナル一覧を読み取る",
@@ -9073,7 +9073,10 @@
             "settingsOwn": "プラグイン自身の設定を読み取り、変更する"
           },
           "skillWarning": "このプラグインは指示を含むスキルをインストールします。エージェントはその指示を読み、付与されたすべての権限で操作する場合があります。",
-          "instructionalTrust": "指示コンテンツ — 後でユーザーまたはエージェントの権限で実行"
+          "instructionalTrust": "指示コンテンツ — 後でユーザーまたはエージェントの権限で実行",
+          "declarativeTrust": "Declarative content — no plugin code",
+          "reviewTitle": "Review plugin",
+          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
         },
         "PluginDevelopmentSection": {
           "pathRequired": "プラグインフォルダーのパスを入力してください。",
@@ -9142,7 +9145,11 @@
           "bundled": "同梱",
           "killListMessage": "Orca の安全リストにより、このプラグインは無効化されました：{{value0}}",
           "viewAdvisory": "勧告を表示",
-          "rollback": "ロールバック"
+          "rollback": "ロールバック",
+          "noDescription": "No description provided.",
+          "reviewAndEnable": "Review & enable",
+          "inUse": "In use",
+          "useTheme": "Use theme"
         },
         "PluginsSettingsSection": {
           "loadFailed": "プラグインを読み込めませんでした。",
@@ -9160,7 +9167,9 @@
           "tryAgain": "再試行",
           "empty": "プラグインはインストールされていません。「プラグインをインストール」から、ローカルフォルダーまたは固定された Git ref を追加してください。",
           "settingsUpdateFailed": "プラグイン設定を保存できませんでした。",
-          "rollbackFailed": "このプラグインをロールバックできませんでした。以前の不変バージョンが存在しない可能性があります。"
+          "rollbackFailed": "このプラグインをロールバックできませんでした。以前の不変バージョンが存在しない可能性があります。",
+          "noInstalledResults": "No installed plugins match this search.",
+          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme."
         },
         "plugins": {
           "search": {
@@ -9241,7 +9250,8 @@
           "noSources": "公式、コミュニティ、またはプライベートの Git マーケットプレイスを追加してプラグインを参照できます。",
           "addSource": "マーケットプレイスを追加",
           "noResults": "この検索に一致するマーケットプレイスのプラグインはありません。",
-          "empty": "設定済みのマーケットプレイスにプラグインは登録されていません。"
+          "empty": "設定済みのマーケットプレイスにプラグインは登録されていません。",
+          "noInstalled": "No plugins installed."
         },
         "PluginMarketplaceListingRow": {
           "official": "公式",
@@ -9252,7 +9262,9 @@
           "blockedAction": "ブロック済み",
           "checkUpdate": "更新を確認",
           "installedAction": "インストール済み",
-          "review": "レビュー"
+          "review": "レビュー",
+          "noDescription": "No description provided.",
+          "install": "Install"
         },
         "PluginMarketplacePreviewDialog": {
           "themes": "{{value0}} 件のアプリテーマ",
@@ -13258,6 +13270,17 @@
         "searchLabels": "ラベルをフィルター…",
         "searchAssignee": "担当者をフィルター…",
         "back": "戻る"
+      },
+      "pluginCatalog": {
+        "PluginCatalogLayout": {
+          "title": "Plugins",
+          "description": "Browse available plugins or manage the ones installed in Orca.",
+          "filter": "Plugin filter",
+          "all": "All",
+          "installed": "Installed",
+          "searchLabel": "Search plugins",
+          "searchPlaceholder": "Search plugins, categories, or publishers"
+        }
       }
     },
     "i18n": {

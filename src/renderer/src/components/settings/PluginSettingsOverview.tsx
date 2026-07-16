@@ -1,7 +1,7 @@
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import type { PluginHostListEntry } from '../../../../preload/api-types'
+import type { PluginTerminalThemeRegistration } from '../../../../shared/plugins/plugin-terminal-theme-artifact'
 import { translate } from '@/i18n/i18n'
-import { Button } from '../ui/button'
 import { PluginDevelopmentSection } from './PluginDevelopmentSection'
 import { PluginMarketplaceBrowser } from './PluginMarketplaceBrowser'
 import { PluginSettingsRow, type PluginLogsState } from './PluginSettingsRow'
@@ -12,16 +12,17 @@ type PluginSettingsOverviewProps = {
   featureBusy: boolean
   settingsError: string | null
   loading: boolean
-  refreshBusy: boolean
   error: string | null
   plugins: PluginHostListEntry[]
+  terminalThemes: readonly PluginTerminalThemeRegistration[]
+  activeTerminalThemeId: string
   busyPluginKeys: ReadonlySet<string>
   openLogs: ReadonlySet<string>
   logsByPlugin: Readonly<Record<string, PluginLogsState>>
   devPaths: readonly string[]
   devPathsBusy: boolean
   onToggleFeature: () => void
-  onRefresh: () => void
+  onRefresh: () => Promise<void>
   onReview: (pluginKey: string) => void
   onToggleEnabled: (plugin: PluginHostListEntry) => void
   onToggleLogs: (pluginKey: string) => void
@@ -29,7 +30,18 @@ type PluginSettingsOverviewProps = {
   onMarketplaceInstalled: (pluginKey: string) => Promise<void>
   onRollbackRequest: (pluginKey: string) => void
   onRemoveRequest: (pluginKey: string) => void
+  onApplyTerminalTheme: (theme: PluginTerminalThemeRegistration) => void
   onUpdateDevPaths: (paths: string[]) => Promise<void>
+}
+
+function matchesInstalledPlugin(plugin: PluginHostListEntry, search: string): boolean {
+  const query = search.trim().toLocaleLowerCase()
+  return (
+    !query ||
+    [plugin.name, plugin.pluginKey, plugin.publisher, plugin.description ?? ''].some((value) =>
+      value.toLocaleLowerCase().includes(query)
+    )
+  )
 }
 
 export function PluginSettingsOverview({
@@ -37,9 +49,10 @@ export function PluginSettingsOverview({
   featureBusy,
   settingsError,
   loading,
-  refreshBusy,
   error,
   plugins,
+  terminalThemes,
+  activeTerminalThemeId,
   busyPluginKeys,
   openLogs,
   logsByPlugin,
@@ -54,6 +67,7 @@ export function PluginSettingsOverview({
   onMarketplaceInstalled,
   onRollbackRequest,
   onRemoveRequest,
+  onApplyTerminalTheme,
   onUpdateDevPaths
 }: PluginSettingsOverviewProps): React.JSX.Element {
   return (
@@ -97,50 +111,66 @@ export function PluginSettingsOverview({
           <PluginMarketplaceBrowser
             installedPlugins={plugins}
             onInstalled={onMarketplaceInstalled}
+            onRefreshInstalled={onRefresh}
+            renderInstalledContent={(search) => {
+              const filteredPlugins = plugins.filter((plugin) =>
+                matchesInstalledPlugin(plugin, search)
+              )
+              if (error) {
+                return (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                    {error}
+                  </div>
+                )
+              }
+              if (filteredPlugins.length === 0) {
+                return (
+                  <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
+                    {search
+                      ? translate(
+                          'auto.components.settings.PluginsSettingsSection.noInstalledResults',
+                          'No installed plugins match this search.'
+                        )
+                      : translate(
+                          'auto.components.settings.PluginsSettingsSection.empty',
+                          'No plugins installed yet.'
+                        )}
+                  </div>
+                )
+              }
+              return (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {filteredPlugins.map((plugin) => {
+                    const contributedTerminalThemes = terminalThemes.filter(
+                      (theme) => theme.pluginKey === plugin.pluginKey
+                    )
+                    const terminalTheme =
+                      contributedTerminalThemes.length === 1
+                        ? contributedTerminalThemes[0]
+                        : undefined
+                    return (
+                      <PluginSettingsRow
+                        key={plugin.pluginKey}
+                        plugin={plugin}
+                        busy={busyPluginKeys.has(plugin.pluginKey)}
+                        logsOpen={openLogs.has(plugin.pluginKey)}
+                        logsState={logsByPlugin[plugin.pluginKey]}
+                        terminalTheme={terminalTheme}
+                        terminalThemeActive={terminalTheme?.id === activeTerminalThemeId}
+                        onReview={onReview}
+                        onToggleEnabled={onToggleEnabled}
+                        onToggleLogs={onToggleLogs}
+                        onConfigureSkills={onConfigureSkills}
+                        onRollbackRequest={onRollbackRequest}
+                        onRemoveRequest={onRemoveRequest}
+                        onApplyTerminalTheme={onApplyTerminalTheme}
+                      />
+                    )
+                  })}
+                </div>
+              )
+            }}
           />
-          <div className="my-4 border-t border-border/60" />
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-              {translate('auto.components.settings.PluginsSettingsSection.installed', 'Installed')}
-            </span>
-            <Button variant="ghost" size="xs" disabled={refreshBusy} onClick={onRefresh}>
-              <RefreshCw className={refreshBusy ? 'animate-spin' : undefined} />
-              {translate('auto.components.settings.PluginsSettingsSection.refresh', 'Refresh')}
-            </Button>
-          </div>
-          {error ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              <p>{error}</p>
-              <Button variant="outline" size="xs" className="mt-2" onClick={onRefresh}>
-                {translate('auto.components.settings.PluginsSettingsSection.tryAgain', 'Try again')}
-              </Button>
-            </div>
-          ) : plugins.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-5 py-6 text-center text-[13px] leading-6 text-muted-foreground">
-              {translate(
-                'auto.components.settings.PluginsSettingsSection.empty',
-                'No plugins installed. Use Install plugin to add one from a local folder or a pinned git ref.'
-              )}
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-lg border border-border/80">
-              {plugins.map((plugin) => (
-                <PluginSettingsRow
-                  key={plugin.pluginKey}
-                  plugin={plugin}
-                  busy={busyPluginKeys.has(plugin.pluginKey)}
-                  logsOpen={openLogs.has(plugin.pluginKey)}
-                  logsState={logsByPlugin[plugin.pluginKey]}
-                  onReview={onReview}
-                  onToggleEnabled={onToggleEnabled}
-                  onToggleLogs={onToggleLogs}
-                  onConfigureSkills={onConfigureSkills}
-                  onRollbackRequest={onRollbackRequest}
-                  onRemoveRequest={onRemoveRequest}
-                />
-              ))}
-            </div>
-          )}
           <div className="my-4 border-t border-border/60" />
           <PluginDevelopmentSection
             paths={devPaths}

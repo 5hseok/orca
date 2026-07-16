@@ -9045,7 +9045,7 @@
         },
         "PluginConsentDialog": {
           "workerTrust": "后台工作进程 — 在独立进程中运行",
-          "panelTrust": "面板或惰性内容 — 无工作进程",
+          "panelTrust": "面板或主机集成内容 — 无后台工作进程",
           "decisionFailed": "无法保存权限决定。请重试。",
           "title": "检查权限",
           "mixedTitle": "检查访问权限和内容",
@@ -9061,7 +9061,7 @@
           "warning": "这些权限限制插件使用 Orca API 的方式。其工作进程仍作为普通进程在你的计算机上运行，可以完全访问文件、网络和其他进程。",
           "enable": "启用插件",
           "keepDisabled": "保持禁用",
-          "panelWarning": "这些权限限制插件使用 Orca API 的方式。此插件没有工作进程。",
+          "panelWarning": "这些权限限制插件使用 Orca API 的方式。此插件没有后台工作进程。",
           "instructionalWarning": "此插件没有工作进程。但当你或智能体使用其指令内容时，仍可能触发操作。启用前请检查以下指令和命令。",
           "capability": {
             "workspaceRead": "读取当前工作树的名称、分支和终端列表",
@@ -9073,7 +9073,10 @@
             "settingsOwn": "读取和更改插件自己的设置"
           },
           "skillWarning": "此插件会安装包含指令的技能。智能体会读取这些指令，并可能使用你授予智能体的全部权限执行操作。",
-          "instructionalTrust": "指令内容 — 稍后以用户或智能体权限运行"
+          "instructionalTrust": "指令内容 — 稍后以用户或智能体权限运行",
+          "declarativeTrust": "Declarative content — no plugin code",
+          "reviewTitle": "Review plugin",
+          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
         },
         "PluginDevelopmentSection": {
           "pathRequired": "请输入插件文件夹路径。",
@@ -9142,7 +9145,11 @@
           "bundled": "内置",
           "killListMessage": "Orca 安全列表已禁用此插件：{{value0}}",
           "viewAdvisory": "查看公告",
-          "rollback": "回滚"
+          "rollback": "回滚",
+          "noDescription": "No description provided.",
+          "reviewAndEnable": "Review & enable",
+          "inUse": "In use",
+          "useTheme": "Use theme"
         },
         "PluginsSettingsSection": {
           "loadFailed": "无法加载插件。",
@@ -9160,7 +9167,9 @@
           "tryAgain": "重试",
           "empty": "尚未安装插件。使用“安装插件”从本地文件夹或固定的 Git ref 添加插件。",
           "settingsUpdateFailed": "无法保存插件设置。",
-          "rollbackFailed": "无法回滚此插件。可能没有可用的上一不可变版本。"
+          "rollbackFailed": "无法回滚此插件。可能没有可用的上一不可变版本。",
+          "noInstalledResults": "No installed plugins match this search.",
+          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme."
         },
         "plugins": {
           "search": {
@@ -9241,7 +9250,8 @@
           "noSources": "添加官方、社区或私有 Git 插件市场以浏览插件。",
           "addSource": "添加插件市场",
           "noResults": "没有与此搜索匹配的插件市场插件。",
-          "empty": "已配置的插件市场未列出任何插件。"
+          "empty": "已配置的插件市场未列出任何插件。",
+          "noInstalled": "No plugins installed."
         },
         "PluginMarketplaceListingRow": {
           "official": "官方",
@@ -9252,7 +9262,9 @@
           "blockedAction": "已阻止",
           "checkUpdate": "检查更新",
           "installedAction": "已安装",
-          "review": "审核"
+          "review": "审核",
+          "noDescription": "No description provided.",
+          "install": "Install"
         },
         "PluginMarketplacePreviewDialog": {
           "themes": "{{value0}} 个应用主题",
@@ -13258,6 +13270,17 @@
         "searchLabels": "筛选标签…",
         "searchAssignee": "筛选负责人…",
         "back": "返回"
+      },
+      "pluginCatalog": {
+        "PluginCatalogLayout": {
+          "title": "Plugins",
+          "description": "Browse available plugins or manage the ones installed in Orca.",
+          "filter": "Plugin filter",
+          "all": "All",
+          "installed": "Installed",
+          "searchLabel": "Search plugins",
+          "searchPlaceholder": "Search plugins, categories, or publishers"
+        }
       }
     },
     "i18n": {

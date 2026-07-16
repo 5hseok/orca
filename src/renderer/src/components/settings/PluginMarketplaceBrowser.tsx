@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, RefreshCw, Search, Settings2 } from 'lucide-react'
+import { Loader2, RefreshCw, Settings2 } from 'lucide-react'
 import type {
   PluginHostListEntry,
   PluginMarketplaceHostInstallPreview,
@@ -7,8 +7,11 @@ import type {
   PluginMarketplaceHostSourceState
 } from '../../../../preload/api-types'
 import { translate } from '@/i18n/i18n'
+import {
+  PluginCatalogLayout,
+  type PluginCatalogFilter
+} from '../plugin-catalog/PluginCatalogLayout'
 import { Button } from '../ui/button'
-import { Input } from '../ui/input'
 import { PluginMarketplaceListingRow } from './PluginMarketplaceListingRow'
 import {
   PluginMarketplacePreviewDialog,
@@ -19,6 +22,8 @@ import { PluginMarketplaceSourceDialog } from './PluginMarketplaceSourceDialog'
 type PluginMarketplaceBrowserProps = {
   installedPlugins: readonly PluginHostListEntry[]
   onInstalled: (pluginKey: string) => Promise<void>
+  onRefreshInstalled?: () => Promise<void>
+  renderInstalledContent?: (search: string) => React.ReactNode
 }
 
 function marketplaceError(cause: unknown, fallback: string): string {
@@ -28,7 +33,9 @@ function marketplaceError(cause: unknown, fallback: string): string {
 
 export function PluginMarketplaceBrowser({
   installedPlugins,
-  onInstalled
+  onInstalled,
+  onRefreshInstalled,
+  renderInstalledContent
 }: PluginMarketplaceBrowserProps): React.JSX.Element {
   const [sources, setSources] = useState<PluginMarketplaceHostSourceState[]>([])
   const [listings, setListings] = useState<PluginMarketplaceHostListing[]>([])
@@ -36,6 +43,7 @@ export function PluginMarketplaceBrowser({
   const [refreshBusy, setRefreshBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<PluginCatalogFilter>('all')
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [preview, setPreview] = useState<PluginMarketplaceHostInstallPreview | null>(null)
   const [previewMode, setPreviewMode] = useState<PluginMarketplacePreviewMode>('install')
@@ -111,7 +119,7 @@ export function PluginMarketplaceBrowser({
     setRefreshBusy(true)
     setError(null)
     try {
-      await window.api.plugins.refreshMarketplaces({})
+      await Promise.all([window.api.plugins.refreshMarketplaces({}), onRefreshInstalled?.()])
       await loadMarketplaceData()
     } catch (cause) {
       if (mountedRef.current) {
@@ -212,119 +220,115 @@ export function PluginMarketplaceBrowser({
   )
 
   return (
-    <section aria-labelledby="plugin-marketplace-heading">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <span
-          id="plugin-marketplace-heading"
-          className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground"
-        >
-          {translate('auto.components.settings.PluginMarketplaceBrowser.heading', 'Marketplace')}
-        </span>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="xs" onClick={() => setSourcesOpen(true)}>
-            <Settings2 />
-            {translate(
-              'auto.components.settings.PluginMarketplaceBrowser.manageSources',
-              'Manage sources'
-            )}
-          </Button>
-          <Button variant="ghost" size="xs" disabled={refreshBusy} onClick={() => void refresh()}>
-            <RefreshCw className={refreshBusy ? 'animate-spin' : undefined} />
-            {refreshBusy
-              ? translate(
-                  'auto.components.settings.PluginMarketplaceBrowser.refreshing',
-                  'Refreshing…'
-                )
-              : translate('auto.components.settings.PluginMarketplaceBrowser.refresh', 'Refresh')}
-          </Button>
-        </div>
-      </div>
-      {loading ? (
-        <div className="flex items-center gap-2 px-4 py-5 text-[13px] text-muted-foreground">
-          <Loader2 className="animate-spin" />
-          {translate(
-            'auto.components.settings.PluginMarketplaceBrowser.loading',
-            'Loading marketplace plugins…'
-          )}
-        </div>
-      ) : (
-        <>
-          {sources.length > 0 ? (
-            <div className="relative mb-2">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                className="pl-9"
-                aria-label={translate(
-                  'auto.components.settings.PluginMarketplaceBrowser.searchLabel',
-                  'Search marketplace plugins'
-                )}
-                placeholder={translate(
-                  'auto.components.settings.PluginMarketplaceBrowser.searchPlaceholder',
-                  'Search plugins, categories, or publishers'
-                )}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
-          ) : null}
-          {error ? (
-            <div className="mb-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              <p>{error}</p>
-              <Button variant="outline" size="xs" className="mt-2" onClick={loadMarketplaceData}>
-                {translate(
-                  'auto.components.settings.PluginMarketplaceBrowser.tryAgain',
-                  'Try again'
-                )}
-              </Button>
-            </div>
-          ) : null}
-          {sources.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-5 py-6 text-center text-[13px] leading-6 text-muted-foreground">
-              <p>
-                {translate(
-                  'auto.components.settings.PluginMarketplaceBrowser.noSources',
-                  'Add an official, community, or private Git marketplace to browse plugins.'
-                )}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3"
-                onClick={() => setSourcesOpen(true)}
-              >
-                {translate(
-                  'auto.components.settings.PluginMarketplaceBrowser.addSource',
-                  'Add marketplace'
-                )}
-              </Button>
-            </div>
-          ) : visibleListings.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-5 py-6 text-center text-[13px] leading-6 text-muted-foreground">
-              {search
+    <>
+      <PluginCatalogLayout
+        filter={filter}
+        onFilterChange={setFilter}
+        search={search}
+        onSearchChange={setSearch}
+        allCount={listings.length}
+        installedCount={installedPlugins.length}
+        toolbar={
+          <>
+            <Button variant="ghost" size="xs" onClick={() => setSourcesOpen(true)}>
+              <Settings2 />
+              {translate(
+                'auto.components.settings.PluginMarketplaceBrowser.manageSources',
+                'Manage sources'
+              )}
+            </Button>
+            <Button variant="ghost" size="xs" disabled={refreshBusy} onClick={() => void refresh()}>
+              <RefreshCw className={refreshBusy ? 'animate-spin' : undefined} />
+              {refreshBusy
                 ? translate(
-                    'auto.components.settings.PluginMarketplaceBrowser.noResults',
-                    'No marketplace plugins match this search.'
+                    'auto.components.settings.PluginMarketplaceBrowser.refreshing',
+                    'Refreshing…'
                   )
-                : translate(
-                    'auto.components.settings.PluginMarketplaceBrowser.empty',
-                    'The configured marketplaces do not list any plugins.'
-                  )}
-            </div>
+                : translate('auto.components.settings.PluginMarketplaceBrowser.refresh', 'Refresh')}
+            </Button>
+          </>
+        }
+      >
+        {filter === 'installed' ? (
+          renderInstalledContent ? (
+            renderInstalledContent(search)
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border/80">
-              {visibleListings.map((listing) => (
-                <PluginMarketplaceListingRow
-                  key={`${listing.marketplaceSourceId}:${listing.pluginKey}`}
-                  listing={listing}
-                  installed={installedByKey.get(listing.pluginKey) ?? null}
-                  busy={previewBusyKey === listing.pluginKey}
-                  onPreview={(entry, update) => void openPreview(entry, update)}
-                />
-              ))}
+            <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
+              {translate(
+                'auto.components.settings.PluginMarketplaceBrowser.noInstalled',
+                'No plugins installed.'
+              )}
             </div>
-          )}
-        </>
-      )}
+          )
+        ) : loading ? (
+          <div className="flex items-center gap-2 px-4 py-5 text-[13px] text-muted-foreground">
+            <Loader2 className="animate-spin" />
+            {translate(
+              'auto.components.settings.PluginMarketplaceBrowser.loading',
+              'Loading marketplace plugins…'
+            )}
+          </div>
+        ) : (
+          <>
+            {error ? (
+              <div className="mb-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                <p>{error}</p>
+                <Button variant="outline" size="xs" className="mt-2" onClick={loadMarketplaceData}>
+                  {translate(
+                    'auto.components.settings.PluginMarketplaceBrowser.tryAgain',
+                    'Try again'
+                  )}
+                </Button>
+              </div>
+            ) : null}
+            {sources.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border px-5 py-6 text-center text-[13px] leading-6 text-muted-foreground">
+                <p>
+                  {translate(
+                    'auto.components.settings.PluginMarketplaceBrowser.noSources',
+                    'Add an official, community, or private Git marketplace to browse plugins.'
+                  )}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setSourcesOpen(true)}
+                >
+                  {translate(
+                    'auto.components.settings.PluginMarketplaceBrowser.addSource',
+                    'Add marketplace'
+                  )}
+                </Button>
+              </div>
+            ) : visibleListings.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border px-5 py-6 text-center text-[13px] leading-6 text-muted-foreground">
+                {search
+                  ? translate(
+                      'auto.components.settings.PluginMarketplaceBrowser.noResults',
+                      'No marketplace plugins match this search.'
+                    )
+                  : translate(
+                      'auto.components.settings.PluginMarketplaceBrowser.empty',
+                      'The configured marketplaces do not list any plugins.'
+                    )}
+              </div>
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {visibleListings.map((listing) => (
+                  <PluginMarketplaceListingRow
+                    key={`${listing.marketplaceSourceId}:${listing.pluginKey}`}
+                    listing={listing}
+                    installed={installedByKey.get(listing.pluginKey) ?? null}
+                    busy={previewBusyKey === listing.pluginKey}
+                    onPreview={(entry, update) => void openPreview(entry, update)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </PluginCatalogLayout>
       <PluginMarketplaceSourceDialog
         open={sourcesOpen}
         sources={sources}
@@ -341,6 +345,6 @@ export function PluginMarketplaceBrowser({
         onClose={() => setPreview(null)}
         onConfirm={() => void installPreview()}
       />
-    </section>
+    </>
   )
 }

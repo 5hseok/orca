@@ -131,9 +131,29 @@ describe('PluginConsentDialog', () => {
     )
 
     expect(document.body.textContent).toContain(
-      "These permissions limit how the plugin uses Orca's API. This plugin has no worker process."
+      "These permissions limit how the plugin uses Orca's API. This plugin has no background worker."
     )
     expect(document.body.textContent).not.toContain('full access to your files')
+  })
+
+  it('describes inert content without pretending it requested permissions', async () => {
+    await renderConsent(
+      {
+        ...plugin,
+        pluginKey: 'acme.icons',
+        name: 'Acme Icons',
+        hasWorker: false,
+        capabilities: []
+      },
+      vi.fn().mockResolvedValue(undefined)
+    )
+
+    expect(document.body.textContent).toContain('Review plugin')
+    expect(document.body.textContent).toContain('Declarative content — no plugin code')
+    expect(document.body.textContent).toContain(
+      "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
+    )
+    expect(document.body.textContent).not.toContain('These permissions limit')
   })
 
   it('discloses that contributed skills run as agent instructions', async () => {

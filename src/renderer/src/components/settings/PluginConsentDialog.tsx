@@ -44,9 +44,15 @@ function trustTier(plugin: PluginHostListEntry): string {
       'Instructional content — runs later under user or agent authority'
     )
   }
+  if (plugin.panels.length === 0 && plugin.capabilities.length === 0) {
+    return translate(
+      'auto.components.settings.PluginConsentDialog.declarativeTrust',
+      'Declarative content — no plugin code'
+    )
+  }
   return translate(
     'auto.components.settings.PluginConsentDialog.panelTrust',
-    'Panel or inert content — no worker process'
+    'Panel or host-integrated content — no worker process'
   )
 }
 
@@ -59,6 +65,9 @@ function hasInstructionalContent(plugin: PluginHostListEntry): boolean {
 }
 
 function consentTitle(plugin: PluginHostListEntry): string {
+  if (!plugin.hasWorker && plugin.capabilities.length === 0 && !hasInstructionalContent(plugin)) {
+    return translate('auto.components.settings.PluginConsentDialog.reviewTitle', 'Review plugin')
+  }
   if (!hasInstructionalContent(plugin)) {
     return translate('auto.components.settings.PluginConsentDialog.title', 'Review permissions')
   }
@@ -152,7 +161,7 @@ export function PluginConsentDialog({
       }}
     >
       <DialogContent
-        className="plugin-security-chrome max-h-[calc(100vh-3rem)] overflow-y-auto scrollbar-sleek sm:max-w-lg"
+        className="plugin-security-chrome max-h-[calc(100vh-3rem)] overflow-y-auto scrollbar-sleek sm:max-w-xl"
         onOpenAutoFocus={(event) => {
           // Why: dismissal is the safety-preserving path, so it receives initial focus.
           event.preventDefault()
@@ -183,7 +192,10 @@ export function PluginConsentDialog({
               <dt className="text-xs text-muted-foreground">
                 {translate('auto.components.settings.PluginConsentDialog.source', 'Source')}
               </dt>
-              <dd className="truncate font-mono text-xs" title={plugin.source?.reference}>
+              <dd
+                className="break-all font-mono text-xs leading-5"
+                title={plugin.source?.reference}
+              >
                 {plugin.source?.reference ??
                   translate(
                     'auto.components.settings.PluginConsentDialog.unknownSource',
@@ -194,7 +206,11 @@ export function PluginConsentDialog({
                 {translate('auto.components.settings.PluginConsentDialog.commit', 'Commit')}
               </dt>
               <dd
-                className={plugin.source?.resolvedCommit ? 'truncate font-mono text-xs' : 'text-sm'}
+                className={
+                  plugin.source?.resolvedCommit
+                    ? 'break-all font-mono text-xs leading-5'
+                    : 'text-sm'
+                }
                 title={plugin.source?.resolvedCommit ?? undefined}
               >
                 {plugin.source?.resolvedCommit ??
@@ -244,10 +260,15 @@ export function PluginConsentDialog({
                         'auto.components.settings.PluginConsentDialog.instructionalWarning',
                         'This plugin has no worker process. Its instructional content can still cause actions when you or an agent use it. Review the instructions and commands below before enabling it.'
                       )
-                    : translate(
-                        'auto.components.settings.PluginConsentDialog.panelWarning',
-                        "These permissions limit how the plugin uses Orca's API. This plugin has no worker process."
-                      )}
+                    : plugin.capabilities.length > 0 || plugin.panels.length > 0
+                      ? translate(
+                          'auto.components.settings.PluginConsentDialog.panelWarning',
+                          "These permissions limit how the plugin uses Orca's API. This plugin has no background worker."
+                        )
+                      : translate(
+                          'auto.components.settings.PluginConsentDialog.declarativeWarning',
+                          "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
+                        )}
               </span>
             </div>
             {plugin.hasSkills ? (
@@ -271,16 +292,8 @@ export function PluginConsentDialog({
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
             <DialogFooter>
               <Button
-                variant="outline"
-                size="sm"
-                disabled={Boolean(busyDecision) || skillPreviewBlocked}
-                onClick={() => void decide('approve')}
-              >
-                {busyDecision === 'approve' ? <Loader2 className="animate-spin" /> : null}
-                {translate('auto.components.settings.PluginConsentDialog.enable', 'Enable plugin')}
-              </Button>
-              <Button
                 ref={keepDisabledRef}
+                variant="ghost"
                 size="sm"
                 disabled={Boolean(busyDecision)}
                 onClick={() => void decide('keep-disabled')}
@@ -290,6 +303,14 @@ export function PluginConsentDialog({
                   'auto.components.settings.PluginConsentDialog.keepDisabled',
                   'Keep Disabled'
                 )}
+              </Button>
+              <Button
+                size="sm"
+                disabled={Boolean(busyDecision) || skillPreviewBlocked}
+                onClick={() => void decide('approve')}
+              >
+                {busyDecision === 'approve' ? <Loader2 className="animate-spin" /> : null}
+                {translate('auto.components.settings.PluginConsentDialog.enable', 'Enable plugin')}
               </Button>
             </DialogFooter>
           </>

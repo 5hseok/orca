@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import type { PluginHostInstallSource, PluginHostListEntry } from '../../../../preload/api-types'
+import type { PluginTerminalThemeRegistration } from '../../../../shared/plugins/plugin-terminal-theme-artifact'
 import type { GlobalSettings } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
+import { getSystemPrefersDark } from '@/lib/terminal-theme'
+import { usePluginTerminalThemeStore } from '@/store/plugin-terminal-themes'
 import { Button } from '../ui/button'
 import { PluginConsentDialog } from './PluginConsentDialog'
 import { PluginInstallDialog } from './PluginInstallDialog'
@@ -14,6 +17,10 @@ import { getPluginsSectionPresentation } from './plugins-search'
 import { SettingsSection } from './SettingsSection'
 import { usePluginLogs } from './use-plugin-logs'
 import { usePluginMarketplaceLifecycle } from './use-plugin-marketplace-lifecycle'
+import {
+  activeTerminalThemeSelection,
+  terminalThemeActivationUpdate
+} from './plugin-terminal-theme-activation'
 
 type PluginsSettingsSectionProps = {
   mounted: boolean
@@ -40,11 +47,11 @@ export function PluginsSettingsSection({
   const [skillPluginId, setSkillPluginId] = useState<string | null>(null)
   const [busyPluginKeys, setBusyPluginKeys] = useState<Set<string>>(() => new Set())
   const [featureBusy, setFeatureBusy] = useState(false)
-  const [refreshBusy, setRefreshBusy] = useState(false)
   const [devPathsBusy, setDevPathsBusy] = useState(false)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const mountedRef = useRef(false)
   const listRequestRef = useRef(0)
+  const terminalThemes = usePluginTerminalThemeStore((state) => state.themes)
 
   const applyPluginList = (nextPlugins: PluginHostListEntry[]): void => {
     const installedPluginKeys = new Set(nextPlugins.map((plugin) => plugin.pluginKey))
@@ -113,7 +120,6 @@ export function PluginsSettingsSection({
       setSkillPluginId(null)
       setBusyPluginKeys(new Set())
       setFeatureBusy(false)
-      setRefreshBusy(false)
       setDevPathsBusy(false)
       setSettingsError(null)
     }
@@ -166,6 +172,31 @@ export function PluginsSettingsSection({
   const consentPlugin = selectedConsentPlugin?.consentFingerprint ? selectedConsentPlugin : null
   const removePlugin = plugins.find((plugin) => plugin.pluginKey === removePluginId) ?? null
   const skillPlugin = plugins.find((plugin) => plugin.pluginKey === skillPluginId) ?? null
+  const systemPrefersDark = getSystemPrefersDark()
+
+  const applyTerminalTheme = async (theme: PluginTerminalThemeRegistration): Promise<void> => {
+    setSettingsError(null)
+    try {
+      await updateSettings(terminalThemeActivationUpdate(settings, theme.id, systemPrefersDark))
+    } catch {
+      if (mountedRef.current) {
+        setSettingsError(
+          translate(
+            'auto.components.settings.PluginsSettingsSection.themeApplyFailed',
+            'The plugin was enabled, but Orca could not apply its terminal theme.'
+          )
+        )
+      }
+    }
+  }
+
+  const applySoleTerminalTheme = async (pluginKey: string): Promise<void> => {
+    const registeredThemes = (await window.api.plugins.listTerminalThemes?.()) ?? []
+    const contributedThemes = registeredThemes.filter((theme) => theme.pluginKey === pluginKey)
+    if (contributedThemes.length === 1) {
+      await applyTerminalTheme(contributedThemes[0]!)
+    }
+  }
 
   const toggleFeature = async (): Promise<void> => {
     setFeatureBusy(true)
@@ -214,6 +245,9 @@ export function PluginsSettingsSection({
         decision
       })
       applyCompletedMutation(nextPlugins)
+      if (decision === 'approve') {
+        await applySoleTerminalTheme(pluginKey)
+      }
       if (mountedRef.current) {
         setConsentPluginId(null)
       }
@@ -236,11 +270,15 @@ export function PluginsSettingsSection({
       plugin.status === 'errored'
     setBusyPluginKeys((current) => new Set(current).add(plugin.pluginKey))
     try {
+      const nextEnabled = !enabled
       const nextPlugins = await window.api.plugins.setEnabled({
         pluginKey: plugin.pluginKey,
-        enabled: !enabled
+        enabled: nextEnabled
       })
       applyCompletedMutation(nextPlugins)
+      if (nextEnabled) {
+        await applySoleTerminalTheme(plugin.pluginKey)
+      }
     } catch (cause) {
       if (mountedRef.current) {
         setPluginListError(cause)
@@ -280,11 +318,7 @@ export function PluginsSettingsSection({
   }
 
   const refresh = async (): Promise<void> => {
-    setRefreshBusy(true)
     await loadPluginList(window.api.plugins.refresh())
-    if (mountedRef.current) {
-      setRefreshBusy(false)
-    }
   }
 
   const updateDevPaths = async (paths: string[]): Promise<void> => {
@@ -331,16 +365,17 @@ export function PluginsSettingsSection({
         featureBusy={featureBusy}
         settingsError={settingsError}
         loading={loading}
-        refreshBusy={refreshBusy}
         error={error}
         plugins={plugins}
+        terminalThemes={terminalThemes}
+        activeTerminalThemeId={activeTerminalThemeSelection(settings, systemPrefersDark)}
         busyPluginKeys={busyPluginKeys}
         openLogs={pluginLogs.openLogs}
         logsByPlugin={pluginLogs.logsByPlugin}
         devPaths={settings.devPluginPaths}
         devPathsBusy={devPathsBusy}
         onToggleFeature={() => void toggleFeature()}
-        onRefresh={() => void refresh()}
+        onRefresh={refresh}
         onReview={setConsentPluginId}
         onToggleEnabled={(entry) => void toggleEnabled(entry)}
         onToggleLogs={pluginLogs.toggleLogs}
@@ -348,6 +383,7 @@ export function PluginsSettingsSection({
         onMarketplaceInstalled={marketplaceLifecycle.reloadAfterMutation}
         onRollbackRequest={marketplaceLifecycle.requestRollback}
         onRemoveRequest={setRemovePluginId}
+        onApplyTerminalTheme={(theme) => void applyTerminalTheme(theme)}
         onUpdateDevPaths={updateDevPaths}
       />
       <PluginInstallDialog open={installOpen} onOpenChange={setInstallOpen} onInstall={install} />

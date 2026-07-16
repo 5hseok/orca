@@ -147,7 +147,11 @@ async function renderBrowser(
   const root = createRoot(container)
   await act(async () => {
     root.render(
-      <PluginMarketplaceBrowser installedPlugins={installedPlugins} onInstalled={onInstalled} />
+      <PluginMarketplaceBrowser
+        installedPlugins={installedPlugins}
+        onInstalled={onInstalled}
+        renderInstalledContent={() => <div>Installed content</div>}
+      />
     )
   })
   return { root, container, onInstalled }
@@ -175,7 +179,7 @@ describe('PluginMarketplaceBrowser', () => {
     const { root, container, onInstalled } = await renderBrowser()
 
     expect(container.textContent).toContain('Notes for active worktrees.')
-    await act(async () => button('Review').click())
+    await act(async () => button('Install').click())
 
     expect(window.api.plugins.previewMarketplacePlugin).toHaveBeenCalledWith({
       marketplaceSourceId: SOURCE_ID,
@@ -230,6 +234,27 @@ describe('PluginMarketplaceBrowser', () => {
     act(() => root.unmount())
   })
 
+  it('uses one catalog surface for available and installed plugins', async () => {
+    const { root, container } = await renderBrowser([installedPlugin()])
+    const installedFilter = Array.from(container.querySelectorAll('button')).find(
+      (candidate) =>
+        candidate.getAttribute('role') === 'tab' && candidate.textContent?.startsWith('Installed')
+    )
+    if (!installedFilter) {
+      throw new Error('missing installed filter')
+    }
+
+    await act(async () => {
+      installedFilter.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, button: 0, ctrlKey: false })
+      )
+    })
+
+    expect(container.textContent).toContain('Installed content')
+    expect(container.textContent).not.toContain('Notes for active worktrees.')
+    act(() => root.unmount())
+  })
+
   it('does not let an older preview response replace the latest selection', async () => {
     const first = deferred<PluginMarketplaceHostInstallPreview>()
     const second = deferred<PluginMarketplaceHostInstallPreview>()
@@ -250,7 +275,7 @@ describe('PluginMarketplaceBrowser', () => {
 
     await act(async () => {
       const reviews = Array.from(document.querySelectorAll('button')).filter(
-        (candidate) => candidate.textContent?.trim() === 'Review'
+        (candidate) => candidate.textContent?.trim() === 'Install'
       )
       reviews[0]?.click()
       reviews[1]?.click()

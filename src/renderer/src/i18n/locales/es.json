@@ -9045,7 +9045,7 @@
         },
         "PluginConsentDialog": {
           "workerTrust": "Proceso en segundo plano — se ejecuta en su propio proceso",
-          "panelTrust": "Panel o contenido inerte — sin proceso en segundo plano",
+          "panelTrust": "Panel o contenido integrado con el host — sin proceso en segundo plano",
           "decisionFailed": "No se pudo guardar la decisión sobre los permisos. Inténtalo de nuevo.",
           "title": "Revisar permisos",
           "mixedTitle": "Revisar acceso y contenido",
@@ -9073,7 +9073,10 @@
             "settingsOwn": "Leer y cambiar la configuración propia del plugin"
           },
           "skillWarning": "Este plugin instala habilidades con instrucciones. Los agentes leen esas instrucciones y pueden actuar con toda la autoridad que les concedas.",
-          "instructionalTrust": "Contenido instructivo — se ejecuta más tarde con la autoridad del usuario o del agente"
+          "instructionalTrust": "Contenido instructivo — se ejecuta más tarde con la autoridad del usuario o del agente",
+          "declarativeTrust": "Declarative content — no plugin code",
+          "reviewTitle": "Review plugin",
+          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
         },
         "PluginDevelopmentSection": {
           "pathRequired": "Introduce la ruta de una carpeta de plugin.",
@@ -9142,7 +9145,11 @@
           "bundled": "Incluido",
           "killListMessage": "La lista de seguridad de Orca desactivó este plugin: {{value0}}",
           "viewAdvisory": "Ver aviso",
-          "rollback": "Revertir"
+          "rollback": "Revertir",
+          "noDescription": "No description provided.",
+          "reviewAndEnable": "Review & enable",
+          "inUse": "In use",
+          "useTheme": "Use theme"
         },
         "PluginsSettingsSection": {
           "loadFailed": "No se pudieron cargar los plugins.",
@@ -9160,7 +9167,9 @@
           "tryAgain": "Intentar de nuevo",
           "empty": "No hay plugins instalados. Usa Instalar plugin para añadir uno desde una carpeta local o una referencia Git fijada.",
           "settingsUpdateFailed": "No se pudo guardar la configuración de plugins.",
-          "rollbackFailed": "No se pudo revertir este plugin. Es posible que no haya una versión inmutable anterior disponible."
+          "rollbackFailed": "No se pudo revertir este plugin. Es posible que no haya una versión inmutable anterior disponible.",
+          "noInstalledResults": "No installed plugins match this search.",
+          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme."
         },
         "plugins": {
           "search": {
@@ -9241,7 +9250,8 @@
           "noSources": "Añade un marketplace de Git oficial, comunitario o privado para explorar plugins.",
           "addSource": "Añadir marketplace",
           "noResults": "Ningún plugin del marketplace coincide con esta búsqueda.",
-          "empty": "Los marketplaces configurados no incluyen ningún plugin."
+          "empty": "Los marketplaces configurados no incluyen ningún plugin.",
+          "noInstalled": "No plugins installed."
         },
         "PluginMarketplaceListingRow": {
           "official": "Oficial",
@@ -9252,7 +9262,9 @@
           "blockedAction": "Bloqueado",
           "checkUpdate": "Buscar actualización",
           "installedAction": "Instalado",
-          "review": "Revisar"
+          "review": "Revisar",
+          "noDescription": "No description provided.",
+          "install": "Install"
         },
         "PluginMarketplacePreviewDialog": {
           "themes": "{{value0}} temas de la aplicación",
@@ -13258,6 +13270,17 @@
         "searchLabels": "Filtrar etiquetas…",
         "searchAssignee": "Filtrar asignatario…",
         "back": "Atrás"
+      },
+      "pluginCatalog": {
+        "PluginCatalogLayout": {
+          "title": "Plugins",
+          "description": "Browse available plugins or manage the ones installed in Orca.",
+          "filter": "Plugin filter",
+          "all": "All",
+          "installed": "Installed",
+          "searchLabel": "Search plugins",
+          "searchPlaceholder": "Search plugins, categories, or publishers"
+        }
       }
     },
     "i18n": {

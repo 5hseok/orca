@@ -4,10 +4,12 @@ import {
   FileText,
   Loader2,
   MoreHorizontal,
+  Palette,
   RotateCcw,
   Trash2
 } from 'lucide-react'
 import type { PluginHostListEntry, PluginHostLogLine } from '../../../../preload/api-types'
+import type { PluginTerminalThemeRegistration } from '../../../../shared/plugins/plugin-terminal-theme-artifact'
 import { translate } from '@/i18n/i18n'
 import { invalidPluginErrorMessage } from './plugin-error-presentation'
 import { cn } from '@/lib/utils'
@@ -38,6 +40,9 @@ type PluginSettingsRowProps = {
   onConfigureSkills: (pluginKey: string) => void
   onRollbackRequest: (pluginKey: string) => void
   onRemoveRequest: (pluginKey: string) => void
+  terminalTheme?: PluginTerminalThemeRegistration
+  terminalThemeActive?: boolean
+  onApplyTerminalTheme?: (theme: PluginTerminalThemeRegistration) => void
 }
 
 function statusPresentation(plugin: PluginHostListEntry): { label: string; className: string } {
@@ -81,20 +86,6 @@ function statusPresentation(plugin: PluginHostListEntry): { label: string; class
         : translate('auto.components.settings.PluginSettingsRow.enabled', 'Enabled'),
     className: 'border-status-success-border bg-status-success-background text-status-success'
   }
-}
-
-function sourceLabel(plugin: PluginHostListEntry): string | null {
-  if (!plugin.source) {
-    return null
-  }
-  const commit = plugin.source.resolvedCommit?.slice(0, 10)
-  return commit ? `${plugin.source.reference} @ ${commit}` : plugin.source.reference
-}
-
-function trustTier(plugin: PluginHostListEntry): string {
-  return plugin.hasWorker
-    ? translate('auto.components.settings.PluginSettingsRow.workerTier', 'background worker')
-    : translate('auto.components.settings.PluginSettingsRow.panelTier', 'panel only')
 }
 
 function PluginLogs({ pluginKey, state }: { pluginKey: string; state?: PluginLogsState }) {
@@ -151,10 +142,12 @@ export function PluginSettingsRow({
   onToggleLogs,
   onConfigureSkills,
   onRollbackRequest,
-  onRemoveRequest
+  onRemoveRequest,
+  terminalTheme,
+  terminalThemeActive = false,
+  onApplyTerminalTheme
 }: PluginSettingsRowProps): React.JSX.Element {
   const status = statusPresentation(plugin)
-  const source = sourceLabel(plugin)
   const needsReview = plugin.needsReconsent || plugin.status === 'pending'
   const enabled =
     plugin.status === 'running' ||
@@ -165,14 +158,14 @@ export function PluginSettingsRow({
     busy || needsReview || plugin.status === 'invalid' || Boolean(plugin.blockedByKillList)
 
   return (
-    <div
-      className="px-4 py-3 [&+&]:border-t [&+&]:border-border/60"
+    <article
+      className="flex min-h-36 flex-col rounded-xl border border-border/80 bg-card p-4 text-card-foreground shadow-xs"
       data-plugin-key={plugin.pluginKey}
     >
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-48 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium">{plugin.name}</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h4 className="text-sm font-semibold">{plugin.name}</h4>
             <span className="font-mono text-xs text-muted-foreground">v{plugin.version}</span>
             {plugin.isDev ? (
               <Badge variant="outline" className="text-[10px] text-muted-foreground">
@@ -204,15 +197,12 @@ export function PluginSettingsRow({
             {plugin.publisher ? `${plugin.publisher} · ` : null}
             {plugin.pluginKey}
           </p>
-          {source ? (
-            <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={source}>
-              {source}
-            </p>
-          ) : null}
-          <p className="mt-1 text-xs text-muted-foreground">
-            {[...plugin.capabilities.map((capability) => capability.kind), trustTier(plugin)].join(
-              ' · '
-            )}
+          <p className="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">
+            {plugin.description ??
+              translate(
+                'auto.components.settings.PluginSettingsRow.noDescription',
+                'No description provided.'
+              )}
           </p>
           {plugin.blockedByKillList ? (
             <p className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-destructive">
@@ -266,13 +256,33 @@ export function PluginSettingsRow({
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {needsReview ? (
             <Button
-              variant="outline"
-              size="xs"
+              variant="secondary"
+              size="sm"
               disabled={busy}
               onClick={() => onReview(plugin.pluginKey)}
             >
-              {translate('auto.components.settings.PluginSettingsRow.review', 'Review permissions')}
+              {translate(
+                'auto.components.settings.PluginSettingsRow.reviewAndEnable',
+                'Review & enable'
+              )}
             </Button>
+          ) : null}
+          {!needsReview && enabled && terminalTheme && onApplyTerminalTheme ? (
+            terminalThemeActive ? (
+              <Badge variant="secondary">
+                {translate('auto.components.settings.PluginSettingsRow.inUse', 'In use')}
+              </Badge>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => onApplyTerminalTheme(terminalTheme)}
+              >
+                <Palette />
+                {translate('auto.components.settings.PluginSettingsRow.useTheme', 'Use theme')}
+              </Button>
+            )
           ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -343,6 +353,6 @@ export function PluginSettingsRow({
         </div>
       </div>
       {logsOpen ? <PluginLogs pluginKey={plugin.pluginKey} state={logsState} /> : null}
-    </div>
+    </article>
   )
 }

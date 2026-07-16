@@ -9045,7 +9045,7 @@
         },
         "PluginConsentDialog": {
           "workerTrust": "Background worker — runs its own process",
-          "panelTrust": "Panel or inert content — no worker process",
+          "panelTrust": "Panel or host-integrated content — no worker process",
           "decisionFailed": "Could not save the permission decision. Try again.",
           "title": "Review permissions",
           "mixedTitle": "Review access and content",
@@ -9061,7 +9061,7 @@
           "warning": "These permissions limit how the plugin uses Orca's API. Its worker still runs as a normal process on your computer with full access to your files, network, and other processes.",
           "enable": "Enable plugin",
           "keepDisabled": "Keep Disabled",
-          "panelWarning": "These permissions limit how the plugin uses Orca's API. This plugin has no worker process.",
+          "panelWarning": "These permissions limit how the plugin uses Orca's API. This plugin has no background worker.",
           "instructionalWarning": "This plugin has no worker process. Its instructional content can still cause actions when you or an agent use it. Review the instructions and commands below before enabling it.",
           "capability": {
             "workspaceRead": "Read the name, branch, and terminal list of your focused worktree",
@@ -9073,7 +9073,10 @@
             "settingsOwn": "Read and change the plugin's own settings"
           },
           "skillWarning": "This plugin installs instructional skills. Agents read those instructions and may act on them with the full authority you give the agent.",
-          "instructionalTrust": "Instructional content — runs later under user or agent authority"
+          "instructionalTrust": "Instructional content — runs later under user or agent authority",
+          "declarativeTrust": "Declarative content — no plugin code",
+          "reviewTitle": "Review plugin",
+          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
         },
         "PluginDevelopmentSection": {
           "pathRequired": "Enter a plugin folder path.",
@@ -9142,7 +9145,11 @@
           "bundled": "Bundled",
           "killListMessage": "Orca's safety list disabled this plugin: {{value0}}",
           "viewAdvisory": "View advisory",
-          "rollback": "Roll back"
+          "rollback": "Roll back",
+          "noDescription": "No description provided.",
+          "reviewAndEnable": "Review & enable",
+          "inUse": "In use",
+          "useTheme": "Use theme"
         },
         "PluginsSettingsSection": {
           "loadFailed": "Could not load plugins.",
@@ -9160,7 +9167,9 @@
           "tryAgain": "Try again",
           "empty": "No plugins installed. Use Install plugin to add one from a local folder or a pinned git ref.",
           "settingsUpdateFailed": "Could not save plugin settings.",
-          "rollbackFailed": "Could not roll back this plugin. A previous immutable version may not be available."
+          "rollbackFailed": "Could not roll back this plugin. A previous immutable version may not be available.",
+          "noInstalledResults": "No installed plugins match this search.",
+          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme."
         },
         "plugins": {
           "search": {
@@ -9241,7 +9250,8 @@
           "noSources": "Add an official, community, or private Git marketplace to browse plugins.",
           "addSource": "Add marketplace",
           "noResults": "No marketplace plugins match this search.",
-          "empty": "The configured marketplaces do not list any plugins."
+          "empty": "The configured marketplaces do not list any plugins.",
+          "noInstalled": "No plugins installed."
         },
         "PluginMarketplaceListingRow": {
           "official": "Official",
@@ -9252,7 +9262,9 @@
           "blockedAction": "Blocked",
           "checkUpdate": "Check for update",
           "installedAction": "Installed",
-          "review": "Review"
+          "review": "Review",
+          "noDescription": "No description provided.",
+          "install": "Install"
         },
         "PluginMarketplacePreviewDialog": {
           "themes": "{{value0}} app themes",
@@ -13258,6 +13270,17 @@
         "searchLabels": "Filter labels…",
         "searchAssignee": "Filter assignee…",
         "back": "Back"
+      },
+      "pluginCatalog": {
+        "PluginCatalogLayout": {
+          "title": "Plugins",
+          "description": "Browse available plugins or manage the ones installed in Orca.",
+          "filter": "Plugin filter",
+          "all": "All",
+          "installed": "Installed",
+          "searchLabel": "Search plugins",
+          "searchPlaceholder": "Search plugins, categories, or publishers"
+        }
       }
     },
     "i18n": {
