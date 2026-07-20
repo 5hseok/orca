@@ -93,7 +93,7 @@ export function PluginConsentProvenance(props: PluginConsentProvenanceProps): Re
               {translate('auto.components.settings.PluginConsentProvenance.source', 'Source')}
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-80 space-y-1.5">
+          <PopoverContent align="start" className="w-80 space-y-1.5 p-3">
             <ProvenanceDetail
               label={translate(
                 'auto.components.settings.PluginConsentProvenance.sourceLabel',
