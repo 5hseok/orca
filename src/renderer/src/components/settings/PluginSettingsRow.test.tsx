@@ -34,7 +34,6 @@ const plugin: PluginHostListEntry = {
   panels: [],
   commands: [],
   hasWorker: false,
-  hasSkills: true,
   restarts: 0,
   blockedByKillList: {
     reason: 'A vulnerable release was revoked',
@@ -66,14 +65,14 @@ describe('PluginSettingsRow', () => {
           onReview={vi.fn()}
           onToggleEnabled={vi.fn()}
           onToggleLogs={vi.fn()}
-          onConfigureSkills={vi.fn()}
           onRollbackRequest={vi.fn()}
           onRemoveRequest={vi.fn()}
         />
       )
     })
 
-    expect(container.textContent).toContain('Official')
+    // Why: official provenance renders as an icon with an accessible label, not badge text.
+    expect(container.querySelector('[aria-label="Official"]')).toBeTruthy()
     expect(container.textContent).toContain('Bundled')
     expect(container.textContent).toContain('A vulnerable release was revoked')
     expect(container.textContent).toContain('View advisory')

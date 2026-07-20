@@ -9076,7 +9076,11 @@
           "instructionalTrust": "지침 콘텐츠 — 나중에 사용자 또는 에이전트 권한으로 실행",
           "declarativeTrust": "Declarative content — no plugin code",
           "reviewTitle": "Review plugin",
-          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
+          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API.",
+          "trustShortWorker": "Worker",
+          "trustShortInstructional": "Instructional",
+          "trustShortPanel": "Panel",
+          "trustShortDeclarative": "Declarative"
         },
         "PluginDevelopmentSection": {
           "pathRequired": "플러그인 폴더 경로를 입력하세요.",
@@ -9139,7 +9143,6 @@
           "invalidPluginError": "플러그인 매니페스트 또는 설치된 파일이 올바르지 않습니다. 수정한 후 새로 고치세요.",
           "runtimeError": "활성화 또는 워커 오류 후 플러그인이 중지되었습니다.",
           "disableLabel": "{{value0}} 비활성화",
-          "configureSkills": "스킬 구성",
           "blocked": "차단됨",
           "official": "공식",
           "bundled": "번들",
@@ -9169,7 +9172,9 @@
           "settingsUpdateFailed": "플러그인 설정을 저장할 수 없습니다.",
           "rollbackFailed": "이 플러그인을 롤백하지 못했습니다. 이전 불변 버전을 사용할 수 없을 수 있습니다.",
           "noInstalledResults": "No installed plugins match this search.",
-          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme."
+          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme.",
+          "noInstalledResultsTitle": "No matching plugins",
+          "emptyTitle": "No plugins installed yet"
         },
         "plugins": {
           "search": {
@@ -9205,19 +9210,6 @@
             "builtIn": "기본 제공 아이콘 사용"
           }
         },
-        "PluginSkillMappingDialog": {
-          "agentSkillsProvider": "공유 에이전트 스킬",
-          "loadFailed": "스킬 설치 설정을 불러올 수 없습니다.",
-          "saveFailed": "스킬 설치 설정을 업데이트할 수 없습니다.",
-          "title": "스킬 설치 위치 선택",
-          "description": "사용자 스킬은 모든 프로젝트에서 사용할 수 있습니다. 저장소 스킬은 등록된 로컬 프로젝트에만 복사되며 SSH 동기화는 이후 단계에서 제공됩니다.",
-          "loading": "스킬 설정 불러오는 중…",
-          "noSkills": "스킬을 구성하기 전에 이 플러그인을 활성화하세요.",
-          "userScope": "사용자 프로필",
-          "disabled": "설치하지 않음",
-          "cancel": "취소",
-          "save": "저장"
-        },
         "PluginVmRecipeConsentPreview": {
           "create": "생성",
           "suspend": "일시 중지",
@@ -9251,7 +9243,12 @@
           "addSource": "마켓플레이스 추가",
           "noResults": "검색과 일치하는 마켓플레이스 플러그인이 없습니다.",
           "empty": "구성된 마켓플레이스에 등록된 플러그인이 없습니다.",
-          "noInstalled": "No plugins installed."
+          "noInstalled": "No plugins installed.",
+          "noInstalledTitle": "No plugins installed",
+          "noSourcesTitle": "No marketplaces configured",
+          "noResultsTitle": "No matching plugins",
+          "clearSearch": "Clear search",
+          "emptyTitle": "Nothing listed yet"
         },
         "PluginMarketplaceListingRow": {
           "official": "공식",
@@ -9271,7 +9268,6 @@
           "iconThemes": "아이콘 테마 {{value0}}개",
           "terminalThemes": "터미널 테마 {{value0}}개",
           "languagePacks": "언어 팩 {{value0}}개",
-          "skills": "스킬 팩 {{value0}}개",
           "commands": "명령 {{value0}}개",
           "keybindings": "키보드 단축키 {{value0}}개",
           "vmRecipes": "VM 레시피 {{value0}}개",
@@ -9292,7 +9288,20 @@
           "current": "이 플러그인과 정확히 동일한 콘텐츠가 이미 설치되어 있습니다.",
           "cancel": "취소",
           "update": "플러그인 업데이트",
-          "install": "플러그인 설치"
+          "install": "플러그인 설치",
+          "provenance": "Reviewed source",
+          "close": "Close",
+          "upToDate": "Up to date",
+          "themesOne": "1 app theme",
+          "iconThemesOne": "1 icon theme",
+          "terminalThemesOne": "1 terminal theme",
+          "languagePacksOne": "1 language pack",
+          "commandsOne": "1 command",
+          "keybindingsOne": "1 keyboard shortcut",
+          "vmRecipesOne": "1 VM recipe",
+          "panelsOne": "1 panel",
+          "eventsOne": "1 event subscription",
+          "versionLine": "v{{value0}} · {{value1}}"
         },
         "PluginMarketplaceSourceDialog": {
           "addFailed": "이 마켓플레이스를 추가하지 못했습니다. Git URL, ref 및 Git 자격 증명을 확인하세요.",
@@ -9323,11 +9332,16 @@
           "cancel": "취소",
           "confirm": "플러그인 롤백"
         },
-        "PluginSkillConsentPreview": {
-          "heading": "에이전트 스킬 지침",
-          "instructionsLabel": "{{value0}} 스킬 지침",
-          "loadError": "Orca가 모든 스킬 지침을 읽지 못했습니다. 이 플러그인을 비활성화 상태로 유지하고 패키지를 수정한 후 다시 검토하세요.",
-          "loading": "스킬 지침을 불러오는 중…"
+        "PluginConsentProvenance": {
+          "official": "Official",
+          "bundled": "Bundled with Orca",
+          "local": "Local folder",
+          "community": "Community",
+          "source": "Source",
+          "sourceLabel": "Source",
+          "commit": "Pinned commit",
+          "localCommit": "Local folder — no commit",
+          "indexCommit": "Index commit"
         }
       },
       "right": {

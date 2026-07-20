@@ -1,4 +1,4 @@
-import { AlertTriangle, Keyboard } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import type { PluginHostListEntry } from '../../../../preload/api-types'
 import {
   findKeybindingActionsForBinding,
@@ -44,15 +44,6 @@ export function PluginKeybindingConsentPreview({
 
   return (
     <section className="space-y-3" aria-labelledby="plugin-keybinding-consent-heading">
-      <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3.5 py-3 text-sm leading-6">
-        <Keyboard className="mt-1 size-4 shrink-0" />
-        <span>
-          {translate(
-            'auto.components.settings.PluginKeybindingConsentPreview.warning',
-            'This plugin adds keyboard shortcuts. Plugin shortcuts take priority over matching Orca shortcuts while the plugin is enabled.'
-          )}
-        </span>
-      </div>
       <h3
         id="plugin-keybinding-consent-heading"
         className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground"

@@ -60,10 +60,7 @@ describe('PluginContentPackRegistry', () => {
       contentHash: null,
       isDev: true
     }
-    const registry = new PluginContentPackRegistry(new PluginContentVerifier(), {
-      pluginsDataDir: join(rootDir, 'plugin-data'),
-      homeDirectory: join(rootDir, 'home')
-    })
+    const registry = new PluginContentPackRegistry(new PluginContentVerifier())
 
     await registry.reconcile([plugin], () => true)
 
@@ -117,10 +114,7 @@ describe('PluginContentPackRegistry', () => {
       contentHash: null,
       isDev: true
     }
-    const registry = new PluginContentPackRegistry(new PluginContentVerifier(), {
-      pluginsDataDir: join(rootDir, 'plugin-data'),
-      homeDirectory: join(rootDir, 'home')
-    })
+    const registry = new PluginContentPackRegistry(new PluginContentVerifier())
 
     await registry.reconcile([plugin], () => true)
 

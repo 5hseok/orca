@@ -73,7 +73,6 @@ const preview: PluginMarketplaceHostInstallPreview = {
       iconThemes: [],
       terminalThemes: [],
       languagePacks: [],
-      skills: [{ path: 'skills' }],
       keybindings: [],
       vmRecipes: [],
       agents: []
@@ -185,7 +184,14 @@ describe('PluginMarketplaceBrowser', () => {
       marketplaceSourceId: SOURCE_ID,
       pluginKey: listing.pluginKey
     })
-    expect(document.body.textContent).toContain(PLUGIN_COMMIT)
+    // Why: provenance leads with a short badge; the source URL + full commit
+    // are tucked behind an on-demand "Source" details popover.
+    expect(document.body.textContent).toContain('Community')
+    expect(
+      Array.from(document.querySelectorAll('button')).some(
+        (candidate) => candidate.textContent?.trim() === 'Source'
+      )
+    ).toBe(true)
     expect(document.body.textContent).toContain(
       'Read the name, branch, and terminal list of your focused worktree'
     )
@@ -230,7 +236,13 @@ describe('PluginMarketplaceBrowser', () => {
       pluginKey: listing.pluginKey
     })
     expect(document.body.textContent).toContain('This exact plugin content is already installed.')
-    expect(button('Update plugin').disabled).toBe(true)
+    // Why: an up-to-date preview offers no install action at all — only Close.
+    expect(
+      Array.from(document.querySelectorAll('button')).some(
+        (candidate) => candidate.textContent?.trim() === 'Update plugin'
+      )
+    ).toBe(false)
+    expect(button('Close')).toBeTruthy()
     act(() => root.unmount())
   })
 

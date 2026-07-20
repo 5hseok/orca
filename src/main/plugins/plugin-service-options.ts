@@ -15,5 +15,4 @@ export type PluginServiceOptions = {
   workerFactory?: PluginWorkerFactory
   maxActiveWorkers?: number
   idleReapMs?: number
-  homeDirectory?: string
 }

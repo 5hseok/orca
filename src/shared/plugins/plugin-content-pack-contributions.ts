@@ -2,7 +2,6 @@ import { z } from 'zod'
 import {
   pluginCommandIdSchema,
   pluginIdSchema,
-  pluginRelativeDirectorySchema,
   pluginRelativePathSchema
 } from './plugin-manifest-fields'
 import { normalizeKeybinding } from '../keybindings'
@@ -11,7 +10,6 @@ export const PLUGIN_THEME_LIMIT = 64
 export const PLUGIN_ICON_THEME_LIMIT = 32
 export const PLUGIN_TERMINAL_THEME_LIMIT = 64
 export const PLUGIN_LANGUAGE_PACK_LIMIT = 16
-export const PLUGIN_SKILL_LIMIT = 128
 export const PLUGIN_KEYBINDING_LIMIT = 256
 export const PLUGIN_VM_RECIPE_LIMIT = 64
 export const PLUGIN_AGENT_PROFILE_LIMIT = 64
@@ -55,19 +53,6 @@ export const pluginLanguagePackContributionSchema = z
   })
   .strict()
 
-export const PLUGIN_SKILL_PROVIDERS = ['codex', 'claude', 'agent-skills'] as const
-
-export const pluginSkillContributionSchema = z
-  .object({
-    path: pluginRelativeDirectorySchema,
-    providers: z
-      .array(z.enum(PLUGIN_SKILL_PROVIDERS))
-      .min(1)
-      .max(PLUGIN_SKILL_PROVIDERS.length)
-      .optional()
-  })
-  .strict()
-
 export const pluginKeybindingContributionSchema = z
   .object({
     command: pluginCommandIdSchema,
@@ -99,7 +84,6 @@ export type PluginThemeContribution = z.infer<typeof pluginThemeContributionSche
 export type PluginIconThemeContribution = z.infer<typeof pluginIconThemeContributionSchema>
 export type PluginTerminalThemeContribution = z.infer<typeof pluginTerminalThemeContributionSchema>
 export type PluginLanguagePackContribution = z.infer<typeof pluginLanguagePackContributionSchema>
-export type PluginSkillContribution = z.infer<typeof pluginSkillContributionSchema>
 export type PluginKeybindingContribution = z.infer<typeof pluginKeybindingContributionSchema>
 export type PluginVmRecipeContribution = z.infer<typeof pluginVmRecipeContributionSchema>
 export type PluginAgentProfileContribution = z.infer<typeof pluginAgentProfileContributionSchema>

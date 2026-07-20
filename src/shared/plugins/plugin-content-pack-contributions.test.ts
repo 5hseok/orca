@@ -25,7 +25,6 @@ describe('content-pack manifest contributions', () => {
           { id: 'nord-terminal', label: 'Nord Terminal', path: 'terminal/nord.json' }
         ],
         languagePacks: [{ locale: 'pt-BR', path: 'locales/pt-BR.json' }],
-        skills: [{ path: 'skills/', providers: ['codex', 'claude'] }],
         commands: [
           {
             id: 'workspace.openTasks',
@@ -41,7 +40,6 @@ describe('content-pack manifest contributions', () => {
     )
 
     expect(parsed.main).toBeUndefined()
-    expect(parsed.contributes.skills[0]?.path).toBe('skills')
     expect(parsed.contributes.languagePacks[0]?.locale).toBe('pt-BR')
     expect(parsed.contributes.keybindings[0]?.key).toBe('Mod+Alt+T')
   })
@@ -57,10 +55,16 @@ describe('content-pack manifest contributions', () => {
       iconThemes: [],
       terminalThemes: [],
       languagePacks: [],
-      skills: [],
       keybindings: [],
       vmRecipes: [],
       agents: []
+    })
+  })
+
+  it('rejects the removed plugin skills contribution', () => {
+    expect(parsePluginManifest(manifest({ skills: [{ path: 'skills' }] }))).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Unrecognized key')
     })
   })
 
@@ -126,7 +130,6 @@ describe('content-pack manifest contributions', () => {
     ['theme', { themes: [{ id: 'bad', label: 'Bad', path: '../outside.json' }] }],
     ['icon theme', { iconThemes: [{ id: 'bad', path: '/tmp/icons.json' }] }],
     ['language pack', { languagePacks: [{ locale: 'en_US', path: 'locale.json' }] }],
-    ['skills', { skills: [{ path: 'C:\\skills' }] }],
     ['VM recipe', { vmRecipes: [{ path: '\\\\server\\recipe.json' }] }],
     ['agent profile', { agents: [{ path: 'agents/../profile.json' }] }]
   ])('rejects unsafe or malformed %s contributions', (_label, contributes) => {
@@ -144,7 +147,6 @@ describe('content-pack manifest contributions', () => {
           { locale: 'pt-BR', path: 'pt-br.json' },
           { locale: 'pt-br', path: 'other.json' }
         ],
-        skills: [{ path: 'skills' }, { path: 'skills/' }],
         commands: [{ id: 'open', title: 'Open', action: 'view.tasks' }],
         keybindings: [
           { command: 'open', key: 'Mod+T' },
@@ -159,7 +161,6 @@ describe('content-pack manifest contributions', () => {
         expect.arrayContaining([
           'duplicate themes id: same',
           'duplicate language pack locale: pt-br',
-          'duplicate skills path: skills',
           'duplicate keybinding: mod+t'
         ])
       )

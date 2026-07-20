@@ -69,7 +69,6 @@ describe('fingerprintPluginConsent', () => {
       main: undefined,
       capabilities: [],
       contributes: {
-        skills: [],
         keybindings: [],
         vmRecipes: [{ path: 'recipes/cloud.json' }],
         agents: []
@@ -92,7 +91,6 @@ describe('fingerprintPluginConsent', () => {
       main: undefined,
       capabilities: [],
       contributes: {
-        skills: [],
         keybindings: [],
         vmRecipes: [],
         agents: []

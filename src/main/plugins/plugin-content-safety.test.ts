@@ -50,7 +50,6 @@ describe('declared plugin artifacts', () => {
   it('validates every content-pack file and directory before enablement', async () => {
     const root = await tempRoot()
     await Promise.all([
-      mkdir(join(root, 'skills')),
       mkdir(join(root, 'themes')),
       mkdir(join(root, 'locales')),
       mkdir(join(root, 'recipes')),
@@ -60,15 +59,13 @@ describe('declared plugin artifacts', () => {
     await Promise.all([
       writeFile(join(root, 'themes', 'nord.json'), '{}'),
       writeFile(join(root, 'locales', 'pt-BR.json'), '{}'),
-      writeFile(join(root, 'recipes', 'vm.json'), '{}'),
-      writeFile(join(root, 'skills', 'SKILL.md'), '# Demo')
+      writeFile(join(root, 'recipes', 'vm.json'), '{}')
     ])
     const pluginManifest = manifest({
       contributes: {
         themes: [{ id: 'nord', label: 'Nord', path: 'themes/nord.json' }],
         iconThemes: [{ id: 'minimal', path: 'icons.json' }],
         languagePacks: [{ locale: 'pt-BR', path: 'locales/pt-BR.json' }],
-        skills: [{ path: 'skills' }],
         vmRecipes: [{ path: 'recipes/vm.json' }],
         agents: [{ path: 'agent.json' }]
       }
@@ -76,13 +73,6 @@ describe('declared plugin artifacts', () => {
 
     await expect(validateDeclaredPluginArtifacts(root, pluginManifest)).resolves.toEqual({
       ok: true
-    })
-
-    await rm(join(root, 'skills'), { recursive: true })
-    await writeFile(join(root, 'skills'), 'not a directory')
-    await expect(validateDeclaredPluginArtifacts(root, pluginManifest)).resolves.toMatchObject({
-      ok: false,
-      error: expect.stringContaining('is not a directory')
     })
   })
 

@@ -1,6 +1,8 @@
 import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import type { PluginMarketplaceHostInstallPreview } from '../../../../preload/api-types'
 import { translate } from '@/i18n/i18n'
+import { PluginCatalogAvatar } from '../plugin-catalog/PluginCatalogAvatar'
+import { PluginConsentProvenance, type PluginConsentSource } from './PluginConsentProvenance'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import {
@@ -29,11 +31,17 @@ function contributionSummary(
   preview: PluginMarketplaceHostInstallPreview
 ): { key: string; label: string }[] {
   const { contributes } = preview.manifest
-  const entries: { key: string; count: number; label: string }[] = [
+  // Why: two static keys per kind (not one dynamic key) so the localization
+  // catalog sync can extract them, and "1 icon themes" never renders.
+  const entries: { key: string; count: number; one: string; many: string }[] = [
     {
       key: 'themes',
       count: contributes.themes.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.themesOne',
+        '1 app theme'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.themes',
         '{{value0}} app themes',
         { value0: contributes.themes.length }
@@ -42,7 +50,11 @@ function contributionSummary(
     {
       key: 'iconThemes',
       count: contributes.iconThemes.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.iconThemesOne',
+        '1 icon theme'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.iconThemes',
         '{{value0}} icon themes',
         { value0: contributes.iconThemes.length }
@@ -51,7 +63,11 @@ function contributionSummary(
     {
       key: 'terminalThemes',
       count: contributes.terminalThemes.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.terminalThemesOne',
+        '1 terminal theme'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.terminalThemes',
         '{{value0}} terminal themes',
         { value0: contributes.terminalThemes.length }
@@ -60,25 +76,24 @@ function contributionSummary(
     {
       key: 'languagePacks',
       count: contributes.languagePacks.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.languagePacksOne',
+        '1 language pack'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.languagePacks',
         '{{value0}} language packs',
         { value0: contributes.languagePacks.length }
       )
     },
     {
-      key: 'skills',
-      count: contributes.skills.length,
-      label: translate(
-        'auto.components.settings.PluginMarketplacePreviewDialog.skills',
-        '{{value0}} skill packs',
-        { value0: contributes.skills.length }
-      )
-    },
-    {
       key: 'commands',
       count: contributes.commands.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.commandsOne',
+        '1 command'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.commands',
         '{{value0}} commands',
         { value0: contributes.commands.length }
@@ -87,7 +102,11 @@ function contributionSummary(
     {
       key: 'keybindings',
       count: contributes.keybindings.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.keybindingsOne',
+        '1 keyboard shortcut'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.keybindings',
         '{{value0}} keyboard shortcuts',
         { value0: contributes.keybindings.length }
@@ -96,7 +115,11 @@ function contributionSummary(
     {
       key: 'vmRecipes',
       count: contributes.vmRecipes.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.vmRecipesOne',
+        '1 VM recipe'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.vmRecipes',
         '{{value0}} VM recipes',
         { value0: contributes.vmRecipes.length }
@@ -105,7 +128,11 @@ function contributionSummary(
     {
       key: 'panels',
       count: contributes.panels.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.panelsOne',
+        '1 panel'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.panels',
         '{{value0}} panels',
         { value0: contributes.panels.length }
@@ -114,7 +141,11 @@ function contributionSummary(
     {
       key: 'events',
       count: contributes.events.length,
-      label: translate(
+      one: translate(
+        'auto.components.settings.PluginMarketplacePreviewDialog.eventsOne',
+        '1 event subscription'
+      ),
+      many: translate(
         'auto.components.settings.PluginMarketplacePreviewDialog.events',
         '{{value0}} event subscriptions',
         { value0: contributes.events.length }
@@ -123,7 +154,7 @@ function contributionSummary(
   ]
   const summary: { key: string; label: string }[] = entries
     .filter((entry) => entry.count > 0)
-    .map(({ key, label }) => ({ key, label }))
+    .map(({ key, count, one, many }) => ({ key, label: count === 1 ? one : many }))
   if (preview.manifest.main) {
     summary.push({
       key: 'worker',
@@ -147,71 +178,50 @@ export function PluginMarketplacePreviewDialog({
 }: PluginMarketplacePreviewDialogProps): React.JSX.Element {
   const contributions = preview ? contributionSummary(preview) : []
   const blocked = preview?.blockedByKillList
+  const provenanceSource: PluginConsentSource | undefined = preview
+    ? {
+        kind: preview.bundled ? 'bundled' : 'marketplace',
+        reference: `${preview.source.url}#${preview.source.ref}`,
+        resolvedCommit: preview.resolvedCommit,
+        marketplace: {
+          reference: preview.marketplaceName,
+          resolvedCommit: preview.marketplaceCommit
+        }
+      }
+    : undefined
   return (
     <Dialog open={Boolean(preview)} onOpenChange={(open) => !open && !busy && onClose()}>
       <DialogContent className="plugin-security-chrome max-h-[calc(100vh-3rem)] overflow-y-auto scrollbar-sleek sm:max-w-xl">
         {preview ? (
           <>
             <DialogHeader>
-              <div className="flex flex-wrap items-center gap-2 pr-6">
-                <DialogTitle>{preview.manifest.name}</DialogTitle>
-                {preview.official ? (
-                  <Badge variant="outline">
+              <div className="flex items-start gap-3 pr-6">
+                <PluginCatalogAvatar name={preview.manifest.name} className="mt-0.5" />
+                <div className="min-w-0">
+                  <DialogTitle className="truncate">{preview.manifest.name}</DialogTitle>
+                  <DialogDescription className="mt-0.5 truncate">
                     {translate(
-                      'auto.components.settings.PluginMarketplacePreviewDialog.official',
-                      'Official'
+                      'auto.components.settings.PluginMarketplacePreviewDialog.versionLine',
+                      'v{{value0}} · {{value1}}',
+                      {
+                        value0: preview.manifest.version,
+                        value1: preview.marketplaceName
+                      }
                     )}
-                  </Badge>
-                ) : null}
-                {preview.bundled ? (
-                  <Badge variant="secondary">
-                    {translate(
-                      'auto.components.settings.PluginMarketplacePreviewDialog.bundled',
-                      'Bundled'
-                    )}
-                  </Badge>
-                ) : null}
+                  </DialogDescription>
+                  <div className="mt-1.5">
+                    <PluginConsentProvenance
+                      official={preview.official}
+                      publisher={preview.manifest.publisher}
+                      source={provenanceSource}
+                    />
+                  </div>
+                </div>
               </div>
-              <DialogDescription>
-                {translate(
-                  'auto.components.settings.PluginMarketplacePreviewDialog.subtitle',
-                  '{{value0}} v{{value1}} · {{value2}}',
-                  {
-                    value0: preview.pluginKey,
-                    value1: preview.manifest.version,
-                    value2: preview.marketplaceName
-                  }
-                )}
-              </DialogDescription>
             </DialogHeader>
             {preview.manifest.description ? (
               <p className="text-sm leading-6">{preview.manifest.description}</p>
             ) : null}
-            <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-              <dt className="text-xs text-muted-foreground">
-                {translate(
-                  'auto.components.settings.PluginMarketplacePreviewDialog.source',
-                  'Plugin source'
-                )}
-              </dt>
-              <dd className="truncate font-mono text-xs" title={preview.source.url}>
-                {preview.source.url}#{preview.source.ref}
-              </dd>
-              <dt className="text-xs text-muted-foreground">
-                {translate(
-                  'auto.components.settings.PluginMarketplacePreviewDialog.commit',
-                  'Pinned commit'
-                )}
-              </dt>
-              <dd className="break-all font-mono text-xs">{preview.resolvedCommit}</dd>
-              <dt className="text-xs text-muted-foreground">
-                {translate(
-                  'auto.components.settings.PluginMarketplacePreviewDialog.marketplaceCommit',
-                  'Index commit'
-                )}
-              </dt>
-              <dd className="break-all font-mono text-xs">{preview.marketplaceCommit}</dd>
-            </dl>
             <div className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                 {translate(
@@ -278,7 +288,8 @@ export function PluginMarketplacePreviewDialog({
               </p>
             ) : null}
             {currentVersion ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Check className="size-4 shrink-0" aria-hidden="true" />
                 {translate(
                   'auto.components.settings.PluginMarketplacePreviewDialog.current',
                   'This exact plugin content is already installed.'
@@ -287,24 +298,35 @@ export function PluginMarketplacePreviewDialog({
             ) : null}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <DialogFooter>
-              <Button variant="ghost" disabled={busy} onClick={onClose}>
-                {translate(
-                  'auto.components.settings.PluginMarketplacePreviewDialog.cancel',
-                  'Cancel'
-                )}
-              </Button>
-              <Button disabled={busy || Boolean(blocked) || currentVersion} onClick={onConfirm}>
-                {busy ? <Loader2 className="animate-spin" /> : null}
-                {mode === 'update'
-                  ? translate(
-                      'auto.components.settings.PluginMarketplacePreviewDialog.update',
-                      'Update plugin'
-                    )
-                  : translate(
-                      'auto.components.settings.PluginMarketplacePreviewDialog.install',
-                      'Install plugin'
+              {currentVersion ? (
+                <Button onClick={onClose}>
+                  {translate(
+                    'auto.components.settings.PluginMarketplacePreviewDialog.close',
+                    'Close'
+                  )}
+                </Button>
+              ) : (
+                <>
+                  <Button variant="ghost" disabled={busy} onClick={onClose}>
+                    {translate(
+                      'auto.components.settings.PluginMarketplacePreviewDialog.cancel',
+                      'Cancel'
                     )}
-              </Button>
+                  </Button>
+                  <Button disabled={busy || Boolean(blocked)} onClick={onConfirm}>
+                    {busy ? <Loader2 className="animate-spin" /> : null}
+                    {mode === 'update'
+                      ? translate(
+                          'auto.components.settings.PluginMarketplacePreviewDialog.update',
+                          'Update plugin'
+                        )
+                      : translate(
+                          'auto.components.settings.PluginMarketplacePreviewDialog.install',
+                          'Install plugin'
+                        )}
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </>
         ) : null}

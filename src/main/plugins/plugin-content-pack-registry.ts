@@ -6,7 +6,6 @@ import {
 } from './plugin-discovery'
 import { PluginLanguagePackRegistry } from './plugin-language-pack-registry'
 import { PluginIconThemeRegistry } from './plugin-icon-theme-registry'
-import { PluginSkillRegistry } from './plugin-skill-registry'
 import { PluginThemeRegistry } from './plugin-theme-registry'
 import { PluginTerminalThemeRegistry } from './plugin-terminal-theme-registry'
 import { PluginVmRecipeRegistry } from './plugin-vm-recipe-registry'
@@ -19,24 +18,15 @@ export class PluginContentPackRegistry {
   readonly languagePacks: PluginLanguagePackRegistry
   readonly iconThemes: PluginIconThemeRegistry
   readonly terminalThemes: PluginTerminalThemeRegistry
-  readonly skills: PluginSkillRegistry
   readonly vmRecipes: PluginVmRecipeRegistry
   readonly commands: PluginCommandRegistry
   private readonly activationErrors = new Map<string, string>()
 
-  constructor(
-    contentVerifier: PluginContentVerifier,
-    options: { pluginsDataDir: string; homeDirectory?: string }
-  ) {
+  constructor(contentVerifier: PluginContentVerifier) {
     this.themes = new PluginThemeRegistry(contentVerifier)
     this.languagePacks = new PluginLanguagePackRegistry(contentVerifier)
     this.iconThemes = new PluginIconThemeRegistry(contentVerifier)
     this.terminalThemes = new PluginTerminalThemeRegistry(contentVerifier)
-    this.skills = new PluginSkillRegistry(
-      contentVerifier,
-      options.pluginsDataDir,
-      options.homeDirectory
-    )
     this.vmRecipes = new PluginVmRecipeRegistry()
     this.commands = new PluginCommandRegistry()
   }
@@ -84,7 +74,6 @@ export class PluginContentPackRegistry {
         this.languagePacks.reconcile(discovered, approveAtomically),
         this.iconThemes.reconcile(discovered, approveAtomically),
         this.terminalThemes.reconcile(discovered, approveAtomically),
-        this.skills.reconcile(discovered, approveAtomically),
         this.vmRecipes.reconcile(discovered, approveAtomically),
         this.commands.reconcile(discovered, approveAtomically, keybindings)
       ])
@@ -114,7 +103,6 @@ export class PluginContentPackRegistry {
       this.languagePacks.error(pluginKey) ??
       this.iconThemes.error(pluginKey) ??
       this.terminalThemes.error(pluginKey) ??
-      this.skills.error(pluginKey) ??
       this.vmRecipes.error(pluginKey) ??
       this.commands.error(pluginKey)
     )

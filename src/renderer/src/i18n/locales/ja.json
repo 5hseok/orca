@@ -9076,7 +9076,11 @@
           "instructionalTrust": "指示コンテンツ — 後でユーザーまたはエージェントの権限で実行",
           "declarativeTrust": "Declarative content — no plugin code",
           "reviewTitle": "Review plugin",
-          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
+          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API.",
+          "trustShortWorker": "Worker",
+          "trustShortInstructional": "Instructional",
+          "trustShortPanel": "Panel",
+          "trustShortDeclarative": "Declarative"
         },
         "PluginDevelopmentSection": {
           "pathRequired": "プラグインフォルダーのパスを入力してください。",
@@ -9139,7 +9143,6 @@
           "invalidPluginError": "プラグインのマニフェストまたはインストール済みファイルが無効です。修正してから更新してください。",
           "runtimeError": "有効化またはワーカーのエラー後にプラグインが停止しました。",
           "disableLabel": "{{value0}}を無効にする",
-          "configureSkills": "スキルを設定",
           "blocked": "ブロック済み",
           "official": "公式",
           "bundled": "同梱",
@@ -9169,7 +9172,9 @@
           "settingsUpdateFailed": "プラグイン設定を保存できませんでした。",
           "rollbackFailed": "このプラグインをロールバックできませんでした。以前の不変バージョンが存在しない可能性があります。",
           "noInstalledResults": "No installed plugins match this search.",
-          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme."
+          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme.",
+          "noInstalledResultsTitle": "No matching plugins",
+          "emptyTitle": "No plugins installed yet"
         },
         "plugins": {
           "search": {
@@ -9205,19 +9210,6 @@
             "builtIn": "組み込みアイコンを使用"
           }
         },
-        "PluginSkillMappingDialog": {
-          "agentSkillsProvider": "共有エージェントスキル",
-          "loadFailed": "スキルのインストール設定を読み込めませんでした。",
-          "saveFailed": "スキルのインストール設定を更新できませんでした。",
-          "title": "スキルのインストール先を選択",
-          "description": "ユーザースキルはすべてのプロジェクトで利用できます。リポジトリスキルは登録済みのローカルプロジェクトにのみコピーされます。SSH 同期は後のフェーズで対応します。",
-          "loading": "スキル設定を読み込み中…",
-          "noSkills": "スキルを設定する前にこのプラグインを有効にしてください。",
-          "userScope": "ユーザープロファイル",
-          "disabled": "インストールしない",
-          "cancel": "キャンセル",
-          "save": "保存"
-        },
         "PluginVmRecipeConsentPreview": {
           "create": "作成",
           "suspend": "一時停止",
@@ -9251,7 +9243,12 @@
           "addSource": "マーケットプレイスを追加",
           "noResults": "この検索に一致するマーケットプレイスのプラグインはありません。",
           "empty": "設定済みのマーケットプレイスにプラグインは登録されていません。",
-          "noInstalled": "No plugins installed."
+          "noInstalled": "No plugins installed.",
+          "noInstalledTitle": "No plugins installed",
+          "noSourcesTitle": "No marketplaces configured",
+          "noResultsTitle": "No matching plugins",
+          "clearSearch": "Clear search",
+          "emptyTitle": "Nothing listed yet"
         },
         "PluginMarketplaceListingRow": {
           "official": "公式",
@@ -9271,7 +9268,6 @@
           "iconThemes": "{{value0}} 件のアイコンテーマ",
           "terminalThemes": "{{value0}} 件のターミナルテーマ",
           "languagePacks": "{{value0}} 件の言語パック",
-          "skills": "{{value0}} 件のスキルパック",
           "commands": "{{value0}} 件のコマンド",
           "keybindings": "{{value0}} 件のキーボードショートカット",
           "vmRecipes": "{{value0}} 件の VM レシピ",
@@ -9292,7 +9288,20 @@
           "current": "このプラグインと完全に同じ内容がすでにインストールされています。",
           "cancel": "キャンセル",
           "update": "プラグインを更新",
-          "install": "プラグインをインストール"
+          "install": "プラグインをインストール",
+          "provenance": "Reviewed source",
+          "close": "Close",
+          "upToDate": "Up to date",
+          "themesOne": "1 app theme",
+          "iconThemesOne": "1 icon theme",
+          "terminalThemesOne": "1 terminal theme",
+          "languagePacksOne": "1 language pack",
+          "commandsOne": "1 command",
+          "keybindingsOne": "1 keyboard shortcut",
+          "vmRecipesOne": "1 VM recipe",
+          "panelsOne": "1 panel",
+          "eventsOne": "1 event subscription",
+          "versionLine": "v{{value0}} · {{value1}}"
         },
         "PluginMarketplaceSourceDialog": {
           "addFailed": "このマーケットプレイスを追加できませんでした。Git URL、ref、Git 認証情報を確認してください。",
@@ -9323,11 +9332,16 @@
           "cancel": "キャンセル",
           "confirm": "プラグインをロールバック"
         },
-        "PluginSkillConsentPreview": {
-          "heading": "エージェントスキルの指示",
-          "instructionsLabel": "{{value0}} スキルの指示",
-          "loadError": "Orca はすべてのスキル指示を読み取れませんでした。このプラグインは無効のままにし、パッケージを修正してからもう一度確認してください。",
-          "loading": "スキルの手順を読み込んでいます…"
+        "PluginConsentProvenance": {
+          "official": "Official",
+          "bundled": "Bundled with Orca",
+          "local": "Local folder",
+          "community": "Community",
+          "source": "Source",
+          "sourceLabel": "Source",
+          "commit": "Pinned commit",
+          "localCommit": "Local folder — no commit",
+          "indexCommit": "Index commit"
         }
       },
       "right": {

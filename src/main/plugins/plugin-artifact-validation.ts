@@ -78,11 +78,6 @@ function declaredArtifactPaths(manifest: PluginManifest): DeclaredArtifact[] {
       kind: 'file' as const,
       maxBytes: PLUGIN_LANGUAGE_PACK_MAX_BYTES
     })),
-    ...manifest.contributes.skills.map((skill) => ({
-      label: 'skill directory',
-      path: skill.path,
-      kind: 'directory' as const
-    })),
     ...manifest.contributes.vmRecipes.map((recipe) => ({
       label: 'VM recipe',
       path: recipe.path,

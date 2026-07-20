@@ -30,15 +30,10 @@ const plugin: PluginHostListEntry = {
   }
 }
 
-const previewConsent = vi.fn()
-const cancelConsentPreview = vi.fn()
-
 beforeEach(() => {
-  previewConsent.mockReset().mockResolvedValue({ ok: true, skills: [] })
-  cancelConsentPreview.mockReset()
   Object.defineProperty(window, 'api', {
     configurable: true,
-    value: { plugins: { previewConsent, cancelConsentPreview } }
+    value: { plugins: {} }
   })
 })
 
@@ -108,8 +103,15 @@ describe('PluginConsentDialog', () => {
   it('shows provenance, capabilities, worker warning, and focuses the safe default', async () => {
     await renderConsent(plugin, vi.fn().mockResolvedValue(undefined))
 
-    expect(document.body.textContent).toContain(plugin.source?.reference)
-    expect(document.body.textContent).toContain(plugin.source?.resolvedCommit)
+    // Provenance leads with a short badge + a short trust chip; the full
+    // source URL and commit are tucked behind the "Source" details popover.
+    expect(document.body.textContent).toContain(plugin.publisher)
+    expect(document.body.textContent).toContain('Worker')
+    expect(
+      Array.from(document.querySelectorAll('button')).some(
+        (candidate) => candidate.textContent?.trim() === 'Source'
+      )
+    ).toBe(true)
     expect(document.body.textContent).toContain('Run a background worker process')
     expect(document.body.textContent).toContain(
       'full access to your files, network, and other processes'
@@ -149,91 +151,11 @@ describe('PluginConsentDialog', () => {
     )
 
     expect(document.body.textContent).toContain('Review plugin')
-    expect(document.body.textContent).toContain('Declarative content — no plugin code')
+    expect(document.body.textContent).toContain('Declarative')
     expect(document.body.textContent).toContain(
       "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
     )
     expect(document.body.textContent).not.toContain('These permissions limit')
-  })
-
-  it('discloses that contributed skills run as agent instructions', async () => {
-    previewConsent.mockResolvedValue({
-      ok: true,
-      skills: [
-        {
-          name: 'review-changes',
-          instructions: '# Review changes\n\nInspect every diff before approving it.'
-        }
-      ]
-    })
-    await renderConsent(
-      {
-        ...plugin,
-        hasSkills: true
-      },
-      vi.fn().mockResolvedValue(undefined)
-    )
-
-    expect(document.body.textContent).toContain(
-      'Agents read those instructions and may act on them with the full authority you give the agent.'
-    )
-    expect(document.body.textContent).toContain('review-changes')
-    expect(document.body.textContent).toContain('Inspect every diff before approving it.')
-    expect(document.querySelector('pre')?.getAttribute('aria-label')).toBe(
-      'review-changes skill instructions'
-    )
-    expect(previewConsent).toHaveBeenCalledWith(
-      {
-        pluginKey: plugin.pluginKey,
-        reviewedFingerprint: plugin.consentFingerprint
-      },
-      expect.any(String)
-    )
-  })
-
-  it('keeps enablement blocked when every skill instruction cannot be reviewed', async () => {
-    previewConsent.mockResolvedValue({
-      ok: false,
-      error: 'plugin consent preview unavailable'
-    })
-    await renderConsent({ ...plugin, hasSkills: true }, vi.fn().mockResolvedValue(undefined))
-
-    expect(document.body.textContent).toContain('could not read every skill instruction')
-    const enable = Array.from(document.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Enable plugin'
-    )
-    expect(enable?.disabled).toBe(true)
-  })
-
-  it('keeps enablement blocked while skill instructions are loading', async () => {
-    previewConsent.mockReturnValue(new Promise(() => {}))
-    await renderConsent({ ...plugin, hasSkills: true }, vi.fn().mockResolvedValue(undefined))
-
-    expect(document.body.textContent).toContain('Loading skill instructions…')
-    const enable = Array.from(document.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Enable plugin'
-    )
-    expect(enable?.disabled).toBe(true)
-  })
-
-  it('cancels a pending skill preview when the dialog unmounts', async () => {
-    previewConsent.mockReturnValue(new Promise(() => {}))
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    const root = createRoot(container)
-    await act(async () => {
-      root.render(
-        <PluginConsentDialog
-          plugin={{ ...plugin, hasSkills: true }}
-          onDecision={vi.fn().mockResolvedValue(undefined)}
-        />
-      )
-    })
-    const requestId = previewConsent.mock.calls[0]?.[1]
-
-    await act(async () => root.unmount())
-
-    expect(cancelConsentPreview).toHaveBeenCalledWith(requestId)
   })
 
   it('shows every VM recipe lifecycle command verbatim', async () => {
@@ -259,9 +181,7 @@ describe('PluginConsentDialog', () => {
       vi.fn().mockResolvedValue(undefined)
     )
 
-    expect(document.body.textContent).toContain(
-      'Instructional content — runs later under user or agent authority'
-    )
+    expect(document.body.textContent).toContain('Instructional')
     expect(document.body.textContent).toContain('Review plugin content')
     expect(document.body.textContent).toContain(
       'Its instructional content can still cause actions when you or an agent use it.'

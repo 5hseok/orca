@@ -24,13 +24,10 @@ import {
   isAllowedPluginGitUrl,
   type PluginLockfile
 } from '../../shared/plugins/plugin-install-lockfile'
-import type { PluginSkillStoreSnapshot } from '../../shared/plugins/plugin-skill-store'
-import { authorizePluginSkillMapping } from '../plugins/plugin-skill-mapping-authority'
 import {
   registerPluginMarketplaceHandlers,
   type PluginMarketplaceHandlerServices
 } from './plugin-marketplaces'
-import { registerPluginConsentPreviewHandlers } from './plugin-consent-preview-ipc'
 
 export function parsePluginConsentArgs(args: unknown): z.infer<typeof pluginConsentRequestSchema> {
   return pluginConsentRequestSchema.parse(args)
@@ -79,15 +76,6 @@ export async function listPluginsForClients(
   return buildPluginList(pluginService, lock)
 }
 
-async function pluginSkillStoreSnapshot(
-  pluginService: PluginService
-): Promise<PluginSkillStoreSnapshot> {
-  return {
-    registrations: [...pluginService.contentPacks.skills.list()],
-    mappings: [...(await pluginService.contentPacks.skills.mappings.list())]
-  }
-}
-
 export function canRemoveInstalledPlugin(
   pluginService: PluginService,
   pluginKey: string,
@@ -128,7 +116,6 @@ export function registerPluginHandlers(
   // Why: startup discovery is fire-and-forget; every handler awaits it so an
   // early renderer fetch can't observe the empty pre-discovery list.
   ipcMain.handle('plugins:list', async () => listPluginsForClients(pluginService))
-  registerPluginConsentPreviewHandlers(pluginService)
   ipcMain.handle('plugins:listThemes', async () => {
     await pluginService.whenReady()
     return pluginService.contentPacks.themes.list()
@@ -151,22 +138,6 @@ export function registerPluginHandlers(
     await pluginService.whenReady()
     return pluginService.contentPacks.terminalThemes.list()
   })
-  ipcMain.handle('plugins:listSkillStore', async () => {
-    await pluginService.whenReady()
-    return pluginSkillStoreSnapshot(pluginService)
-  })
-  ipcMain.handle('plugins:setSkillMapping', async (_event, args: unknown) => {
-    await pluginService.whenReady()
-    const mapping = authorizePluginSkillMapping(
-      args,
-      pluginService.getDiscovered(),
-      store.getRepos()
-    )
-    await pluginService.contentPacks.skills.setMapping(mapping)
-    await pluginService.reconcileActivationState()
-    return pluginSkillStoreSnapshot(pluginService)
-  })
-
   ipcMain.handle('plugins:consent', async (event, args: unknown) => {
     await pluginService.whenReady()
     const parsed = parsePluginConsentArgs(args)

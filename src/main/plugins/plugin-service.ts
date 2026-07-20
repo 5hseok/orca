@@ -64,10 +64,7 @@ export class PluginService {
 
   constructor(options: PluginServiceOptions) {
     this.options = options
-    this.contentPacks = new PluginContentPackRegistry(this.contentVerifier, {
-      pluginsDataDir: getPluginsDataDir(options.userDataPath),
-      homeDirectory: options.homeDirectory
-    })
+    this.contentPacks = new PluginContentPackRegistry(this.contentVerifier)
     this.audit = new PluginAuditLog(getPluginsDataDir(options.userDataPath))
     this.panels = new PluginPanelController({
       resolveApprovedPlugin: (pluginKey) => {

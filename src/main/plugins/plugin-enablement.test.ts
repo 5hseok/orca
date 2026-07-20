@@ -1,13 +1,10 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { getDefaultSettings } from '../../shared/constants'
 import type { GlobalSettings } from '../../shared/types'
 import { pluginManifestSchema } from '../../shared/plugins/plugin-manifest'
 import type { Store } from '../persistence'
 import { applyPluginConsent, applyPluginEnablement } from './plugin-enablement'
-import { hashPluginTree } from './plugin-content-hash'
 import type { ValidDiscoveredPlugin } from './plugin-discovery'
 import type { PluginService } from './plugin-service'
 
@@ -113,41 +110,6 @@ describe('applyPluginConsent', () => {
 
     expect(harness.getSettings().disabledPlugins).toContain(pluginKey)
     expect(pluginService.reconcileActivationState).toHaveBeenCalledOnce()
-  })
-
-  it('rejects skill approval when instructions are not valid UTF-8', async () => {
-    const rootDir = await mkdtemp(join(tmpdir(), 'orca-plugin-consent-'))
-    try {
-      await mkdir(join(rootDir, 'skills', 'review'), { recursive: true })
-      await writeFile(join(rootDir, 'skills', 'review', 'SKILL.md'), Buffer.from([0xc3, 0x28]))
-      const content = await hashPluginTree(rootDir)
-      if (!content.ok) {
-        throw new Error(content.error)
-      }
-      const skillManifest = pluginManifestSchema.parse({
-        ...manifest,
-        contributes: { skills: [{ path: 'skills' }] }
-      })
-      const harness = createStore()
-      const pluginService = createPluginService(() => 'sha256-reviewed', {
-        rootDir,
-        manifest: skillManifest,
-        consentContentHash: content.hash
-      })
-
-      await expect(
-        applyPluginConsent({
-          store: harness.store,
-          pluginService,
-          pluginKey,
-          reviewedFingerprint: 'sha256-reviewed',
-          decision: 'approve'
-        })
-      ).rejects.toThrow()
-      expect(harness.updateSettings).not.toHaveBeenCalled()
-    } finally {
-      await rm(rootDir, { recursive: true, force: true })
-    }
   })
 })
 

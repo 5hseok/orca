@@ -4,12 +4,8 @@ import type { PluginService } from '../plugins/plugin-service'
 import type { Store } from '../persistence'
 
 const electronMocks = vi.hoisted(() => ({ handle: vi.fn(), on: vi.fn() }))
-const previewMocks = vi.hoisted(() => ({ preview: vi.fn() }))
 vi.mock('electron', () => ({
   ipcMain: { handle: electronMocks.handle, on: electronMocks.on }
-}))
-vi.mock('../plugins/plugin-consent-preview-controller', () => ({
-  previewPluginConsentForClient: previewMocks.preview
 }))
 
 import {
@@ -22,37 +18,7 @@ import {
 beforeEach(() => {
   electronMocks.handle.mockReset()
   electronMocks.on.mockReset()
-  previewMocks.preview
-    .mockReset()
-    .mockResolvedValue({ ok: false, error: 'plugin consent preview unavailable' })
 })
-
-function rendererSender(id = 17): {
-  id: number
-  once: ReturnType<typeof vi.fn>
-  removeListener: ReturnType<typeof vi.fn>
-  emit: (event: 'destroyed' | 'render-process-gone') => void
-} {
-  const listeners = new Map<string, Set<() => void>>()
-  return {
-    id,
-    once: vi.fn((event: string, listener: () => void) => {
-      const entries = listeners.get(event) ?? new Set()
-      entries.add(listener)
-      listeners.set(event, entries)
-    }),
-    removeListener: vi.fn((event: string, listener: () => void) => {
-      listeners.get(event)?.delete(listener)
-    }),
-    emit: (event) => {
-      const entries = [...(listeners.get(event) ?? [])]
-      listeners.delete(event)
-      for (const listener of entries) {
-        listener()
-      }
-    }
-  }
-}
 
 describe('plugin consent IPC schema', () => {
   it('requires the fingerprint reviewed by the caller', () => {
@@ -189,120 +155,5 @@ describe('plugin settings lifecycle authority', () => {
     settingsListener({ pluginSystemEnabled: false })
 
     expect(service.refresh).toHaveBeenCalledOnce()
-  })
-
-  it('registers a lazy consent preview that fails closed for unknown plugins', async () => {
-    const store = {
-      onSettingsChanged: vi.fn()
-    } as unknown as Store
-    const service = {
-      setRuntimeDelegate: vi.fn(),
-      whenReady: vi.fn().mockResolvedValue(undefined),
-      findValidPlugin: vi.fn().mockReturnValue(null)
-    } as unknown as PluginService
-    registerPluginHandlers(store, service, null)
-    const registration = electronMocks.handle.mock.calls.find(
-      ([channel]) => channel === 'plugins:previewConsent'
-    )
-
-    await expect(
-      registration?.[1](
-        { sender: rendererSender() },
-        {
-          requestId: 'preview-one',
-          request: {
-            pluginKey: 'orca-samples.missing',
-            reviewedFingerprint: 'sha256-reviewed'
-          }
-        }
-      )
-    ).resolves.toEqual({ ok: false, error: 'plugin consent preview unavailable' })
-  })
-
-  it('cancels a request by id and permits a fresh preview from the same renderer', async () => {
-    const store = { onSettingsChanged: vi.fn() } as unknown as Store
-    const service = {
-      setRuntimeDelegate: vi.fn(),
-      whenReady: vi.fn().mockResolvedValue(undefined)
-    } as unknown as PluginService
-    previewMocks.preview
-      .mockImplementationOnce((_service, _request, client) => {
-        return new Promise((resolve) => {
-          client.signal?.addEventListener(
-            'abort',
-            () => resolve({ ok: false, error: 'plugin consent preview unavailable' }),
-            { once: true }
-          )
-        })
-      })
-      .mockResolvedValueOnce({ ok: true, skills: [] })
-    registerPluginHandlers(store, service, null)
-    const preview = electronMocks.handle.mock.calls.find(
-      ([channel]) => channel === 'plugins:previewConsent'
-    )?.[1]
-    const cancel = electronMocks.on.mock.calls.find(
-      ([channel]) => channel === 'plugins:cancelConsentPreview'
-    )?.[1]
-    const sender = rendererSender()
-    const args = {
-      requestId: 'preview-one',
-      request: {
-        pluginKey: 'orca-samples.skills',
-        reviewedFingerprint: 'sha256-reviewed'
-      }
-    }
-
-    const first = preview?.({ sender }, args)
-    await vi.waitFor(() => expect(previewMocks.preview).toHaveBeenCalledOnce())
-    cancel?.({ sender }, { requestId: args.requestId })
-    await expect(first).resolves.toEqual({
-      ok: false,
-      error: 'plugin consent preview unavailable'
-    })
-
-    await expect(preview?.({ sender }, { ...args, requestId: 'preview-two' })).resolves.toEqual({
-      ok: true,
-      skills: []
-    })
-  })
-
-  it('cancels consent preview reads when the renderer is destroyed', async () => {
-    const store = { onSettingsChanged: vi.fn() } as unknown as Store
-    const service = {
-      setRuntimeDelegate: vi.fn(),
-      whenReady: vi.fn().mockResolvedValue(undefined)
-    } as unknown as PluginService
-    previewMocks.preview.mockImplementation((_service, _request, client) => {
-      return new Promise((resolve) => {
-        client.signal?.addEventListener(
-          'abort',
-          () => resolve({ ok: false, error: 'plugin consent preview unavailable' }),
-          { once: true }
-        )
-      })
-    })
-    registerPluginHandlers(store, service, null)
-    const preview = electronMocks.handle.mock.calls.find(
-      ([channel]) => channel === 'plugins:previewConsent'
-    )?.[1]
-    const sender = rendererSender()
-    const result = preview?.(
-      { sender },
-      {
-        requestId: 'preview-one',
-        request: {
-          pluginKey: 'orca-samples.skills',
-          reviewedFingerprint: 'sha256-reviewed'
-        }
-      }
-    )
-    await vi.waitFor(() => expect(previewMocks.preview).toHaveBeenCalledOnce())
-
-    sender.emit('destroyed')
-
-    await expect(result).resolves.toEqual({
-      ok: false,
-      error: 'plugin consent preview unavailable'
-    })
   })
 })

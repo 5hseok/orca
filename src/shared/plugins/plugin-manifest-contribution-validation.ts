@@ -15,7 +15,6 @@ type ContributionValidationManifest = {
     iconThemes: IdentifiedContribution[]
     terminalThemes: IdentifiedContribution[]
     languagePacks: { locale: string }[]
-    skills: PathContribution[]
     keybindings: { command: string; key: string; when?: 'global' | 'worktree' }[]
     vmRecipes: PathContribution[]
     agents: PathContribution[]
@@ -64,7 +63,7 @@ export function validatePluginManifestContributions(
     'language pack locale',
     ctx
   )
-  for (const path of ['skills', 'vmRecipes', 'agents'] as const) {
+  for (const path of ['vmRecipes', 'agents'] as const) {
     rejectDuplicateValues(
       manifest.contributes[path],
       (entry) => (entry as PathContribution).path,

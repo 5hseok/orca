@@ -9076,7 +9076,11 @@
           "instructionalTrust": "Instructional content — runs later under user or agent authority",
           "declarativeTrust": "Declarative content — no plugin code",
           "reviewTitle": "Review plugin",
-          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
+          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API.",
+          "trustShortWorker": "Worker",
+          "trustShortInstructional": "Instructional",
+          "trustShortPanel": "Panel",
+          "trustShortDeclarative": "Declarative"
         },
         "PluginDevelopmentSection": {
           "pathRequired": "Enter a plugin folder path.",
@@ -9139,7 +9143,6 @@
           "invalidPluginError": "The plugin manifest or installed files are invalid. Fix the plugin, then refresh.",
           "runtimeError": "The plugin stopped after an activation or worker error.",
           "disableLabel": "Disable {{value0}}",
-          "configureSkills": "Configure skills",
           "blocked": "Blocked",
           "official": "Official",
           "bundled": "Bundled",
@@ -9169,7 +9172,9 @@
           "settingsUpdateFailed": "Could not save plugin settings.",
           "rollbackFailed": "Could not roll back this plugin. A previous immutable version may not be available.",
           "noInstalledResults": "No installed plugins match this search.",
-          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme."
+          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme.",
+          "noInstalledResultsTitle": "No matching plugins",
+          "emptyTitle": "No plugins installed yet"
         },
         "plugins": {
           "search": {
@@ -9205,19 +9210,6 @@
             "builtIn": "Use built-in icons"
           }
         },
-        "PluginSkillMappingDialog": {
-          "agentSkillsProvider": "Shared agent skills",
-          "loadFailed": "Could not load skill installation settings.",
-          "saveFailed": "Could not update skill installation settings.",
-          "title": "Choose where skills are installed",
-          "description": "User skills are available across projects. Repository skills are copied only into a registered local project; SSH synchronization arrives in a later phase.",
-          "loading": "Loading skill settings…",
-          "noSkills": "Enable this plugin before configuring its skills.",
-          "userScope": "User profile",
-          "disabled": "Do not install",
-          "cancel": "Cancel",
-          "save": "Save"
-        },
         "PluginVmRecipeConsentPreview": {
           "create": "Create",
           "suspend": "Suspend",
@@ -9251,7 +9243,12 @@
           "addSource": "Add marketplace",
           "noResults": "No marketplace plugins match this search.",
           "empty": "The configured marketplaces do not list any plugins.",
-          "noInstalled": "No plugins installed."
+          "noInstalled": "No plugins installed.",
+          "noInstalledTitle": "No plugins installed",
+          "noSourcesTitle": "No marketplaces configured",
+          "noResultsTitle": "No matching plugins",
+          "clearSearch": "Clear search",
+          "emptyTitle": "Nothing listed yet"
         },
         "PluginMarketplaceListingRow": {
           "official": "Official",
@@ -9271,7 +9268,6 @@
           "iconThemes": "{{value0}} icon themes",
           "terminalThemes": "{{value0}} terminal themes",
           "languagePacks": "{{value0}} language packs",
-          "skills": "{{value0}} skill packs",
           "commands": "{{value0}} commands",
           "keybindings": "{{value0}} keyboard shortcuts",
           "vmRecipes": "{{value0}} VM recipes",
@@ -9292,7 +9288,20 @@
           "current": "This exact plugin content is already installed.",
           "cancel": "Cancel",
           "update": "Update plugin",
-          "install": "Install plugin"
+          "install": "Install plugin",
+          "provenance": "Reviewed source",
+          "close": "Close",
+          "upToDate": "Up to date",
+          "themesOne": "1 app theme",
+          "iconThemesOne": "1 icon theme",
+          "terminalThemesOne": "1 terminal theme",
+          "languagePacksOne": "1 language pack",
+          "commandsOne": "1 command",
+          "keybindingsOne": "1 keyboard shortcut",
+          "vmRecipesOne": "1 VM recipe",
+          "panelsOne": "1 panel",
+          "eventsOne": "1 event subscription",
+          "versionLine": "v{{value0}} · {{value1}}"
         },
         "PluginMarketplaceSourceDialog": {
           "addFailed": "Could not add this marketplace. Check the Git URL, ref, and your Git credentials.",
@@ -9323,11 +9332,16 @@
           "cancel": "Cancel",
           "confirm": "Roll back plugin"
         },
-        "PluginSkillConsentPreview": {
-          "heading": "Agent skill instructions",
-          "instructionsLabel": "{{value0}} skill instructions",
-          "loadError": "Orca could not read every skill instruction. Keep this plugin disabled and review it again after fixing the package.",
-          "loading": "Loading skill instructions…"
+        "PluginConsentProvenance": {
+          "official": "Official",
+          "bundled": "Bundled with Orca",
+          "local": "Local folder",
+          "community": "Community",
+          "source": "Source",
+          "sourceLabel": "Source",
+          "commit": "Pinned commit",
+          "localCommit": "Local folder — no commit",
+          "indexCommit": "Index commit"
         }
       },
       "right": {

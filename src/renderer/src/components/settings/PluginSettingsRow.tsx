@@ -1,6 +1,6 @@
 import {
   AlertTriangle,
-  BookOpen,
+  BadgeCheck,
   FileText,
   Loader2,
   MoreHorizontal,
@@ -11,6 +11,7 @@ import {
 import type { PluginHostListEntry, PluginHostLogLine } from '../../../../preload/api-types'
 import type { PluginTerminalThemeRegistration } from '../../../../shared/plugins/plugin-terminal-theme-artifact'
 import { translate } from '@/i18n/i18n'
+import { PluginCatalogAvatar } from '../plugin-catalog/PluginCatalogAvatar'
 import { invalidPluginErrorMessage } from './plugin-error-presentation'
 import { cn } from '@/lib/utils'
 import { Badge } from '../ui/badge'
@@ -37,7 +38,6 @@ type PluginSettingsRowProps = {
   onReview: (pluginKey: string) => void
   onToggleEnabled: (plugin: PluginHostListEntry) => void
   onToggleLogs: (pluginKey: string) => void
-  onConfigureSkills: (pluginKey: string) => void
   onRollbackRequest: (pluginKey: string) => void
   onRemoveRequest: (pluginKey: string) => void
   terminalTheme?: PluginTerminalThemeRegistration
@@ -140,7 +140,6 @@ export function PluginSettingsRow({
   onReview,
   onToggleEnabled,
   onToggleLogs,
-  onConfigureSkills,
   onRollbackRequest,
   onRemoveRequest,
   terminalTheme,
@@ -157,24 +156,62 @@ export function PluginSettingsRow({
   const switchDisabled =
     busy || needsReview || plugin.status === 'invalid' || Boolean(plugin.blockedByKillList)
 
+  // Why: the wide primary action ("Review & enable" / "Use theme" / "In use")
+  // renders on its own footer row so it never wraps the compact toggle +
+  // overflow cluster to an inconsistent position between card types.
+  const themeAction =
+    !needsReview && enabled && terminalTheme && onApplyTerminalTheme ? (
+      terminalThemeActive ? (
+        <Badge variant="secondary">
+          {translate('auto.components.settings.PluginSettingsRow.inUse', 'In use')}
+        </Badge>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => onApplyTerminalTheme(terminalTheme)}
+        >
+          <Palette />
+          {translate('auto.components.settings.PluginSettingsRow.useTheme', 'Use theme')}
+        </Button>
+      )
+    ) : null
+  const reviewAction = needsReview ? (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={busy}
+      onClick={() => onReview(plugin.pluginKey)}
+    >
+      {translate('auto.components.settings.PluginSettingsRow.reviewAndEnable', 'Review & enable')}
+    </Button>
+  ) : null
+  const footerAction = reviewAction ?? themeAction
+
   return (
     <article
       className="flex min-h-36 flex-col rounded-xl border border-border/80 bg-card p-4 text-card-foreground shadow-xs"
       data-plugin-key={plugin.pluginKey}
     >
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-48 flex-1">
+      <div className="flex items-start gap-3">
+        <PluginCatalogAvatar name={plugin.name} />
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <h4 className="text-sm font-semibold">{plugin.name}</h4>
-            <span className="font-mono text-xs text-muted-foreground">v{plugin.version}</span>
+            {plugin.official ? (
+              <BadgeCheck
+                className="size-4 shrink-0 text-muted-foreground"
+                role="img"
+                aria-label={translate(
+                  'auto.components.settings.PluginSettingsRow.official',
+                  'Official'
+                )}
+              />
+            ) : null}
             {plugin.isDev ? (
               <Badge variant="outline" className="text-[10px] text-muted-foreground">
                 {translate('auto.components.settings.PluginSettingsRow.dev', 'Dev')}
-              </Badge>
-            ) : null}
-            {plugin.official ? (
-              <Badge variant="outline">
-                {translate('auto.components.settings.PluginSettingsRow.official', 'Official')}
               </Badge>
             ) : null}
             {plugin.bundled ? (
@@ -194,8 +231,7 @@ export function PluginSettingsRow({
             {busy ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : null}
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {plugin.publisher ? `${plugin.publisher} · ` : null}
-            {plugin.pluginKey}
+            {plugin.publisher ? `${plugin.publisher} · ` : null}v{plugin.version}
           </p>
           <p className="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">
             {plugin.description ??
@@ -253,37 +289,7 @@ export function PluginSettingsRow({
             </p>
           ) : null}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {needsReview ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy}
-              onClick={() => onReview(plugin.pluginKey)}
-            >
-              {translate(
-                'auto.components.settings.PluginSettingsRow.reviewAndEnable',
-                'Review & enable'
-              )}
-            </Button>
-          ) : null}
-          {!needsReview && enabled && terminalTheme && onApplyTerminalTheme ? (
-            terminalThemeActive ? (
-              <Badge variant="secondary">
-                {translate('auto.components.settings.PluginSettingsRow.inUse', 'In use')}
-              </Badge>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() => onApplyTerminalTheme(terminalTheme)}
-              >
-                <Palette />
-                {translate('auto.components.settings.PluginSettingsRow.useTheme', 'Use theme')}
-              </Button>
-            )
-          ) : null}
+        <div className="flex shrink-0 items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -306,15 +312,6 @@ export function PluginSettingsRow({
                   ? translate('auto.components.settings.PluginSettingsRow.hideLogs', 'Hide logs')
                   : translate('auto.components.settings.PluginSettingsRow.viewLogs', 'View logs')}
               </DropdownMenuItem>
-              {plugin.hasSkills ? (
-                <DropdownMenuItem onSelect={() => onConfigureSkills(plugin.pluginKey)}>
-                  <BookOpen />
-                  {translate(
-                    'auto.components.settings.PluginSettingsRow.configureSkills',
-                    'Configure skills'
-                  )}
-                </DropdownMenuItem>
-              ) : null}
               {plugin.source?.kind === 'marketplace' ? (
                 <DropdownMenuItem onSelect={() => onRollbackRequest(plugin.pluginKey)}>
                   <RotateCcw />
@@ -352,6 +349,11 @@ export function PluginSettingsRow({
           />
         </div>
       </div>
+      {footerAction ? (
+        <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-3">
+          {footerAction}
+        </div>
+      ) : null}
       {logsOpen ? <PluginLogs pluginKey={plugin.pluginKey} state={logsState} /> : null}
     </article>
   )

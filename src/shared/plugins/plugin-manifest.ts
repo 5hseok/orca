@@ -5,7 +5,6 @@ import {
   PLUGIN_ICON_THEME_LIMIT,
   PLUGIN_KEYBINDING_LIMIT,
   PLUGIN_LANGUAGE_PACK_LIMIT,
-  PLUGIN_SKILL_LIMIT,
   PLUGIN_THEME_LIMIT,
   PLUGIN_TERMINAL_THEME_LIMIT,
   PLUGIN_VM_RECIPE_LIMIT,
@@ -13,7 +12,6 @@ import {
   pluginIconThemeContributionSchema,
   pluginKeybindingContributionSchema,
   pluginLanguagePackContributionSchema,
-  pluginSkillContributionSchema,
   pluginThemeContributionSchema,
   pluginTerminalThemeContributionSchema,
   pluginVmRecipeContributionSchema
@@ -122,7 +120,6 @@ export const pluginManifestSchema = z
           .array(pluginLanguagePackContributionSchema)
           .max(PLUGIN_LANGUAGE_PACK_LIMIT)
           .default([]),
-        skills: z.array(pluginSkillContributionSchema).max(PLUGIN_SKILL_LIMIT).default([]),
         keybindings: z
           .array(pluginKeybindingContributionSchema)
           .max(PLUGIN_KEYBINDING_LIMIT)
@@ -136,6 +133,7 @@ export const pluginManifestSchema = z
           .max(PLUGIN_AGENT_PROFILE_LIMIT)
           .default([])
       })
+      .strict()
       .default(() => ({
         panels: [],
         commands: [],
@@ -144,7 +142,6 @@ export const pluginManifestSchema = z
         iconThemes: [],
         terminalThemes: [],
         languagePacks: [],
-        skills: [],
         keybindings: [],
         vmRecipes: [],
         agents: []

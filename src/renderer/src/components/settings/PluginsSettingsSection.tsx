@@ -11,7 +11,6 @@ import { PluginConsentDialog } from './PluginConsentDialog'
 import { PluginInstallDialog } from './PluginInstallDialog'
 import { PluginRemoveDialog } from './PluginRemoveDialog'
 import { PluginRollbackDialog } from './PluginRollbackDialog'
-import { PluginSkillMappingDialog } from './PluginSkillMappingDialog'
 import { PluginSettingsOverview } from './PluginSettingsOverview'
 import { getPluginsSectionPresentation } from './plugins-search'
 import { SettingsSection } from './SettingsSection'
@@ -44,7 +43,6 @@ export function PluginsSettingsSection({
   const [installOpen, setInstallOpen] = useState(false)
   const [consentPluginId, setConsentPluginId] = useState<string | null>(null)
   const [removePluginId, setRemovePluginId] = useState<string | null>(null)
-  const [skillPluginId, setSkillPluginId] = useState<string | null>(null)
   const [busyPluginKeys, setBusyPluginKeys] = useState<Set<string>>(() => new Set())
   const [featureBusy, setFeatureBusy] = useState(false)
   const [devPathsBusy, setDevPathsBusy] = useState(false)
@@ -60,7 +58,6 @@ export function PluginsSettingsSection({
     // Why: accepted discovery results own installed-plugin identity and invalidate stale UI state.
     setConsentPluginId((current) => (current && installedPluginKeys.has(current) ? current : null))
     setRemovePluginId((current) => (current && installedPluginKeys.has(current) ? current : null))
-    setSkillPluginId((current) => (current && installedPluginKeys.has(current) ? current : null))
     setBusyPluginKeys(
       (current) => new Set([...current].filter((pluginKey) => installedPluginKeys.has(pluginKey)))
     )
@@ -117,7 +114,6 @@ export function PluginsSettingsSection({
       setInstallOpen(false)
       setConsentPluginId(null)
       setRemovePluginId(null)
-      setSkillPluginId(null)
       setBusyPluginKeys(new Set())
       setFeatureBusy(false)
       setDevPathsBusy(false)
@@ -171,7 +167,6 @@ export function PluginsSettingsSection({
     plugins.find((plugin) => plugin.pluginKey === consentPluginId) ?? null
   const consentPlugin = selectedConsentPlugin?.consentFingerprint ? selectedConsentPlugin : null
   const removePlugin = plugins.find((plugin) => plugin.pluginKey === removePluginId) ?? null
-  const skillPlugin = plugins.find((plugin) => plugin.pluginKey === skillPluginId) ?? null
   const systemPrefersDark = getSystemPrefersDark()
 
   const applyTerminalTheme = async (theme: PluginTerminalThemeRegistration): Promise<void> => {
@@ -379,7 +374,6 @@ export function PluginsSettingsSection({
         onReview={setConsentPluginId}
         onToggleEnabled={(entry) => void toggleEnabled(entry)}
         onToggleLogs={pluginLogs.toggleLogs}
-        onConfigureSkills={setSkillPluginId}
         onMarketplaceInstalled={marketplaceLifecycle.reloadAfterMutation}
         onRollbackRequest={marketplaceLifecycle.requestRollback}
         onRemoveRequest={setRemovePluginId}
@@ -408,7 +402,6 @@ export function PluginsSettingsSection({
         onCancel={marketplaceLifecycle.cancelRollback}
         onConfirm={(pluginKey) => void marketplaceLifecycle.confirmRollback(pluginKey)}
       />
-      <PluginSkillMappingDialog plugin={skillPlugin} onClose={() => setSkillPluginId(null)} />
     </SettingsSection>
   )
 }

@@ -17,10 +17,6 @@ import type {
   PluginPanelEntry
 } from '../shared/plugins/plugin-panel-bridge'
 import type { PluginConsentRequest } from '../shared/plugins/plugin-consent-request'
-import type {
-  PluginConsentPreviewRequest,
-  PluginConsentPreviewResult
-} from '../shared/plugins/plugin-consent-preview'
 import type { PluginChangeEvent } from '../shared/plugins/plugin-change-event'
 import type {
   BaseRefSearchResult,
@@ -564,20 +560,11 @@ const api = {
 
   plugins: {
     list: (): Promise<PluginHostListEntry[]> => ipcRenderer.invoke('plugins:list'),
-    previewConsent: (
-      args: PluginConsentPreviewRequest,
-      requestId: string
-    ): Promise<PluginConsentPreviewResult> =>
-      ipcRenderer.invoke('plugins:previewConsent', { request: args, requestId }),
-    cancelConsentPreview: (requestId: string): void =>
-      ipcRenderer.send('plugins:cancelConsentPreview', { requestId }),
     listThemes: () => ipcRenderer.invoke('plugins:listThemes'),
     listLanguagePacks: () => ipcRenderer.invoke('plugins:listLanguagePacks'),
     listIconThemes: () => ipcRenderer.invoke('plugins:listIconThemes'),
     loadIconTheme: (id) => ipcRenderer.invoke('plugins:loadIconTheme', id),
     listTerminalThemes: () => ipcRenderer.invoke('plugins:listTerminalThemes'),
-    listSkillStore: () => ipcRenderer.invoke('plugins:listSkillStore'),
-    setSkillMapping: (mapping) => ipcRenderer.invoke('plugins:setSkillMapping', mapping),
     consent: (args: PluginConsentRequest): Promise<PluginHostListEntry[]> =>
       ipcRenderer.invoke('plugins:consent', args),
     setEnabled: (args: { pluginKey: string; enabled: boolean }): Promise<PluginHostListEntry[]> =>

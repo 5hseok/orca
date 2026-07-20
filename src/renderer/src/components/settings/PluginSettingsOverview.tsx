@@ -1,7 +1,8 @@
-import { Loader2 } from 'lucide-react'
+import { Blocks, Loader2, SearchX } from 'lucide-react'
 import type { PluginHostListEntry } from '../../../../preload/api-types'
 import type { PluginTerminalThemeRegistration } from '../../../../shared/plugins/plugin-terminal-theme-artifact'
 import { translate } from '@/i18n/i18n'
+import { PluginCatalogEmptyState } from '../plugin-catalog/PluginCatalogEmptyState'
 import { PluginDevelopmentSection } from './PluginDevelopmentSection'
 import { PluginMarketplaceBrowser } from './PluginMarketplaceBrowser'
 import { PluginSettingsRow, type PluginLogsState } from './PluginSettingsRow'
@@ -26,7 +27,6 @@ type PluginSettingsOverviewProps = {
   onReview: (pluginKey: string) => void
   onToggleEnabled: (plugin: PluginHostListEntry) => void
   onToggleLogs: (pluginKey: string) => void
-  onConfigureSkills: (pluginKey: string) => void
   onMarketplaceInstalled: (pluginKey: string) => Promise<void>
   onRollbackRequest: (pluginKey: string) => void
   onRemoveRequest: (pluginKey: string) => void
@@ -63,7 +63,6 @@ export function PluginSettingsOverview({
   onReview,
   onToggleEnabled,
   onToggleLogs,
-  onConfigureSkills,
   onMarketplaceInstalled,
   onRollbackRequest,
   onRemoveRequest,
@@ -124,18 +123,30 @@ export function PluginSettingsOverview({
                 )
               }
               if (filteredPlugins.length === 0) {
-                return (
-                  <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
-                    {search
-                      ? translate(
-                          'auto.components.settings.PluginsSettingsSection.noInstalledResults',
-                          'No installed plugins match this search.'
-                        )
-                      : translate(
-                          'auto.components.settings.PluginsSettingsSection.empty',
-                          'No plugins installed yet.'
-                        )}
-                  </div>
+                return search ? (
+                  <PluginCatalogEmptyState
+                    icon={SearchX}
+                    title={translate(
+                      'auto.components.settings.PluginsSettingsSection.noInstalledResultsTitle',
+                      'No matching plugins'
+                    )}
+                    description={translate(
+                      'auto.components.settings.PluginsSettingsSection.noInstalledResults',
+                      'No installed plugins match this search.'
+                    )}
+                  />
+                ) : (
+                  <PluginCatalogEmptyState
+                    icon={Blocks}
+                    title={translate(
+                      'auto.components.settings.PluginsSettingsSection.emptyTitle',
+                      'No plugins installed yet'
+                    )}
+                    description={translate(
+                      'auto.components.settings.PluginsSettingsSection.empty',
+                      'Browse the All tab to install plugins from a marketplace.'
+                    )}
+                  />
                 )
               }
               return (
@@ -160,7 +171,6 @@ export function PluginSettingsOverview({
                         onReview={onReview}
                         onToggleEnabled={onToggleEnabled}
                         onToggleLogs={onToggleLogs}
-                        onConfigureSkills={onConfigureSkills}
                         onRollbackRequest={onRollbackRequest}
                         onRemoveRequest={onRemoveRequest}
                         onApplyTerminalTheme={onApplyTerminalTheme}

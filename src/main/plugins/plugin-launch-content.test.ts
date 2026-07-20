@@ -28,7 +28,7 @@ describe('Phase 1 launch plugin content', () => {
     const marketplace = pluginMarketplaceSchema.parse(
       await readJson(join(launchRoot, 'orca-marketplace.json'))
     )
-    expect(marketplace.plugins.length).toBeGreaterThanOrEqual(8)
+    expect(marketplace.plugins.length).toBeGreaterThanOrEqual(7)
     expect(
       marketplace.plugins.filter(
         (plugin) =>
@@ -64,9 +64,6 @@ describe('Phase 1 launch plugin content', () => {
       if (contributes.languagePacks.length > 0) {
         contributionKinds.add('language')
       }
-      if (contributes.skills.length > 0) {
-        contributionKinds.add('skill')
-      }
       if (contributes.iconThemes.length > 0) {
         contributionKinds.add('icon')
       }
@@ -81,15 +78,7 @@ describe('Phase 1 launch plugin content', () => {
       }
     }
     expect(contributionKinds).toEqual(
-      new Set([
-        'theme',
-        'language',
-        'skill',
-        'icon',
-        'terminal-theme',
-        'vm-recipe',
-        'command-keybinding'
-      ])
+      new Set(['theme', 'language', 'icon', 'terminal-theme', 'vm-recipe', 'command-keybinding'])
     )
   })
 
@@ -104,7 +93,7 @@ describe('Phase 1 launch plugin content', () => {
     })
 
     expect(result.errors).toEqual([])
-    expect(result.installed.length).toBeGreaterThanOrEqual(2)
+    expect(result.installed.length).toBeGreaterThanOrEqual(1)
     expect(result.installed.every(isOfficialPluginIdentity)).toBe(true)
   })
 
@@ -126,9 +115,6 @@ describe('Phase 1 launch plugin content', () => {
     })
 
     expect(result.errors).toEqual([])
-    expect(result.installed).toEqual([
-      'stablyai.orca-midnight-theme',
-      'stablyai.orca-workflow-skills'
-    ])
+    expect(result.installed).toEqual(['stablyai.orca-midnight-theme'])
   })
 })

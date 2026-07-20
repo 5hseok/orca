@@ -28,23 +28,11 @@ export function PluginCatalogLayout({
   children
 }: PluginCatalogLayoutProps): React.JSX.Element {
   return (
-    <section aria-labelledby="plugin-catalog-heading" className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 id="plugin-catalog-heading" className="text-base font-semibold">
-            {translate('auto.components.pluginCatalog.PluginCatalogLayout.title', 'Plugins')}
-          </h3>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {translate(
-              'auto.components.pluginCatalog.PluginCatalogLayout.description',
-              'Browse available plugins or manage the ones installed in Orca.'
-            )}
-          </p>
-        </div>
-        {toolbar ? <div className="flex items-center gap-1">{toolbar}</div> : null}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
+    <section
+      aria-label={translate('auto.components.pluginCatalog.PluginCatalogLayout.title', 'Plugins')}
+      className="space-y-4"
+    >
+      <div className="flex flex-wrap items-center gap-2">
         <Tabs
           value={filter}
           onValueChange={(value) => onFilterChange(value as PluginCatalogFilter)}
@@ -57,14 +45,18 @@ export function PluginCatalogLayout({
           >
             <TabsTrigger value="all">
               {translate('auto.components.pluginCatalog.PluginCatalogLayout.all', 'All')}
-              <span className="text-xs font-normal text-muted-foreground">{allCount}</span>
+              <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                {allCount}
+              </span>
             </TabsTrigger>
             <TabsTrigger value="installed">
               {translate(
                 'auto.components.pluginCatalog.PluginCatalogLayout.installed',
                 'Installed'
               )}
-              <span className="text-xs font-normal text-muted-foreground">{installedCount}</span>
+              <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                {installedCount}
+              </span>
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -84,6 +76,7 @@ export function PluginCatalogLayout({
             onChange={(event) => onSearchChange(event.target.value)}
           />
         </div>
+        {toolbar ? <div className="flex items-center gap-1">{toolbar}</div> : null}
       </div>
 
       {children}

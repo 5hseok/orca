@@ -3,17 +3,14 @@ import { canonicalizeCapabilitySet } from './plugin-capabilities'
 import type { PluginManifest } from './plugin-manifest'
 
 type PluginConsentSubject = Pick<PluginManifest, 'capabilities' | 'main'> & {
-  contributes?: Partial<
-    Pick<PluginManifest['contributes'], 'skills' | 'keybindings' | 'vmRecipes' | 'agents'>
-  >
+  contributes?: Partial<Pick<PluginManifest['contributes'], 'keybindings' | 'vmRecipes' | 'agents'>>
 }
 
 export function hasInstructionalPluginContributions(manifest: PluginConsentSubject): boolean {
   const contributions = manifest.contributes
   return Boolean(
     contributions &&
-    ((contributions.skills?.length ?? 0) > 0 ||
-      (contributions.keybindings?.length ?? 0) > 0 ||
+    ((contributions.keybindings?.length ?? 0) > 0 ||
       (contributions.vmRecipes?.length ?? 0) > 0 ||
       (contributions.agents?.length ?? 0) > 0)
   )

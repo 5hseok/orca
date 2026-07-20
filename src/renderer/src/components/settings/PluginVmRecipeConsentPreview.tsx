@@ -1,4 +1,3 @@
-import { AlertTriangle } from 'lucide-react'
 import type { PluginHostListEntry } from '../../../../preload/api-types'
 import { translate } from '@/i18n/i18n'
 
@@ -27,15 +26,6 @@ export function PluginVmRecipeConsentPreview({
   }
   return (
     <section className="space-y-3" aria-labelledby="plugin-vm-recipe-consent-heading">
-      <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3.5 py-3 text-sm leading-6">
-        <AlertTriangle className="mt-1 size-4 shrink-0" />
-        <span>
-          {translate(
-            'auto.components.settings.PluginVmRecipeConsentPreview.warning',
-            'This plugin installs VM recipes. Orca runs the commands below on your local desktop host when you use the matching lifecycle action.'
-          )}
-        </span>
-      </div>
       <h3
         id="plugin-vm-recipe-consent-heading"
         className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground"

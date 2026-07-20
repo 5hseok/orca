@@ -9076,7 +9076,11 @@
           "instructionalTrust": "Contenido instructivo — se ejecuta más tarde con la autoridad del usuario o del agente",
           "declarativeTrust": "Declarative content — no plugin code",
           "reviewTitle": "Review plugin",
-          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API."
+          "declarativeWarning": "This plugin contributes validated content only. It does not run a background worker or receive access to Orca's API.",
+          "trustShortWorker": "Worker",
+          "trustShortInstructional": "Instructional",
+          "trustShortPanel": "Panel",
+          "trustShortDeclarative": "Declarative"
         },
         "PluginDevelopmentSection": {
           "pathRequired": "Introduce la ruta de una carpeta de plugin.",
@@ -9139,7 +9143,6 @@
           "invalidPluginError": "El manifiesto o los archivos instalados del plugin no son válidos. Corrige el plugin y actualiza.",
           "runtimeError": "El plugin se detuvo tras un error de activación o del proceso.",
           "disableLabel": "Desactivar {{value0}}",
-          "configureSkills": "Configurar habilidades",
           "blocked": "Bloqueado",
           "official": "Oficial",
           "bundled": "Incluido",
@@ -9169,7 +9172,9 @@
           "settingsUpdateFailed": "No se pudo guardar la configuración de plugins.",
           "rollbackFailed": "No se pudo revertir este plugin. Es posible que no haya una versión inmutable anterior disponible.",
           "noInstalledResults": "No installed plugins match this search.",
-          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme."
+          "themeApplyFailed": "The plugin was enabled, but Orca could not apply its terminal theme.",
+          "noInstalledResultsTitle": "No matching plugins",
+          "emptyTitle": "No plugins installed yet"
         },
         "plugins": {
           "search": {
@@ -9205,19 +9210,6 @@
             "builtIn": "Usar iconos integrados"
           }
         },
-        "PluginSkillMappingDialog": {
-          "agentSkillsProvider": "Habilidades compartidas de agentes",
-          "loadFailed": "No se pudo cargar la configuración de instalación de habilidades.",
-          "saveFailed": "No se pudo actualizar la configuración de instalación de habilidades.",
-          "title": "Elige dónde instalar las habilidades",
-          "description": "Las habilidades de usuario están disponibles en todos los proyectos. Las habilidades de repositorio se copian solo en un proyecto local registrado; la sincronización por SSH llegará en una fase posterior.",
-          "loading": "Cargando la configuración de habilidades…",
-          "noSkills": "Activa este plugin antes de configurar sus habilidades.",
-          "userScope": "Perfil de usuario",
-          "disabled": "No instalar",
-          "cancel": "Cancelar",
-          "save": "Guardar"
-        },
         "PluginVmRecipeConsentPreview": {
           "create": "Crear",
           "suspend": "Suspender",
@@ -9251,7 +9243,12 @@
           "addSource": "Añadir marketplace",
           "noResults": "Ningún plugin del marketplace coincide con esta búsqueda.",
           "empty": "Los marketplaces configurados no incluyen ningún plugin.",
-          "noInstalled": "No plugins installed."
+          "noInstalled": "No plugins installed.",
+          "noInstalledTitle": "No plugins installed",
+          "noSourcesTitle": "No marketplaces configured",
+          "noResultsTitle": "No matching plugins",
+          "clearSearch": "Clear search",
+          "emptyTitle": "Nothing listed yet"
         },
         "PluginMarketplaceListingRow": {
           "official": "Oficial",
@@ -9271,7 +9268,6 @@
           "iconThemes": "{{value0}} temas de iconos",
           "terminalThemes": "{{value0}} temas de terminal",
           "languagePacks": "{{value0}} paquetes de idioma",
-          "skills": "{{value0}} paquetes de habilidades",
           "commands": "{{value0}} comandos",
           "keybindings": "{{value0}} atajos de teclado",
           "vmRecipes": "{{value0}} recetas de VM",
@@ -9292,7 +9288,20 @@
           "current": "Este contenido exacto del plugin ya está instalado.",
           "cancel": "Cancelar",
           "update": "Actualizar plugin",
-          "install": "Instalar plugin"
+          "install": "Instalar plugin",
+          "provenance": "Reviewed source",
+          "close": "Close",
+          "upToDate": "Up to date",
+          "themesOne": "1 app theme",
+          "iconThemesOne": "1 icon theme",
+          "terminalThemesOne": "1 terminal theme",
+          "languagePacksOne": "1 language pack",
+          "commandsOne": "1 command",
+          "keybindingsOne": "1 keyboard shortcut",
+          "vmRecipesOne": "1 VM recipe",
+          "panelsOne": "1 panel",
+          "eventsOne": "1 event subscription",
+          "versionLine": "v{{value0}} · {{value1}}"
         },
         "PluginMarketplaceSourceDialog": {
           "addFailed": "No se pudo añadir este marketplace. Comprueba la URL de Git, la referencia y tus credenciales de Git.",
@@ -9323,11 +9332,16 @@
           "cancel": "Cancelar",
           "confirm": "Revertir plugin"
         },
-        "PluginSkillConsentPreview": {
-          "heading": "Instrucciones de habilidades del agente",
-          "instructionsLabel": "Instrucciones de la habilidad {{value0}}",
-          "loadError": "Orca no pudo leer todas las instrucciones de las habilidades. Mantén este plugin desactivado y revísalo de nuevo después de corregir el paquete.",
-          "loading": "Cargando instrucciones de habilidades…"
+        "PluginConsentProvenance": {
+          "official": "Official",
+          "bundled": "Bundled with Orca",
+          "local": "Local folder",
+          "community": "Community",
+          "source": "Source",
+          "sourceLabel": "Source",
+          "commit": "Pinned commit",
+          "localCommit": "Local folder — no commit",
+          "indexCommit": "Index commit"
         }
       },
       "right": {

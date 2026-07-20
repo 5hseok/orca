@@ -221,28 +221,4 @@ describe('buildPluginList consent identity', () => {
       }
     ])
   })
-
-  it('keeps skill instructions out of the bounded list projection', async () => {
-    const rootDir = join(tmpdir(), 'private', 'skill-pack')
-    const skillManifest = pluginManifestSchema.parse({
-      ...manifest,
-      contributes: { skills: [{ path: 'private-skills' }] }
-    })
-    const plugin: ValidDiscoveredPlugin = {
-      pluginKey: 'orca-samples.demo',
-      rootDir,
-      manifest: skillManifest,
-      consentFingerprint: 'sha256-current',
-      consentContentHash: 'a'.repeat(64),
-      contentHash: null,
-      isDev: true
-    }
-
-    const projected = (await buildPluginList(serviceWith(plugin), emptyPluginLockfile()))[0]!
-
-    expect(projected.hasSkills).toBe(true)
-    expect(projected).not.toHaveProperty('skills')
-    expect(projected).not.toHaveProperty('skillPreviewError')
-    expect(JSON.stringify(projected)).not.toContain(rootDir)
-  })
 })

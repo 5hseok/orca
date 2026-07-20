@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, RefreshCw, Settings2 } from 'lucide-react'
+import { Blocks, Loader2, RefreshCw, SearchX, Settings2, Store } from 'lucide-react'
 import type {
   PluginHostListEntry,
   PluginMarketplaceHostInstallPreview,
@@ -7,6 +7,7 @@ import type {
   PluginMarketplaceHostSourceState
 } from '../../../../preload/api-types'
 import { translate } from '@/i18n/i18n'
+import { PluginCatalogEmptyState } from '../plugin-catalog/PluginCatalogEmptyState'
 import {
   PluginCatalogLayout,
   type PluginCatalogFilter
@@ -253,12 +254,17 @@ export function PluginMarketplaceBrowser({
           renderInstalledContent ? (
             renderInstalledContent(search)
           ) : (
-            <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
-              {translate(
-                'auto.components.settings.PluginMarketplaceBrowser.noInstalled',
-                'No plugins installed.'
+            <PluginCatalogEmptyState
+              icon={Blocks}
+              title={translate(
+                'auto.components.settings.PluginMarketplaceBrowser.noInstalledTitle',
+                'No plugins installed'
               )}
-            </div>
+              description={translate(
+                'auto.components.settings.PluginMarketplaceBrowser.noInstalled',
+                'Plugins you install appear here.'
+              )}
+            />
           )
         ) : loading ? (
           <div className="flex items-center gap-2 px-4 py-5 text-[13px] text-muted-foreground">
@@ -282,37 +288,59 @@ export function PluginMarketplaceBrowser({
               </div>
             ) : null}
             {sources.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border px-5 py-6 text-center text-[13px] leading-6 text-muted-foreground">
-                <p>
-                  {translate(
-                    'auto.components.settings.PluginMarketplaceBrowser.noSources',
-                    'Add an official, community, or private Git marketplace to browse plugins.'
-                  )}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  onClick={() => setSourcesOpen(true)}
-                >
-                  {translate(
-                    'auto.components.settings.PluginMarketplaceBrowser.addSource',
-                    'Add marketplace'
-                  )}
-                </Button>
-              </div>
-            ) : visibleListings.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border px-5 py-6 text-center text-[13px] leading-6 text-muted-foreground">
-                {search
-                  ? translate(
-                      'auto.components.settings.PluginMarketplaceBrowser.noResults',
-                      'No marketplace plugins match this search.'
-                    )
-                  : translate(
-                      'auto.components.settings.PluginMarketplaceBrowser.empty',
-                      'The configured marketplaces do not list any plugins.'
+              <PluginCatalogEmptyState
+                icon={Store}
+                title={translate(
+                  'auto.components.settings.PluginMarketplaceBrowser.noSourcesTitle',
+                  'No marketplaces configured'
+                )}
+                description={translate(
+                  'auto.components.settings.PluginMarketplaceBrowser.noSources',
+                  'Add an official, community, or private Git marketplace to browse plugins.'
+                )}
+                action={
+                  <Button variant="outline" size="sm" onClick={() => setSourcesOpen(true)}>
+                    {translate(
+                      'auto.components.settings.PluginMarketplaceBrowser.addSource',
+                      'Add marketplace'
                     )}
-              </div>
+                  </Button>
+                }
+              />
+            ) : visibleListings.length === 0 ? (
+              search ? (
+                <PluginCatalogEmptyState
+                  icon={SearchX}
+                  title={translate(
+                    'auto.components.settings.PluginMarketplaceBrowser.noResultsTitle',
+                    'No matching plugins'
+                  )}
+                  description={translate(
+                    'auto.components.settings.PluginMarketplaceBrowser.noResults',
+                    'No marketplace plugins match this search.'
+                  )}
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => setSearch('')}>
+                      {translate(
+                        'auto.components.settings.PluginMarketplaceBrowser.clearSearch',
+                        'Clear search'
+                      )}
+                    </Button>
+                  }
+                />
+              ) : (
+                <PluginCatalogEmptyState
+                  icon={Blocks}
+                  title={translate(
+                    'auto.components.settings.PluginMarketplaceBrowser.emptyTitle',
+                    'Nothing listed yet'
+                  )}
+                  description={translate(
+                    'auto.components.settings.PluginMarketplaceBrowser.empty',
+                    'The configured marketplaces do not list any plugins.'
+                  )}
+                />
+              )
             ) : (
               <div className="grid gap-3 lg:grid-cols-2">
                 {visibleListings.map((listing) => (

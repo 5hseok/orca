@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import type { PluginHostListEntry } from '../../../../preload/api-types'
 import { translate } from '@/i18n/i18n'
@@ -6,7 +6,7 @@ import { pluginConsentErrorMessage } from './plugin-error-presentation'
 import { Button } from '../ui/button'
 import { PluginVmRecipeConsentPreview } from './PluginVmRecipeConsentPreview'
 import { PluginKeybindingConsentPreview } from './PluginKeybindingConsentPreview'
-import { PluginSkillConsentPreview } from './PluginSkillConsentPreview'
+import { PluginConsentProvenance } from './PluginConsentProvenance'
 import { pluginCapabilityDescription } from './plugin-capability-presentation'
 import {
   Dialog,
@@ -25,11 +25,6 @@ type PluginConsentDialogProps = {
     decision: 'approve' | 'keep-disabled'
   ) => Promise<void>
 }
-
-type SkillPreviewState =
-  | { status: 'loading'; skills: [] }
-  | { status: 'ready'; skills: { name: string; instructions: string }[] }
-  | { status: 'error'; skills: [] }
 
 function trustTier(plugin: PluginHostListEntry): string {
   if (plugin.hasWorker) {
@@ -58,9 +53,29 @@ function trustTier(plugin: PluginHostListEntry): string {
 
 function hasInstructionalContent(plugin: PluginHostListEntry): boolean {
   return (
-    plugin.hasSkills ||
     (plugin.vmRecipes?.length ?? 0) > 0 ||
     plugin.commands.some((command) => command.keybindings.length > 0)
+  )
+}
+
+/** Short one-word trust label for the header chip; the single warning below
+ *  carries the full explanation. */
+function trustTierShort(plugin: PluginHostListEntry): string {
+  if (plugin.hasWorker) {
+    return translate('auto.components.settings.PluginConsentDialog.trustShortWorker', 'Worker')
+  }
+  if (hasInstructionalContent(plugin)) {
+    return translate(
+      'auto.components.settings.PluginConsentDialog.trustShortInstructional',
+      'Instructional'
+    )
+  }
+  if (plugin.panels.length > 0 || plugin.capabilities.length > 0) {
+    return translate('auto.components.settings.PluginConsentDialog.trustShortPanel', 'Panel')
+  }
+  return translate(
+    'auto.components.settings.PluginConsentDialog.trustShortDeclarative',
+    'Declarative'
   )
 }
 
@@ -92,50 +107,8 @@ export function PluginConsentDialog({
   const keepDisabledRef = useRef<HTMLButtonElement>(null)
   const [busyDecision, setBusyDecision] = useState<'approve' | 'keep-disabled' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [skillPreview, setSkillPreview] = useState<SkillPreviewState>(() =>
-    plugin?.hasSkills ? { status: 'loading', skills: [] } : { status: 'ready', skills: [] }
-  )
-  const skillPreviewBlocked = Boolean(plugin?.hasSkills && skillPreview.status !== 'ready')
-
-  useEffect(() => {
-    if (!plugin?.hasSkills || !plugin.consentFingerprint) {
-      return
-    }
-    const requestId = crypto.randomUUID()
-    let current = true
-    void window.api.plugins
-      .previewConsent(
-        {
-          pluginKey: plugin.pluginKey,
-          reviewedFingerprint: plugin.consentFingerprint
-        },
-        requestId
-      )
-      .then((result) => {
-        if (!current) {
-          return
-        }
-        setSkillPreview(
-          result.ok ? { status: 'ready', skills: result.skills } : { status: 'error', skills: [] }
-        )
-      })
-      .catch(() => {
-        if (current) {
-          setSkillPreview({ status: 'error', skills: [] })
-        }
-      })
-    return () => {
-      current = false
-      window.api.plugins.cancelConsentPreview(requestId)
-    }
-  }, [plugin])
-
   const decide = async (decision: 'approve' | 'keep-disabled'): Promise<void> => {
-    if (
-      !plugin?.consentFingerprint ||
-      busyDecision ||
-      (decision === 'approve' && skillPreviewBlocked)
-    ) {
+    if (!plugin?.consentFingerprint || busyDecision) {
       return
     }
     setBusyDecision(decision)
@@ -188,42 +161,19 @@ export function PluginConsentDialog({
                 )}
               </p>
             ) : null}
-            <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-              <dt className="text-xs text-muted-foreground">
-                {translate('auto.components.settings.PluginConsentDialog.source', 'Source')}
-              </dt>
-              <dd
-                className="break-all font-mono text-xs leading-5"
-                title={plugin.source?.reference}
+            <div className="flex flex-wrap items-center gap-2">
+              <PluginConsentProvenance
+                official={plugin.official}
+                publisher={plugin.publisher}
+                source={plugin.source}
+              />
+              <span
+                className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                title={trustTier(plugin)}
               >
-                {plugin.source?.reference ??
-                  translate(
-                    'auto.components.settings.PluginConsentDialog.unknownSource',
-                    'Not available'
-                  )}
-              </dd>
-              <dt className="text-xs text-muted-foreground">
-                {translate('auto.components.settings.PluginConsentDialog.commit', 'Commit')}
-              </dt>
-              <dd
-                className={
-                  plugin.source?.resolvedCommit
-                    ? 'break-all font-mono text-xs leading-5'
-                    : 'text-sm'
-                }
-                title={plugin.source?.resolvedCommit ?? undefined}
-              >
-                {plugin.source?.resolvedCommit ??
-                  translate(
-                    'auto.components.settings.PluginConsentDialog.localCommit',
-                    'Not available (local folder)'
-                  )}
-              </dd>
-              <dt className="text-xs text-muted-foreground">
-                {translate('auto.components.settings.PluginConsentDialog.trust', 'Trust tier')}
-              </dt>
-              <dd>{trustTier(plugin)}</dd>
-            </dl>
+                {trustTierShort(plugin)}
+              </span>
+            </div>
             {plugin.capabilities.length > 0 ? (
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
@@ -271,22 +221,6 @@ export function PluginConsentDialog({
                         )}
               </span>
             </div>
-            {plugin.hasSkills ? (
-              <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3.5 py-3 text-sm leading-6">
-                <AlertTriangle className="mt-1 size-4 shrink-0" />
-                <span>
-                  {translate(
-                    'auto.components.settings.PluginConsentDialog.skillWarning',
-                    'This plugin installs instructional skills. Agents read those instructions and may act on them with the full authority you give the agent.'
-                  )}
-                </span>
-              </div>
-            ) : null}
-            <PluginSkillConsentPreview
-              skills={skillPreview.skills}
-              loading={skillPreview.status === 'loading'}
-              error={skillPreview.status === 'error'}
-            />
             <PluginKeybindingConsentPreview commands={plugin.commands} />
             <PluginVmRecipeConsentPreview recipes={plugin.vmRecipes ?? []} />
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
@@ -306,7 +240,7 @@ export function PluginConsentDialog({
               </Button>
               <Button
                 size="sm"
-                disabled={Boolean(busyDecision) || skillPreviewBlocked}
+                disabled={Boolean(busyDecision)}
                 onClick={() => void decide('approve')}
               >
                 {busyDecision === 'approve' ? <Loader2 className="animate-spin" /> : null}
