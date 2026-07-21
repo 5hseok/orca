@@ -75,7 +75,11 @@ export function serveOrcaApp(
   } = {}
 ): Promise<number> {
   const executable = resolveForegroundOrcaExecutable()
-  const childArgs = [...getExecutableAppArgs(), '--serve']
+  const childArgs = [...getExecutableAppArgs()]
+  if (process.env.ORCA_APPIMAGE_NO_SANDBOX === '1') {
+    childArgs.push('--no-sandbox')
+  }
+  childArgs.push('--serve')
   if (args.json) {
     childArgs.push('--serve-json')
   }
@@ -101,12 +105,14 @@ export function serveOrcaApp(
     childArgs.push('--serve-recipe-json', '--serve-project-root', args.projectRoot)
   }
 
+  const childEnv = stripElectronRunAsNode(process.env)
+  delete childEnv.ORCA_APPIMAGE_NO_SANDBOX
   const child = spawnProcess(executable, childArgs, {
     detached: args.recipeJson === true,
     cwd: resolveAppRoot(),
     stdio: args.recipeJson === true ? ['ignore', 'pipe', 'inherit'] : 'inherit',
     ...getExecutableSpawnOptions(executable),
-    env: stripElectronRunAsNode(process.env)
+    env: childEnv
   })
 
   if (args.recipeJson) {
