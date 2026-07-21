@@ -64,6 +64,7 @@ import { assertSafeAgentStartupCwd, resolveSafePtyDefaultCwd } from '../provider
 import { ORCA_HERMES_STARTUP_QUERY_ENV } from '../../shared/hermes-startup-query'
 import type { TuiAgent } from '../../shared/types'
 import { forceKillPosixPtyProcessGroups } from '../pty/posix-pty-process-groups'
+import { forceKillWindowsProcessTree } from '../pty/windows-pty-tree-kill'
 
 const PANE_IDENTITY_ENV_KEYS = [
   'ORCA_PANE_KEY',
@@ -1139,8 +1140,28 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     },
     forceKill: () => {
       // Why: after reap/dispose proc.pid is a recycled pid, so SIGKILL would hit an unrelated process (forceKill only signals a live child).
-      // Why: Windows node-pty kill already closed ConPTY; forcing again can double-close the native handle.
-      if (dead || (process.platform === 'win32' && nodePtyKillIssued)) {
+      if (dead) {
+        return
+      }
+      if (process.platform === 'win32') {
+        // Why: we spawn with useConptyDll: true, the node-pty backend that skips
+        // the console-process-list reap the classic backend does — so closing the
+        // ConPTY only CTRL_CLOSEs members and a wedged descendant (e.g. a hung git
+        // during source control) survives, keeps the console open, and onExit never
+        // fires. Fail-closed worktree teardown then can't prove the PTY stopped
+        // (#7991). Force-kill the tree so physical exit is observable.
+        forceKillWindowsProcessTree(proc.pid)
+        // Why: still close the ConPTY once so the shell exits even if taskkill is
+        // unavailable; skip when a prior kill already closed it to avoid a
+        // double-close of the native handle.
+        if (!nodePtyKillIssued) {
+          try {
+            proc.kill()
+            nodePtyKillIssued = true
+          } catch {
+            nodePtyKillIssued = false
+          }
+        }
         return
       }
       try {

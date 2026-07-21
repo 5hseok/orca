@@ -14,7 +14,8 @@ const {
   resolveAgentForegroundProcessMock,
   readWindowsConptyProcessIdsMock,
   captureDescendantSnapshotMock,
-  terminateDescendantSnapshotMock
+  terminateDescendantSnapshotMock,
+  forceKillWindowsProcessTreeMock
 } = vi.hoisted(() => ({
   existsSyncMock: vi.fn(),
   statSyncMock: vi.fn(),
@@ -26,7 +27,8 @@ const {
   resolveAgentForegroundProcessMock: vi.fn(),
   readWindowsConptyProcessIdsMock: vi.fn(),
   captureDescendantSnapshotMock: vi.fn(),
-  terminateDescendantSnapshotMock: vi.fn()
+  terminateDescendantSnapshotMock: vi.fn(),
+  forceKillWindowsProcessTreeMock: vi.fn()
 }))
 
 vi.mock('fs', () => ({
@@ -57,6 +59,10 @@ vi.mock('./macos-tcc-login-shell', async (importOriginal) => ({
 vi.mock('../pty-descendant-termination', () => ({
   captureDescendantSnapshot: captureDescendantSnapshotMock,
   terminateDescendantSnapshot: terminateDescendantSnapshotMock
+}))
+
+vi.mock('../pty/windows-pty-tree-kill', () => ({
+  forceKillWindowsProcessTree: forceKillWindowsProcessTreeMock
 }))
 
 // Resolve PowerShell family names to deterministic absolute paths (the fs mock
@@ -164,6 +170,7 @@ describe('LocalPtyProvider', () => {
     )
     readWindowsConptyProcessIdsMock.mockReset()
     readWindowsConptyProcessIdsMock.mockResolvedValue(null)
+    forceKillWindowsProcessTreeMock.mockReset()
 
     exitCb = undefined
     mockProc = {
@@ -1172,6 +1179,29 @@ describe('LocalPtyProvider', () => {
 
       expect(killSpy).toHaveBeenCalledTimes(1)
       expect(destroySpy).not.toHaveBeenCalled()
+    })
+
+    it('walks the Windows process tree before closing the ConPTY on shutdown', async () => {
+      // Why: node-pty's ConPTY kill only signals the shell; a wedged descendant
+      // (e.g. a hung git during source control) would otherwise keep the console
+      // open and block worktree teardown (#7991). The tree walk must run first.
+      Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+      const killSpy = vi.fn()
+      spawnMock.mockReturnValue({ ...mockProc, pid: 4242, kill: killSpy })
+
+      const { id } = await provider.spawn({ cols: 80, rows: 24 })
+      const shutdown = provider.shutdown(id, { immediate: true })
+      exitCb?.({ exitCode: -1 })
+      await shutdown
+
+      expect(forceKillWindowsProcessTreeMock).toHaveBeenCalledWith(4242)
+      expect(killSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not walk a process tree on POSIX shutdown', async () => {
+      const { id } = await provider.spawn({ cols: 80, rows: 24 })
+      await provider.shutdown(id, { immediate: true })
+      expect(forceKillWindowsProcessTreeMock).not.toHaveBeenCalled()
     })
 
     it('keeps shutdown and ownership pending until node-pty reports physical exit', async () => {

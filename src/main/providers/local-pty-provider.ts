@@ -60,6 +60,7 @@ import {
 import { readWindowsConptyProcessIds } from './windows-conpty-process-membership'
 import { canConfirmAgentFromConsolePresence } from './windows-console-foreground'
 import { forceKillPosixPtyProcessGroups } from '../pty/posix-pty-process-groups'
+import { forceKillWindowsProcessTree } from '../pty/windows-pty-tree-kill'
 import { shouldUseShellReadyStartupDelivery } from '../../shared/codex-startup-delivery'
 import { assertSafeAgentStartupCwd, resolveSafePtyDefaultCwd } from './pty-default-cwd'
 import { ORCA_HERMES_STARTUP_QUERY_ENV } from '../../shared/hermes-startup-query'
@@ -261,6 +262,13 @@ function waitForPtyPhysicalExit(id: string, physicalExit?: PhysicalExitTracker):
 
 function killLocalPtyProcess(proc: pty.IPty, immediate: boolean): void {
   if (process.platform === 'win32') {
+    // Why: this provider uses node-pty's classic ConPTY backend, whose kill() does
+    // reap the console-process-list — but only best-effort and async, falling back
+    // to shell-pid-only if its probe times out, so a wedged descendant (e.g. a hung
+    // git during source control) can still survive and keep the console open.
+    // Fail-closed worktree teardown requires proven physical exit (#7991), so force
+    // the tree down deterministically first, then close the ConPTY as before.
+    forceKillWindowsProcessTree(proc.pid)
     proc.kill()
     return
   }

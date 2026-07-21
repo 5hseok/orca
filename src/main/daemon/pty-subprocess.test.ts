@@ -10,12 +10,14 @@ const {
   isPwshAvailableMock,
   validateWorkingDirectoryMock,
   resolveUnixShellPathMock,
-  resolveAgentForegroundProcessMock
+  resolveAgentForegroundProcessMock,
+  forceKillWindowsProcessTreeMock
 } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
   isPwshAvailableMock: vi.fn(),
   resolveUnixShellPathMock: vi.fn((shellPath: string) => shellPath),
   resolveAgentForegroundProcessMock: vi.fn(),
+  forceKillWindowsProcessTreeMock: vi.fn(),
   validateWorkingDirectoryMock: vi.fn((cwd: string) => {
     if (cwd.includes('definitely-missing')) {
       throw new Error(
@@ -27,6 +29,10 @@ const {
 
 vi.mock('node-pty', () => ({
   spawn: spawnMock
+}))
+
+vi.mock('../pty/windows-pty-tree-kill', () => ({
+  forceKillWindowsProcessTree: forceKillWindowsProcessTreeMock
 }))
 
 vi.mock('../pwsh', () => ({
@@ -124,6 +130,7 @@ describe('createPtySubprocess', () => {
   beforeEach(() => {
     spawnMock.mockReset()
     isPwshAvailableMock.mockReset()
+    forceKillWindowsProcessTreeMock.mockReset()
     resolveAgentForegroundProcessMock.mockReset()
     resolveAgentForegroundProcessMock.mockImplementation(
       async (_pid: number, fallbackProcess: string | null) => fallbackProcess
@@ -1418,6 +1425,10 @@ describe('createPtySubprocess', () => {
       })
       .mockImplementationOnce(() => true)
 
+    // Why: pin the POSIX process-group escalation path so the assertion is
+    // deterministic on a Windows test host, where forceKill walks the tree instead.
+    const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'linux' })
     try {
       const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
       expect(() => handle.forceKill()).toThrow('SIGKILL rejected')
@@ -1425,6 +1436,9 @@ describe('createPtySubprocess', () => {
       expect(killSpy).toHaveBeenCalledTimes(2)
       expect(proc.kill).toHaveBeenCalledOnce()
     } finally {
+      if (origPlatform) {
+        Object.defineProperty(process, 'platform', origPlatform)
+      }
       killSpy.mockRestore()
     }
   })
@@ -1434,11 +1448,18 @@ describe('createPtySubprocess', () => {
     spawnMock.mockReturnValue(proc)
     const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true)
 
-    const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
-    handle.forceKill()
-
-    expect(killSpy).toHaveBeenCalledWith(77, 'SIGKILL')
-    killSpy.mockRestore()
+    const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'linux' })
+    try {
+      const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+      handle.forceKill()
+      expect(killSpy).toHaveBeenCalledWith(77, 'SIGKILL')
+    } finally {
+      if (origPlatform) {
+        Object.defineProperty(process, 'platform', origPlatform)
+      }
+      killSpy.mockRestore()
+    }
   })
 
   it('routes onData events', () => {
@@ -2893,7 +2914,7 @@ describe('createPtySubprocess', () => {
       }
     })
 
-    it('does not issue a second Windows ConPTY kill when force follows graceful kill', () => {
+    it('walks the process tree but issues no second ConPTY kill when force follows graceful kill', () => {
       const proc = mockPtyProcess(123456) as ReturnType<typeof mockPtyProcess> & {
         destroy: ReturnType<typeof vi.fn>
       }
@@ -2910,6 +2931,10 @@ describe('createPtySubprocess', () => {
         handle.forceKill()
         handle.dispose()
 
+        // Why: the tree walk must run even after a graceful ConPTY kill (#7991
+        // regression: forceKill was previously a no-op here, so a wedged git child
+        // survived), while the native ConPTY handle is closed only once.
+        expect(forceKillWindowsProcessTreeMock).toHaveBeenCalledWith(123456)
         expect(proc.kill).toHaveBeenCalledOnce()
         expect(killSpy).not.toHaveBeenCalled()
         expect(proc.destroy).not.toHaveBeenCalled()
@@ -2919,26 +2944,42 @@ describe('createPtySubprocess', () => {
       }
     })
 
-    it('dispose() on Windows skips destroy after forceKill falls back to node-pty kill()', () => {
+    it('forceKill on Windows walks the tree and closes the ConPTY once (no prior kill)', () => {
       const proc = mockPtyProcess(123456) as ReturnType<typeof mockPtyProcess> & {
         destroy: ReturnType<typeof vi.fn>
       }
       proc.destroy = vi.fn(() => proc.kill())
       spawnMock.mockReturnValue(proc)
-      const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => {
-        throw new Error('already gone')
-      })
+      const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true)
       const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
       Object.defineProperty(process, 'platform', { value: 'win32' })
       try {
         const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
         handle.forceKill()
         handle.dispose()
-        expect(killSpy).toHaveBeenCalledWith(123456, 'SIGKILL')
+        // Why: Windows force-kill sweeps the tree via taskkill, never process.kill(SIGKILL),
+        // then closes the ConPTY once so a subsequent dispose skips destroy.
+        expect(forceKillWindowsProcessTreeMock).toHaveBeenCalledWith(123456)
+        expect(killSpy).not.toHaveBeenCalled()
         expect(proc.kill).toHaveBeenCalledOnce()
         expect(proc.destroy).not.toHaveBeenCalled()
       } finally {
         killSpy.mockRestore()
+        restorePlatform(origPlatform)
+      }
+    })
+
+    it('forceKill on Windows is a no-op after physical exit (no tree walk on a reaped pid)', () => {
+      const proc = mockPtyProcess(123456)
+      spawnMock.mockReturnValue(proc)
+      const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+      Object.defineProperty(process, 'platform', { value: 'win32' })
+      try {
+        const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+        proc._simulateExit(0)
+        handle.forceKill()
+        expect(forceKillWindowsProcessTreeMock).not.toHaveBeenCalled()
+      } finally {
         restorePlatform(origPlatform)
       }
     })
@@ -2988,10 +3029,18 @@ describe('createPtySubprocess', () => {
       const proc = mockPtyProcess(77)
       spawnMock.mockReturnValue(proc)
       const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true)
-      const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
-      handle.forceKill()
-      expect(killSpy).toHaveBeenCalledWith(77, 'SIGKILL')
-      killSpy.mockRestore()
+      const origPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+      Object.defineProperty(process, 'platform', { configurable: true, value: 'linux' })
+      try {
+        const handle = createPtySubprocess({ sessionId: 'test', cols: 80, rows: 24 })
+        handle.forceKill()
+        expect(killSpy).toHaveBeenCalledWith(77, 'SIGKILL')
+      } finally {
+        if (origPlatform) {
+          Object.defineProperty(process, 'platform', origPlatform)
+        }
+        killSpy.mockRestore()
+      }
     })
   })
 })
