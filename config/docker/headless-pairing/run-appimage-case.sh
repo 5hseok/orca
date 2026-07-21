@@ -8,8 +8,14 @@ pairing_address=${ORCA_PAIRING_ADDRESS:-127.0.0.1}
 port=${ORCA_SERVE_PORT:-0}
 state_dir="/tmp/orca-${case_name}"
 
+if ((EUID == 0)); then
+  mkdir -p "$state_dir/config" "$state_dir/cache"
+  chown -R orca:orca "$state_dir"
+  # Why: packaged serve should exercise the same unprivileged account required by production systemd guidance.
+  exec runuser --user orca --preserve-environment -- "$0" "$@"
+fi
+
 mkdir -p "$state_dir/config" "$state_dir/cache"
-chown -R orca:orca "$state_dir"
 
 if [[ "$appimage" == *.AppImage ]]; then
   is_appimage=1

@@ -14,6 +14,7 @@ describe('resolveAdvertisedPairingEndpoint', () => {
   it.each([
     ['100.64.1.20', 'ws://100.64.1.20:6768'],
     ['host.tailnet.ts.net', 'ws://host.tailnet.ts.net:6768'],
+    ['proxy.example.test:80', 'ws://proxy.example.test'],
     ['lan-host:7443', 'ws://lan-host:7443'],
     ['::1', 'ws://[::1]:6768'],
     ['2001:db8::0', 'ws://[2001:db8::]:6768'],

@@ -18,6 +18,7 @@ export function resolveAdvertisedPairingEndpoint(
   const endpoint = new URL(boundEndpoint)
   const override = advertisedAddress?.trim()
   if (!override) {
+    // Why: a wildcard listener is not client-reachable; default pairing must remain local-only unless explicitly advertised.
     endpoint.hostname = '127.0.0.1'
     return valid(formatWebSocketUrl(endpoint))
   }
@@ -67,6 +68,7 @@ function parseHostOverride(value: string): { hostname: string; port: string } | 
   try {
     const rawIpVersion = isIP(value)
     const explicitPort = rawIpVersion === 6 ? null : getExplicitPort(value)
+    // Why: port zero is a bind-time request, not an endpoint a remote client can dial.
     if (explicitPort === '0') {
       return null
     }
@@ -84,7 +86,7 @@ function parseHostOverride(value: string): { hostname: string; port: string } | 
     ) {
       return null
     }
-    return { hostname: unbracketIpv6(url.hostname), port: url.port }
+    return { hostname: unbracketIpv6(url.hostname), port: explicitPort ?? url.port }
   } catch {
     return null
   }
@@ -97,6 +99,7 @@ function getExplicitPort(value: string): string | null {
 
 function isWildcardHost(hostname: string): boolean {
   const normalized = unbracketIpv6(hostname).toLowerCase()
+  // Why: wildcard bind addresses identify local interfaces, not a route a client can connect to.
   return normalized === '*' || normalized === '0.0.0.0' || normalized === '::'
 }
 

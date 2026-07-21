@@ -86,6 +86,7 @@ function buildImage(image) {
 
 function extractAppImage(image) {
   console.log('Extracting AppImage once without FUSE...')
+  // Why: AppImage extraction creates a root-only directory, while launch cases intentionally run as the service user.
   docker([
     'run',
     '--rm',
@@ -97,7 +98,7 @@ function extractAppImage(image) {
     `${artifactVolume}:/artifacts`,
     image,
     '-lc',
-    'cp /input/orca.AppImage /artifacts/orca.AppImage && chmod +x /artifacts/orca.AppImage && cd /artifacts && ./orca.AppImage --appimage-extract >/dev/null'
+    'cp /input/orca.AppImage /artifacts/orca.AppImage && chmod +x /artifacts/orca.AppImage && cd /artifacts && ./orca.AppImage --appimage-extract >/dev/null && chmod -R a+rX /artifacts/squashfs-root'
   ])
 }
 

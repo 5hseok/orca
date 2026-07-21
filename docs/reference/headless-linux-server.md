@@ -19,7 +19,7 @@ Install the AppImage runtime dependency and Xvfb:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y curl file xvfb zlib1g-dev
+sudo apt-get install -y curl file jq xvfb zlib1g-dev
 ```
 
 On Ubuntu 22.04, install `libfuse2` to execute the AppImage through FUSE. On
@@ -27,7 +27,8 @@ Ubuntu 24.04 and Debian, the equivalent package may be `libfuse2t64`. FUSE is
 optional: without it, use the AppImage's supported extraction path:
 
 ```bash
-/opt/orca/orca-linux.AppImage --appimage-extract
+cd /opt/orca
+./orca-linux.AppImage --appimage-extract
 /opt/orca/squashfs-root/AppRun serve --port 6768
 ```
 
@@ -78,8 +79,8 @@ proxy URL such as `https://orca.example.com/runtime` (`http(s)` is normalized
 to `ws(s)`). Wildcard addresses such as `*`, `0.0.0.0`, and `::` cannot be
 advertised.
 
-The command writes one ready block to stdout after the listener and pairing
-identity are ready:
+The command writes one ready block to stdout after the listener bind and
+pairing initialization complete:
 
 ```text
 Orca server ready
@@ -94,6 +95,9 @@ For supervisors, request the versioned single-line JSON contract:
 /opt/orca/orca-linux.AppImage serve --port 6768 \
   --pairing-address 100.64.1.20 --json
 ```
+
+The actual output is one compact line; this example is pretty-printed for
+readability:
 
 ```json
 {
@@ -176,10 +180,18 @@ sudo systemctl enable --now orca-serve.service
 sudo journalctl -u orca-serve.service -f
 ```
 
-Use `journalctl -u orca-serve.service -o cat` when a script needs the ready JSON
-without journal metadata. A bounded health check should require the ready
-contract within its startup timeout; otherwise inspect earlier stderr for the
-precise pairing reason, listener error, or missing library.
+`journalctl -o cat` removes journal metadata but still mixes the service's
+stdout and stderr. Parse each line as JSON and require the readiness type and
+schema before treating the service as ready:
+
+```bash
+sudo journalctl -u orca-serve.service -o cat \
+  | jq -Rrc 'fromjson? | select(.type == "orca_server_ready" and .schemaVersion == 1)'
+```
+
+A bounded health check should require that contract within its startup timeout;
+otherwise inspect earlier diagnostics for the precise pairing reason, listener
+error, or missing library.
 
 ## Managed Xvfb Service
 
@@ -485,8 +497,9 @@ profile archive are complete. If you run the managed Xvfb unit, only
 sudo journalctl -u orca-serve.service -f
 ```
 
-A healthy start prints one `Orca server ready` block with both the bound and
-advertised endpoints (using your configured port).
+A healthy start prints one `Orca server ready` block with the actual bound and
+advertised endpoints. Verify those values rather than assuming the configured
+port, because a collision can select a fallback port.
 Confirm a client reconnects before you discard the backup. The timestamped
 rollback bundles are not pruned automatically. After the new version satisfies
 your retention policy, select and inspect the newest complete bundle before
