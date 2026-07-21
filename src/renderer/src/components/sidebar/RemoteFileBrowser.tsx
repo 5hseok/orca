@@ -3,8 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Folder, ArrowUp, LoaderCircle, Home, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { FileTypeIcon } from '@/components/FileTypeIcon'
-import { PluginIconSlot } from '@/components/PluginIconSlot'
+import { getFileTypeIcon } from '@/lib/file-type-icons'
 import {
   decideEnterAction,
   decideEscAction,
@@ -738,6 +737,7 @@ export function RemoteFileBrowser({
             </div>
           ) : (
             displayEntries.map((entry) => {
+              const FileIcon = getFileTypeIcon(entry.name)
               return (
                 <button
                   key={entry.name}
@@ -754,16 +754,9 @@ export function RemoteFileBrowser({
                   )}
                 >
                   {entry.isDirectory ? (
-                    <PluginIconSlot
-                      slot="folder"
-                      className="size-3.5 text-muted-foreground shrink-0"
-                      fallback={<Folder className="size-3.5 text-muted-foreground shrink-0" />}
-                    />
+                    <Folder className="size-3.5 text-muted-foreground shrink-0" />
                   ) : (
-                    <FileTypeIcon
-                      filePath={entry.name}
-                      className="size-3.5 text-muted-foreground/60 shrink-0"
-                    />
+                    <FileIcon className="size-3.5 text-muted-foreground/60 shrink-0" />
                   )}
                   <span className="truncate flex-1 min-w-0">{entry.name}</span>
                   {entry.isDirectory && (

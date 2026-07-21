@@ -24,11 +24,15 @@ afterEach(async () => {
 })
 
 describe('Phase 1 launch plugin content', () => {
-  it('lists and validates at least eight representative plugin packs', async () => {
+  it('lists and validates the launch plugin packs', async () => {
     const marketplace = pluginMarketplaceSchema.parse(
       await readJson(join(launchRoot, 'orca-marketplace.json'))
     )
-    expect(marketplace.plugins.length).toBeGreaterThanOrEqual(7)
+    expect(marketplace.plugins.map((plugin) => plugin.id).sort()).toEqual([
+      'stablyai.orca-multipass-recipes',
+      'stablyai.orca-navigation-shortcuts',
+      'stablyai.orca-portuguese'
+    ])
     expect(
       marketplace.plugins.filter(
         (plugin) =>
@@ -58,17 +62,8 @@ describe('Phase 1 launch plugin content', () => {
         continue
       }
       const contributes = inspection.manifest.contributes
-      if (contributes.themes.length > 0) {
-        contributionKinds.add('theme')
-      }
       if (contributes.languagePacks.length > 0) {
         contributionKinds.add('language')
-      }
-      if (contributes.iconThemes.length > 0) {
-        contributionKinds.add('icon')
-      }
-      if (contributes.terminalThemes.length > 0) {
-        contributionKinds.add('terminal-theme')
       }
       if (contributes.vmRecipes.length > 0) {
         contributionKinds.add('vm-recipe')
@@ -77,9 +72,7 @@ describe('Phase 1 launch plugin content', () => {
         contributionKinds.add('command-keybinding')
       }
     }
-    expect(contributionKinds).toEqual(
-      new Set(['theme', 'language', 'icon', 'terminal-theme', 'vm-recipe', 'command-keybinding'])
-    )
+    expect(contributionKinds).toEqual(new Set(['language', 'vm-recipe', 'command-keybinding']))
   })
 
   it('publishes every bundled pack only when its release hash matches exact bytes', async () => {
@@ -115,6 +108,6 @@ describe('Phase 1 launch plugin content', () => {
     })
 
     expect(result.errors).toEqual([])
-    expect(result.installed).toEqual(['stablyai.orca-midnight-theme'])
+    expect(result.installed).toEqual(['stablyai.orca-navigation-shortcuts'])
   })
 })

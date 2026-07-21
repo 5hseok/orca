@@ -1,6 +1,5 @@
 import { Blocks, Loader2, SearchX } from 'lucide-react'
 import type { PluginHostListEntry } from '../../../../preload/api-types'
-import type { PluginTerminalThemeRegistration } from '../../../../shared/plugins/plugin-terminal-theme-artifact'
 import { translate } from '@/i18n/i18n'
 import { PluginCatalogEmptyState } from '../plugin-catalog/PluginCatalogEmptyState'
 import { PluginDevelopmentSection } from './PluginDevelopmentSection'
@@ -15,8 +14,6 @@ type PluginSettingsOverviewProps = {
   loading: boolean
   error: string | null
   plugins: PluginHostListEntry[]
-  terminalThemes: readonly PluginTerminalThemeRegistration[]
-  activeTerminalThemeId: string
   busyPluginKeys: ReadonlySet<string>
   openLogs: ReadonlySet<string>
   logsByPlugin: Readonly<Record<string, PluginLogsState>>
@@ -30,7 +27,6 @@ type PluginSettingsOverviewProps = {
   onMarketplaceInstalled: (pluginKey: string) => Promise<void>
   onRollbackRequest: (pluginKey: string) => void
   onRemoveRequest: (pluginKey: string) => void
-  onApplyTerminalTheme: (theme: PluginTerminalThemeRegistration) => void
   onUpdateDevPaths: (paths: string[]) => Promise<void>
 }
 
@@ -51,8 +47,6 @@ export function PluginSettingsOverview({
   loading,
   error,
   plugins,
-  terminalThemes,
-  activeTerminalThemeId,
   busyPluginKeys,
   openLogs,
   logsByPlugin,
@@ -66,7 +60,6 @@ export function PluginSettingsOverview({
   onMarketplaceInstalled,
   onRollbackRequest,
   onRemoveRequest,
-  onApplyTerminalTheme,
   onUpdateDevPaths
 }: PluginSettingsOverviewProps): React.JSX.Element {
   return (
@@ -151,32 +144,20 @@ export function PluginSettingsOverview({
               }
               return (
                 <div className="grid gap-3 lg:grid-cols-2">
-                  {filteredPlugins.map((plugin) => {
-                    const contributedTerminalThemes = terminalThemes.filter(
-                      (theme) => theme.pluginKey === plugin.pluginKey
-                    )
-                    const terminalTheme =
-                      contributedTerminalThemes.length === 1
-                        ? contributedTerminalThemes[0]
-                        : undefined
-                    return (
-                      <PluginSettingsRow
-                        key={plugin.pluginKey}
-                        plugin={plugin}
-                        busy={busyPluginKeys.has(plugin.pluginKey)}
-                        logsOpen={openLogs.has(plugin.pluginKey)}
-                        logsState={logsByPlugin[plugin.pluginKey]}
-                        terminalTheme={terminalTheme}
-                        terminalThemeActive={terminalTheme?.id === activeTerminalThemeId}
-                        onReview={onReview}
-                        onToggleEnabled={onToggleEnabled}
-                        onToggleLogs={onToggleLogs}
-                        onRollbackRequest={onRollbackRequest}
-                        onRemoveRequest={onRemoveRequest}
-                        onApplyTerminalTheme={onApplyTerminalTheme}
-                      />
-                    )
-                  })}
+                  {filteredPlugins.map((plugin) => (
+                    <PluginSettingsRow
+                      key={plugin.pluginKey}
+                      plugin={plugin}
+                      busy={busyPluginKeys.has(plugin.pluginKey)}
+                      logsOpen={openLogs.has(plugin.pluginKey)}
+                      logsState={logsByPlugin[plugin.pluginKey]}
+                      onReview={onReview}
+                      onToggleEnabled={onToggleEnabled}
+                      onToggleLogs={onToggleLogs}
+                      onRollbackRequest={onRollbackRequest}
+                      onRemoveRequest={onRemoveRequest}
+                    />
+                  ))}
                 </div>
               )
             }}

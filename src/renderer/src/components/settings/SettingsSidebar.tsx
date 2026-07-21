@@ -17,8 +17,6 @@ import type { SettingsSetupGuideProgress } from './settings-setup-guide-progress
 import { translate } from '@/i18n/i18n'
 import { resolveLeftSidebarStyleVariables } from '@/lib/left-sidebar-appearance'
 import { useSystemPrefersDark } from '../terminal-pane/use-system-prefers-dark'
-import { usePluginTerminalThemes } from '@/store/plugin-terminal-themes'
-import { PluginIconSlot } from '@/components/PluginIconSlot'
 
 type NavSection = {
   id: string
@@ -131,10 +129,9 @@ export function SettingsSidebar({
 }: SettingsSidebarProps): React.JSX.Element {
   const setupGuideProgress = useSettingsSetupGuideProgress(true)
   const systemPrefersDark = useSystemPrefersDark()
-  const pluginTerminalThemes = usePluginTerminalThemes()
   const leftSidebarStyle = useMemo(
-    () => resolveLeftSidebarStyleVariables(settings, systemPrefersDark, pluginTerminalThemes),
-    [settings, systemPrefersDark, pluginTerminalThemes]
+    () => resolveLeftSidebarStyleVariables(settings, systemPrefersDark),
+    [settings, systemPrefersDark]
   ) as CSSProperties | undefined
   const setupActive = activeSectionId === 'setup-guide'
   // Why: "Hide from sidebar" only hides the top-left app sidebar prompt;
@@ -257,15 +254,7 @@ export function SettingsSidebar({
                         }
                         className={navItemClassName(isActive)}
                       >
-                        {section.id === 'plugins' ? (
-                          <PluginIconSlot
-                            slot="sidebar.plugins"
-                            className="size-4 shrink-0"
-                            fallback={<Icon className="size-4 shrink-0" />}
-                          />
-                        ) : (
-                          <Icon className="size-4 shrink-0" />
-                        )}
+                        <Icon className="size-4 shrink-0" />
                         <span className="truncate">{section.title}</span>
                         {section.installStatus ? (
                           <span className={installStatusClassName(section.installStatus)}>

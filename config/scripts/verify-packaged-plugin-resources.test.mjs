@@ -31,12 +31,12 @@ describe('verify packaged plugin resources', () => {
         recursive: true
       })
       await writeFile(
-        join(launchRoot, 'stablyai.orca-midnight-theme', 'theme.json'),
+        join(launchRoot, 'stablyai.orca-navigation-shortcuts', 'extra.json'),
         '{"mutated":true}\n'
       )
 
       expect(() => verifyPackagedPluginResources(resourcesDir)).toThrow(
-        'packaged bytes do not match stablyai.orca-midnight-theme'
+        'packaged bytes do not match stablyai.orca-navigation-shortcuts'
       )
     } finally {
       await rm(resourcesDir, { recursive: true, force: true })

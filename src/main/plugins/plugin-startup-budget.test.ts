@@ -42,13 +42,7 @@ function dummyManifest(index: number): PluginManifest {
       ],
       events: [],
       keybindings: [{ command: 'open', key: `Mod+Alt+${key}` }],
-      themes: [
-        {
-          id: `startup-${index}`,
-          label: `Startup Theme ${index}`,
-          path: 'theme.json'
-        }
-      ]
+      languagePacks: [{ locale: 'pt-BR', path: 'locale.json' }]
     },
     capabilities: []
   })
@@ -66,11 +60,8 @@ async function installDummy(index: number): Promise<{ pluginKey: string; markerP
     writeFile(join(pluginDir, 'current'), contentHash),
     writeFile(join(versionDir, PLUGIN_MANIFEST_FILENAME), JSON.stringify(manifest)),
     writeFile(
-      join(versionDir, 'theme.json'),
-      JSON.stringify({
-        base: index % 2 === 0 ? 'dark' : 'light',
-        tokens: { '--background': index % 2 === 0 ? '#111111' : '#eeeeee' }
-      })
+      join(versionDir, 'locale.json'),
+      JSON.stringify({ startup: { label: `Startup Dummy ${index}` } })
     )
   ])
   consents[pluginKey] = fingerprintPluginConsent(manifest)

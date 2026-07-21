@@ -5,7 +5,6 @@ import {
   normalizeLeftSidebarTintOpacity
 } from '../../../shared/left-sidebar-appearance'
 import { resolveEffectiveTerminalAppearance } from './terminal-theme'
-import type { PluginTerminalThemeRegistration } from '../../../shared/plugins/plugin-terminal-theme-artifact'
 
 type LeftSidebarAppearanceSettings = Pick<
   GlobalSettings,
@@ -92,10 +91,9 @@ function buildSurfaceVariables(args: {
 
 function resolveTerminalSurfaceVariables(
   settings: LeftSidebarAppearanceSettings,
-  systemPrefersDark: boolean,
-  pluginThemes?: readonly PluginTerminalThemeRegistration[]
+  systemPrefersDark: boolean
 ): LeftSidebarStyleVariables {
-  const appearance = resolveEffectiveTerminalAppearance(settings, systemPrefersDark, pluginThemes)
+  const appearance = resolveEffectiveTerminalAppearance(settings, systemPrefersDark)
   const background = applyAlpha(
     settings.terminalColorOverrides?.background ?? appearance.theme?.background ?? '#000000',
     settings.terminalBackgroundOpacity
@@ -117,8 +115,7 @@ function resolveTintedSurfaceVariables(
 
 export function resolveLeftSidebarStyleVariables(
   settings: LeftSidebarAppearanceSettings | null | undefined,
-  systemPrefersDark: boolean,
-  pluginThemes?: readonly PluginTerminalThemeRegistration[]
+  systemPrefersDark: boolean
 ): LeftSidebarStyleVariables | undefined {
   if (!settings) {
     return undefined
@@ -127,7 +124,7 @@ export function resolveLeftSidebarStyleVariables(
     case 'default':
       return undefined
     case 'match-terminal':
-      return resolveTerminalSurfaceVariables(settings, systemPrefersDark, pluginThemes)
+      return resolveTerminalSurfaceVariables(settings, systemPrefersDark)
     case 'tinted':
       return resolveTintedSurfaceVariables(settings)
   }

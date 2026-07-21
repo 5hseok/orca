@@ -55,43 +55,8 @@ import {
 } from '@/lib/desktop-window-chrome'
 import { getRendererAppPlatform } from '@/lib/renderer-app-platform'
 import { useInstalledPluginRouteReconciliation } from './use-installed-plugin-route-reconciliation'
-import { PluginIconSlot } from '@/components/PluginIconSlot'
 
 const ACTIVITY_BAR_SIDE_WIDTH = 40
-
-function ThemedWorkspaceIcon({
-  size,
-  className
-}: {
-  size?: number
-  className?: string
-}): React.JSX.Element {
-  return (
-    <PluginIconSlot
-      slot="sidebar.workspaces"
-      size={size}
-      className={className}
-      fallback={<Workflow size={size} className={className} />}
-    />
-  )
-}
-
-function ThemedSourceControlIcon({
-  size,
-  className
-}: {
-  size?: number
-  className?: string
-}): React.JSX.Element {
-  return (
-    <PluginIconSlot
-      slot="sidebar.source-control"
-      size={size}
-      className={className}
-      fallback={<GitBranch size={size} className={className} />}
-    />
-  )
-}
 
 function RightSidebarInner(): React.JSX.Element {
   const hasDesktopWindowChrome = shouldRenderDesktopWindowChrome({
@@ -156,7 +121,7 @@ function RightSidebarInner(): React.JSX.Element {
       },
       {
         id: 'workspaces',
-        icon: ThemedWorkspaceIcon,
+        icon: Workflow,
         title: translate(
           'auto.components.right.sidebar.index.folderWorkspaces',
           'Attached worktrees'
@@ -173,7 +138,7 @@ function RightSidebarInner(): React.JSX.Element {
       },
       {
         id: 'source-control',
-        icon: ThemedSourceControlIcon,
+        icon: GitBranch,
         title: translate('auto.components.right.sidebar.index.0314901467', 'Source Control'),
         shortcut: sourceControlShortcut === 'Unassigned' ? '' : sourceControlShortcut,
         gitOnly: true

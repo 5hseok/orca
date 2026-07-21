@@ -125,10 +125,6 @@ vi.mock('@/lib/file-type-icons', () => ({
     }
 }))
 
-vi.mock('@/components/FileTypeIcon', () => ({
-  FileTypeIcon: () => <span data-file-icon />
-}))
-
 vi.mock('@/lib/rename-file', () => ({
   renameFileOnDisk: vi.fn()
 }))

@@ -36,8 +36,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
 import { useShortcutLabel } from '@/hooks/useShortcutLabel'
 import { detectLanguage } from '@/lib/language-detect'
-import { FileTypeIcon } from '@/components/FileTypeIcon'
-import { PluginIconSlot } from '@/components/PluginIconSlot'
+import { getFileTypeIcon } from '@/lib/file-type-icons'
 import { openFileInBrowserTab } from '@/lib/file-preview'
 import {
   encodeWorkspaceFilePaths,
@@ -451,6 +450,7 @@ export function FileExplorerRow({
   const copyPathShortcutLabel = useShortcutLabel('fileExplorer.copyPath')
   const copyRelativePathShortcutLabel = useShortcutLabel('fileExplorer.copyRelativePath')
   const findInFolderShortcutLabel = useShortcutLabel('sidebar.search.toggle')
+  const FileIcon = getFileTypeIcon(node.relativePath || node.name)
   const rowDropDir = node.isDirectory ? node.path : targetDir
   const showRemoteDownloadAction = shouldShowRemoteDownloadAction(
     node,
@@ -592,17 +592,9 @@ export function FileExplorerRow({
               {isLoading ? (
                 <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
               ) : isExpanded ? (
-                <PluginIconSlot
-                  slot="folder-open"
-                  className="size-3 shrink-0 text-muted-foreground"
-                  fallback={<FolderOpen className="size-3 shrink-0 text-muted-foreground" />}
-                />
+                <FolderOpen className="size-3 shrink-0 text-muted-foreground" />
               ) : (
-                <PluginIconSlot
-                  slot="folder"
-                  className="size-3 shrink-0 text-muted-foreground"
-                  fallback={<Folder className="size-3 shrink-0 text-muted-foreground" />}
-                />
+                <Folder className="size-3 shrink-0 text-muted-foreground" />
               )}
             </>
           ) : (
@@ -611,10 +603,7 @@ export function FileExplorerRow({
               {node.isSymlink ? (
                 <Link className="size-3 shrink-0 text-muted-foreground" />
               ) : (
-                <FileTypeIcon
-                  filePath={node.relativePath || node.name}
-                  className="size-3 shrink-0 text-muted-foreground"
-                />
+                <FileIcon className="size-3 shrink-0 text-muted-foreground" />
               )}
             </>
           )}
