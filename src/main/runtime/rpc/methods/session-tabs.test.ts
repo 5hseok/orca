@@ -143,7 +143,7 @@ describe('session tab RPC methods', () => {
     })
   })
 
-  it('dispatches terminal creation with the requested tab group', async () => {
+  it('dispatches ordinary terminal creation with the requested tab group', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',
       createMobileSessionTerminal: vi.fn().mockResolvedValue({
@@ -202,7 +202,9 @@ describe('session tab RPC methods', () => {
       activate: true,
       select: undefined,
       clientNavigationId: undefined,
-      navigation: 'all'
+      navigation: 'all',
+      clientMutationId: undefined,
+      signal: undefined
     })
   })
 
@@ -238,7 +240,7 @@ describe('session tab RPC methods', () => {
     )
   })
 
-  it('dispatches terminal creation with a requested agent preset', async () => {
+  it('preserves legacy agent creation for mixed-version clients', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',
       createMobileSessionTerminal: vi.fn().mockResolvedValue({
@@ -271,13 +273,16 @@ describe('session tab RPC methods', () => {
       afterTabId: undefined,
       targetGroupId: undefined,
       command: undefined,
+      cwd: undefined,
       startupCommandDelivery: undefined,
       agent: 'codex',
       agentPrompt: 'Review this diff',
       activate: undefined,
       select: undefined,
       clientNavigationId: undefined,
-      navigation: 'all'
+      navigation: 'all',
+      clientMutationId: undefined,
+      signal: undefined
     })
   })
 

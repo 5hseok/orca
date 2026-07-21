@@ -537,6 +537,8 @@ export type RuntimeTerminalCreate = {
   title: string | null
   surface?: 'background' | 'visible'
   warning?: string
+  /** Present only for the structured host-authority resume path. */
+  agentSessionDisposition?: 'created' | 'adopted'
 }
 
 export type RuntimeTerminalSplit = {
