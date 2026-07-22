@@ -23,7 +23,9 @@ import {
 } from './helpers/daemon-generation-processes'
 
 const GENERATION_PROTOCOLS = [21, 22, 23] as const
-const ALL_GENERATION_PROTOCOLS = [...GENERATION_PROTOCOLS, PROTOCOL_VERSION - 1, PROTOCOL_VERSION]
+const ALL_GENERATION_PROTOCOLS = [
+  ...new Set([...GENERATION_PROTOCOLS, PROTOCOL_VERSION - 1, PROTOCOL_VERSION])
+]
 const configuredReconnectBursts = Number.parseInt(
   process.env.ORCA_DAEMON_GENERATION_RECONNECT_BURSTS ?? '3',
   10
