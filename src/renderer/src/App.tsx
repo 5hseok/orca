@@ -1443,6 +1443,7 @@ function App(): React.JSX.Element {
       <Sidebar
         worktreeScrollOffsetRef={worktreeSidebarScrollOffsetRef}
         worktreeScrollAnchorRef={worktreeSidebarScrollAnchorRef}
+        edge={workspaceSidebarOnLeft ? 'left' : 'right'}
       />
     </RecoverableRenderErrorBoundary>
   )

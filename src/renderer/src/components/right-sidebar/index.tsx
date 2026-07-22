@@ -222,7 +222,8 @@ function RightSidebarInner({
     width: renderedRightSidebarWidth,
     minWidth: RIGHT_SIDEBAR_MIN_WIDTH,
     maxWidth,
-    deltaSign: -1,
+    // Why: the handle sits on whichever side faces the center, so drag direction flips with the edge.
+    deltaSign: onLeftEdge ? 1 : -1,
     renderedExtraWidth: activityBarSideWidth,
     setWidth: setRightSidebarWidth
   })
