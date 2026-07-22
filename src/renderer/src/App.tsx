@@ -25,6 +25,7 @@ import { SYNC_FIT_PANES_EVENT, TOGGLE_TERMINAL_PANE_EXPAND_EVENT } from '@/const
 import { syncZoomCSSVar } from '@/lib/ui-zoom'
 import { resolveLeftSidebarStyleVariables } from '@/lib/left-sidebar-appearance'
 import { canShowRightSidebarForView } from '@/lib/right-sidebar-visibility'
+import { resolveSidebarSlotLayout } from '@/lib/sidebar-slot-layout'
 import {
   isPairedWebClientWindow,
   shouldRenderDesktopWindowChrome
@@ -1421,6 +1422,12 @@ function App(): React.JSX.Element {
     creationLayoutActive,
     sidebarOpen
   })
+  const sidebarSlots = resolveSidebarSlotLayout({
+    workspaceSidebarPosition: settings?.workspaceSidebarPosition ?? 'left',
+    platform: shortcutPlatform,
+    isWebClient: isPairedWebClientWindow()
+  })
+  const activitySidebarEdge = sidebarSlots.leftOccupant === 'activity' ? 'left' : 'right'
   // Full-page navigation surfaces own the whole content area, so suppress right-sidebar controls.
   const showRightSidebarControls = !creationLayoutActive && canShowRightSidebarForView(activeView)
   const showProfileSwitcherInSidebarFooter = showSidebar && sidebarOpen
@@ -2259,7 +2266,10 @@ function App(): React.JSX.Element {
                       'Retry the sidebar or switch tabs to reload this surface.'
                     )}
                   >
-                    <RightSidebar />
+                    <RightSidebar
+                      edge={activitySidebarEdge}
+                      windowControlsEdge={sidebarSlots.windowControlsEdge}
+                    />
                   </RecoverableRenderErrorBoundary>
                 ) : null}
               </div>
