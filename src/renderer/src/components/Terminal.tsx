@@ -1354,7 +1354,8 @@ function Terminal(): React.JSX.Element | null {
         void closeWebRuntimeSessionTab({
           worktreeId: owningWorktreeId,
           tabId,
-          environmentId: runtimeEnvironmentId
+          environmentId: runtimeEnvironmentId,
+          reason: 'user'
         })
         return
       }
@@ -1445,7 +1446,8 @@ function Terminal(): React.JSX.Element | null {
             void closeWebRuntimeSessionTab({
               worktreeId: activeWorktreeId,
               tabId: unifiedTab.id,
-              environmentId: runtimeEnvironmentId
+              environmentId: runtimeEnvironmentId,
+              reason: 'user'
             })
           }
           continue
@@ -1509,7 +1511,8 @@ function Terminal(): React.JSX.Element | null {
             void closeWebRuntimeSessionTab({
               worktreeId: activeWorktreeId,
               tabId: unifiedTab.id,
-              environmentId: runtimeEnvironmentId
+              environmentId: runtimeEnvironmentId,
+              reason: 'user'
             })
           }
           continue

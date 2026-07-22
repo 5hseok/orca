@@ -53,6 +53,7 @@ vi.mock('./pty-pre-handler-buffer', () => ({
 
 type CloseTerminalTabOptions = {
   captureRecentlyClosed?: boolean
+  hostCloseReason?: string
   onClosed?: () => void
   onCancel?: () => void
 }
@@ -317,6 +318,9 @@ describe('terminal-parked-tab-watchers', () => {
     expect(getParkedTerminalWatcherTabIds()).toEqual([TAB_ID])
     const options = closeTerminalTab.mock.calls[0]?.[1] as CloseTerminalTabOptions
     expect(options.captureRecentlyClosed).toBe(false)
+    // Why: the wire must carry the pty-exit intent so a paired host can refuse
+    // the echo while its PTY is live, without skipping the pinned guard here.
+    expect(options.hostCloseReason).toBe('pty-exit')
     options.onClosed?.()
 
     expect(consumePreHandlerPtyState).toHaveBeenCalledWith(PTY_ID)

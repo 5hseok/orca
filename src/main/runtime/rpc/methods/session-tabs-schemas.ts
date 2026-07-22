@@ -27,6 +27,18 @@ export const ActivateTab = WorktreeTabSelector.extend({
   navigation: z.enum(RUNTIME_NAVIGATION_TARGETS).optional()
 })
 
+export const CloseTab = ActivateTab.extend({
+  // Why: optional so legacy clients still validate; policy conservatively
+  // refuses an unattributed close instead of guessing that it came from a user.
+  reason: z.enum(['user', 'pty-exit', 'cleanup']).optional()
+})
+
+export const CloseLifecycleTab = ActivateTab.extend({
+  reason: z.enum(['pty-exit', 'cleanup']),
+  publicationEpoch: z.string().min(1).max(128),
+  terminal: z.string().min(1).max(256)
+})
+
 export type TerminalPaneLayoutNodeInput =
   | { type: 'leaf'; leafId: string }
   | {

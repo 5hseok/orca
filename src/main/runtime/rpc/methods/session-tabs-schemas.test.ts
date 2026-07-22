@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ActivateTab, UpdatePaneLayout } from './session-tabs-schemas'
+import { ActivateTab, CloseLifecycleTab, CloseTab, UpdatePaneLayout } from './session-tabs-schemas'
 
 const WT = 'id:wt'
 
@@ -10,6 +10,54 @@ describe('ActivateTab.navigation', () => {
     )
     expect(
       ActivateTab.safeParse({ worktree: WT, tabId: 'tab', navigation: 'others' }).success
+    ).toBe(false)
+  })
+})
+
+describe('CloseTab (session.tabs.close params)', () => {
+  it('round-trips each typed close reason', () => {
+    for (const reason of ['user', 'pty-exit', 'cleanup'] as const) {
+      const parsed = CloseTab.parse({ worktree: WT, tabId: 'tab-1', reason })
+      expect(parsed).toMatchObject({ tabId: 'tab-1', reason })
+    }
+  })
+
+  it('accepts a reasonless payload from legacy clients', () => {
+    // Why: parsing remains compatible; the RPC policy, not the schema, refuses missing intent.
+    const parsed = CloseTab.parse({ worktree: WT, tabId: 'tab-1' })
+    expect(parsed.tabId).toBe('tab-1')
+    expect(parsed.reason).toBeUndefined()
+  })
+
+  it('rejects an unknown close reason', () => {
+    expect(() =>
+      CloseTab.parse({ worktree: WT, tabId: 'tab-1', reason: 'transport-glitch' })
+    ).toThrow()
+  })
+})
+
+describe('CloseLifecycleTab (session.tabs.closeLifecycle params)', () => {
+  it('requires lifecycle intent and incarnation evidence', () => {
+    expect(
+      CloseLifecycleTab.parse({
+        worktree: WT,
+        tabId: 'tab-1',
+        reason: 'pty-exit',
+        publicationEpoch: 'epoch-1',
+        terminal: 'term-1'
+      })
+    ).toMatchObject({ reason: 'pty-exit', publicationEpoch: 'epoch-1', terminal: 'term-1' })
+    expect(
+      CloseLifecycleTab.safeParse({ worktree: WT, tabId: 'tab-1', reason: 'pty-exit' }).success
+    ).toBe(false)
+    expect(
+      CloseLifecycleTab.safeParse({
+        worktree: WT,
+        tabId: 'tab-1',
+        reason: 'user',
+        publicationEpoch: 'epoch-1',
+        terminal: 'term-1'
+      }).success
     ).toBe(false)
   })
 })

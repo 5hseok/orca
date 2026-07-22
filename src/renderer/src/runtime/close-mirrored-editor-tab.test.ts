@@ -44,7 +44,8 @@ describe('notifyHostOfMirroredEditorClose', () => {
     expect(closeWebRuntimeSessionTabMock).toHaveBeenCalledWith({
       worktreeId: 'wt-1',
       tabId: 'host-tab-1',
-      environmentId: 'env-1'
+      environmentId: 'env-1',
+      reason: 'user'
     })
   })
 
