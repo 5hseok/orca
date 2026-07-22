@@ -1889,6 +1889,27 @@ function App(): React.JSX.Element {
     setMountedLazyModalIds(new Set(resolvedMountedLazyModalIds))
   }
 
+  // Why: the toggle follows the workspace list to whichever edge it occupies; leaving it in the
+  // left titlebar meant closing a right-mounted list from the opposite side of the window.
+  const workspaceSidebarToggle = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          className="sidebar-toggle"
+          onClick={actions.toggleSidebar}
+          aria-label={translate('auto.App.e4b9e7dff7', 'Toggle sidebar')}
+        >
+          {workspaceSidebarOnLeft ? <PanelLeft size={16} /> : <PanelRight size={16} />}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={6}>
+        {translate('auto.App.ce37cf5279', 'Toggle sidebar ({{value0}})', {
+          value0: leftSidebarShortcutLabel
+        })}
+      </TooltipContent>
+    </Tooltip>
+  )
+
   // Why: extracted so the full-width titlebar and the sidebar-width left header share these controls without duplicating the agent badge popover.
   const titlebarLeftControls = (
     // Why: measure the ENTIRE row so TabGroupPanel's collapse spacer reserves enough width; measuring only the inner cluster left back/forward over the first tab.
@@ -1951,24 +1972,7 @@ function App(): React.JSX.Element {
             )}
           </>
         )}
-        {showSidebar && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="sidebar-toggle"
-                onClick={actions.toggleSidebar}
-                aria-label={translate('auto.App.e4b9e7dff7', 'Toggle sidebar')}
-              >
-                <PanelLeft size={16} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={6}>
-              {translate('auto.App.ce37cf5279', 'Toggle sidebar ({{value0}})', {
-                value0: leftSidebarShortcutLabel
-              })}
-            </TooltipContent>
-          </Tooltip>
-        )}
+        {showSidebar && workspaceSidebarOnLeft ? workspaceSidebarToggle : null}
       </div>
       {/* Why: Back/Forward span worktree + page history, so show the cluster wherever the shortcut is live (hidden in Settings/non-stack views). */}
       {shouldShowWorktreeHistoryControls(activeView) && (
@@ -2275,16 +2279,29 @@ function App(): React.JSX.Element {
                     </div>
                   </div>
                 </div>
-                {workspaceSidebarOnLeft
-                  ? activitySidebarNode
-                  : showSidebar
-                    ? renderWorkspaceSidebar(
+                {workspaceSidebarOnLeft ? (
+                  activitySidebarNode
+                ) : showSidebar ? (
+                  // Why: mirrors the left slot's 36px header so the right-mounted list keeps its toggle
+                  // aligned with the activity sidebar's own header row.
+                  <div
+                    className={`flex min-h-0 flex-col shrink-0${
+                      sidebarOpen ? '' : ' relative w-0 overflow-visible'
+                    }`}
+                  >
+                    <div className="titlebar-left justify-end" style={{ width: '100%' }}>
+                      {workspaceSidebarToggle}
+                    </div>
+                    <div className="flex min-h-0 flex-1">
+                      {renderWorkspaceSidebar(
                         translate(
                           'auto.App.bdc71dddc9',
                           'The active workspace remains open. Retry the list or switch views.'
                         )
-                      )
-                    : null}
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </RecoverableRenderErrorBoundary>
             {shouldMountFloatingTerminalPanel ? (
