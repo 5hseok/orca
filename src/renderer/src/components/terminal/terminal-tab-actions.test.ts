@@ -221,15 +221,16 @@ describe('closeTerminalTab', () => {
       tabsByWorktree: {
         'wt-1': [{ id: 'local-tab-1' }, { id: 'local-tab-2' }]
       },
-      ptyIdsByTabId: { 'local-tab-1': ['remote:web-runtime@@term-1'] },
-      terminalLayoutsByTabId: {},
       activeWorktreeId: 'wt-1',
       activeTabId: 'local-tab-1',
       closeTab,
       setActiveTab: vi.fn()
     })
 
-    closeTerminalTab('local-tab-1', { reason: 'pty-exit' })
+    closeTerminalTab('local-tab-1', {
+      reason: 'pty-exit',
+      lifecyclePtyId: 'remote:web-runtime@@term-1'
+    })
 
     // Local prune behavior is unchanged.
     expect(closeTab).toHaveBeenCalledWith('local-tab-1', {
@@ -246,6 +247,35 @@ describe('closeTerminalTab', () => {
     })
   })
 
+  it('does not borrow a replacement PTY handle for a stale exit callback', () => {
+    const closeTab = vi.fn()
+    isWebRuntimeSessionActiveMock.mockReturnValue(true)
+    resolveHostSessionTabIdForWebSessionTabMock.mockReturnValue('host-tab-1')
+    getStateMock.mockReturnValue({
+      settings: { activeRuntimeEnvironmentId: 'web-runtime' },
+      tabsByWorktree: {
+        'wt-1': [{ id: 'local-tab-1' }, { id: 'local-tab-2' }]
+      },
+      ptyIdsByTabId: { 'local-tab-1': ['remote:web-runtime@@replacement-term'] },
+      terminalLayoutsByTabId: {},
+      activeWorktreeId: 'wt-1',
+      activeTabId: 'local-tab-1',
+      closeTab,
+      setActiveTab: vi.fn()
+    })
+
+    closeTerminalTab('local-tab-1', {
+      reason: 'pty-exit',
+      lifecyclePtyId: 'remote:web-runtime@@retired-term'
+    })
+
+    expect(closeWebRuntimeSessionTabMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminalHandle: 'retired-term'
+      })
+    )
+  })
+
   it('sends hostCloseReason on the wire without tagging the local close reason', () => {
     // Why: parked-tab lifecycle closes must reach the host as 'pty-exit' so it
     // can adjudicate them, while local guards keyed off `reason` still apply.
@@ -257,15 +287,16 @@ describe('closeTerminalTab', () => {
       tabsByWorktree: {
         'wt-1': [{ id: 'local-tab-1' }, { id: 'local-tab-2' }]
       },
-      ptyIdsByTabId: { 'local-tab-1': ['remote:web-runtime@@term-1'] },
-      terminalLayoutsByTabId: {},
       activeWorktreeId: 'wt-1',
       activeTabId: 'local-tab-1',
       closeTab,
       setActiveTab: vi.fn()
     })
 
-    closeTerminalTab('local-tab-1', { hostCloseReason: 'pty-exit' })
+    closeTerminalTab('local-tab-1', {
+      hostCloseReason: 'pty-exit',
+      lifecyclePtyId: 'remote:web-runtime@@term-1'
+    })
 
     expect(closeTab).toHaveBeenCalledWith('local-tab-1', {
       reason: undefined,

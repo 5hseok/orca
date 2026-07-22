@@ -29,8 +29,8 @@ export const ActivateTab = WorktreeTabSelector.extend({
 
 export const CloseTab = ActivateTab.extend({
   // Why: optional so legacy clients still validate; policy conservatively
-  // refuses an unattributed close instead of guessing that it came from a user.
-  reason: z.enum(['user', 'pty-exit', 'cleanup']).optional()
+  // attributes only authenticated mobile callers as user intent.
+  reason: z.literal('user').optional()
 })
 
 export const CloseLifecycleTab = ActivateTab.extend({

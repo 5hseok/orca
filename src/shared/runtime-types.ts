@@ -289,7 +289,7 @@ export type RuntimeMobileSessionTabCloseResult = {
 
 // Why: lets the host tell a user's close from a client-lifecycle echo
 // ('pty-exit'/'cleanup') and adjudicate against its own PTY liveness.
-// Absent on the wire for legacy clients, which new hosts conservatively refuse.
+// Absent on the wire for legacy desktop clients, which new hosts conservatively refuse.
 export type RuntimeSessionTabCloseReason = 'user' | 'pty-exit' | 'cleanup'
 
 export type RuntimeMobileSessionTabsSnapshot = {

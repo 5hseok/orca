@@ -22608,7 +22608,8 @@ describe('OrcaRuntimeService', () => {
       expect(result).toEqual({
         closed: true,
         refused: true,
-        refusalReason: 'unknown-liveness'
+        refusalReason: 'unknown-liveness',
+        snapshotRepublished: true
       })
       expect(getSession().tabsByWorktree[TEST_WORKTREE_ID]).toHaveLength(1)
       expect(getSession().terminalLayoutsByTabId['host-tab']).toBeDefined()

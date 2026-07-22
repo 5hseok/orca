@@ -19,7 +19,7 @@ import type {
   TerminalTabRetirementPlan
 } from '@/store/slices/terminal-tab-retirement'
 import { closeLocalTerminalTabState } from './close-local-terminal-tab-state'
-import { findTerminalIncarnationHandle } from './terminal-close-incarnation'
+import { getTerminalIncarnationHandle } from './terminal-close-incarnation'
 import {
   getWorktreeTerminalTabIds,
   resolveTerminalCloseTarget,
@@ -59,6 +59,8 @@ export function closeTerminalTab(
      *  local guards (pinned confirmation keys off `reason === 'pty-exit'`),
      *  so lifecycle echoes that still need those guards can tag the wire. */
     hostCloseReason?: TerminalTabCloseReason
+    /** PTY whose lifecycle event initiated the host close. */
+    lifecyclePtyId?: string
     captureRecentlyClosed?: boolean
     localPtyTeardownOwnedExternally?: boolean
     precomputedRetirementPlan?: TerminalTabRetirementPlan
@@ -123,7 +125,7 @@ export function closeTerminalTab(
     const lifecycleTerminalHandle =
       wireReason === 'user'
         ? null
-        : findTerminalIncarnationHandle(state, terminalTabId, runtimeEnvironmentId)
+        : getTerminalIncarnationHandle(options?.lifecyclePtyId ?? '', runtimeEnvironmentId)
     const publicationEpoch =
       wireReason === 'user'
         ? null

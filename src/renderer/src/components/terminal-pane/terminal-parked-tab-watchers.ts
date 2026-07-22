@@ -171,6 +171,7 @@ function startParkedTabWatchers(
         // wire so the host can refuse it while its PTY is live, without
         // `reason: 'pty-exit'` skipping the pinned confirmation above.
         hostCloseReason: 'pty-exit',
+        lifecyclePtyId: ptyId,
         onClosed: () => {
           discardPreHandlerPtyState(ptyId)
           const entry = parkedWatchersByTabId.get(tab.id)

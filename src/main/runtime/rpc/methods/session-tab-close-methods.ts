@@ -10,7 +10,7 @@ export const SESSION_TAB_CLOSE_METHODS: RpcAnyMethod[] = [
       withSpan(
         'runtime.session-tabs.close',
         async (span) => {
-          if (!params.reason) {
+          if (!params.reason && context.clientKind !== 'mobile') {
             const result = await context.runtime.refuseUnattributedMobileSessionTabClose(
               params.worktree,
               params.tabId
@@ -21,7 +21,7 @@ export const SESSION_TAB_CLOSE_METHODS: RpcAnyMethod[] = [
           const result = await context.runtime.closeMobileSessionTab(
             params.worktree,
             params.tabId,
-            { reason: params.reason }
+            { reason: 'user' }
           )
           span.setAttribute(
             'decision',
@@ -34,7 +34,8 @@ export const SESSION_TAB_CLOSE_METHODS: RpcAnyMethod[] = [
           attributes: {
             attribution: 'session-tab-close',
             origin: context.clientKind ?? 'in-process',
-            closeReason: params.reason ?? 'missing',
+            closeReason:
+              params.reason ?? (context.clientKind === 'mobile' ? 'legacy-mobile-user' : 'missing'),
             connectionGeneration: context.connectionId ?? 'in-process',
             requestId: context.requestId ?? 'in-process'
           }

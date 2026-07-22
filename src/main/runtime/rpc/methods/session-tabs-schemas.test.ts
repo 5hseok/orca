@@ -15,11 +15,15 @@ describe('ActivateTab.navigation', () => {
 })
 
 describe('CloseTab (session.tabs.close params)', () => {
-  it('round-trips each typed close reason', () => {
-    for (const reason of ['user', 'pty-exit', 'cleanup'] as const) {
-      const parsed = CloseTab.parse({ worktree: WT, tabId: 'tab-1', reason })
-      expect(parsed).toMatchObject({ tabId: 'tab-1', reason })
-    }
+  it('accepts only explicit user intent on the legacy close method', () => {
+    const parsed = CloseTab.parse({ worktree: WT, tabId: 'tab-1', reason: 'user' })
+    expect(parsed).toMatchObject({ tabId: 'tab-1', reason: 'user' })
+    expect(CloseTab.safeParse({ worktree: WT, tabId: 'tab-1', reason: 'pty-exit' }).success).toBe(
+      false
+    )
+    expect(CloseTab.safeParse({ worktree: WT, tabId: 'tab-1', reason: 'cleanup' }).success).toBe(
+      false
+    )
   })
 
   it('accepts a reasonless payload from legacy clients', () => {
