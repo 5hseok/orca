@@ -2577,6 +2577,9 @@ export type SourceControlGroupOrder = 'changes-first' | 'staged-first' | 'untrac
 
 export type LeftSidebarAppearanceMode = 'default' | 'match-terminal' | 'tinted'
 
+/** Which window edge holds the workspace list; the activity/explorer sidebar takes the other edge. */
+export type WorkspaceSidebarPosition = 'left' | 'right'
+
 export type FloatingTerminalCwdRequest = {
   path?: string
   requireTrusted?: boolean
@@ -2620,6 +2623,8 @@ export type GlobalSettings = {
   leftSidebarAppearanceMode: LeftSidebarAppearanceMode
   leftSidebarTintColor?: string
   leftSidebarTintOpacity?: number
+  /** Swaps the workspace list and activity/explorer sidebars for editor-style (files on the left) layouts. */
+  workspaceSidebarPosition: WorkspaceSidebarPosition
   uiLanguage: UiLanguage
   appIcon: AppIconId
   appFontFamily: string

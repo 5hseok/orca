@@ -179,6 +179,7 @@ function createSettings(overrides: TestSettingsOverrides = {}): GlobalSettings {
     diffWordWrap: overrides.diffWordWrap ?? false,
     localWindowsRuntimeDefault: overrides.localWindowsRuntimeDefault ?? { kind: 'windows-host' },
     leftSidebarAppearanceMode: overrides.leftSidebarAppearanceMode ?? 'default',
+    workspaceSidebarPosition: overrides.workspaceSidebarPosition ?? 'left',
     appFontFamily,
     agentStatusHooksEnabled,
     tabAutoGenerateTitle
