@@ -1428,8 +1428,46 @@ function App(): React.JSX.Element {
     isWebClient: isPairedWebClientWindow()
   })
   const activitySidebarEdge = sidebarSlots.leftOccupant === 'activity' ? 'left' : 'right'
+  const workspaceSidebarOnLeft = sidebarSlots.leftOccupant === 'workspace'
   // Full-page navigation surfaces own the whole content area, so suppress right-sidebar controls.
   const showRightSidebarControls = !creationLayoutActive && canShowRightSidebarForView(activeView)
+  // Why: the two mount points differ only in recovery copy, so keep both i18n keys rather than collapsing them.
+  const renderWorkspaceSidebar = (description: string): React.JSX.Element => (
+    <RecoverableRenderErrorBoundary
+      boundaryId="sidebar.worktrees"
+      surface="sidebar"
+      resetKey={activeView}
+      title={translate('auto.App.1468601e7b', 'The workspace list hit an error.')}
+      description={description}
+    >
+      <Sidebar
+        worktreeScrollOffsetRef={worktreeSidebarScrollOffsetRef}
+        worktreeScrollAnchorRef={worktreeSidebarScrollAnchorRef}
+      />
+    </RecoverableRenderErrorBoundary>
+  )
+  // Why: keep the shell mounted for layout stability (heavy panels disconnect while closed); unmount on the distraction-free tasks view.
+  const activitySidebarNode = showRightSidebarControls ? (
+    <RecoverableRenderErrorBoundary
+      boundaryId="right-sidebar"
+      surface="right-sidebar"
+      resetKey={
+        rightSidebarTab === 'explorer'
+          ? `${rightSidebarTab}:${rightSidebarExplorerView}`
+          : rightSidebarTab
+      }
+      title={translate('auto.App.ed6b168d00', 'The right sidebar hit an error.')}
+      description={translate(
+        'auto.App.8d1e160ed1',
+        'Retry the sidebar or switch tabs to reload this surface.'
+      )}
+    >
+      <RightSidebar
+        edge={activitySidebarEdge}
+        windowControlsEdge={sidebarSlots.windowControlsEdge}
+      />
+    </RecoverableRenderErrorBoundary>
+  ) : null
   const showProfileSwitcherInSidebarFooter = showSidebar && sidebarOpen
   const showProfileSwitcherInTopRight = !showProfileSwitcherInSidebarFooter
 
@@ -2094,7 +2132,11 @@ function App(): React.JSX.Element {
                       leftTitlebarChromeLayout.shouldMount ? (
                         /* Why: when the sidebar is collapsed, take this titlebar-height header out of flex layout so the terminal/editor reclaim the left edge. */
                         <div
-                          className={`flex min-h-0 flex-col shrink-0${sidebarOpen ? '' : ' relative w-0 overflow-visible'}`}
+                          className={`flex min-h-0 flex-col shrink-0${
+                            !workspaceSidebarOnLeft || sidebarOpen
+                              ? ''
+                              : ' relative w-0 overflow-visible'
+                          }`}
                         >
                           <div
                             // Why: floating titlebar-left occludes the center column's border-l seam; border-r restores that line, w-max sizes it to its own controls.
@@ -2105,54 +2147,36 @@ function App(): React.JSX.Element {
                             }`}
                             style={{
                               // Why: custom sidebar appearances are scoped to the sidebar root; mirror those vars onto the header in the same left-column panel.
-                              ...(sidebarOpen ? leftSidebarStyle : undefined),
+                              ...(workspaceSidebarOnLeft && sidebarOpen
+                                ? leftSidebarStyle
+                                : undefined),
                               // Why: size from the wrapper's live width so the header tracks in-flight drag resizes (persisted to Zustand only on mouseup).
-                              width: sidebarOpen ? '100%' : undefined
+                              width: !workspaceSidebarOnLeft || sidebarOpen ? '100%' : undefined
                             }}
                           >
                             {titlebarLeftControls}
                           </div>
                           <div className="flex min-h-0 flex-1">
                             {/* Why: flex-1/min-h-0 slot needed under the fixed 36px header, else the sidebar collapses to content height and loses its scroll viewport. */}
-                            <RecoverableRenderErrorBoundary
-                              boundaryId="sidebar.worktrees"
-                              surface="sidebar"
-                              resetKey={activeView}
-                              title={translate(
-                                'auto.App.1468601e7b',
-                                'The workspace list hit an error.'
-                              )}
-                              description={translate(
-                                'auto.App.bdc71dddc9',
-                                'The active workspace remains open. Retry the list or switch views.'
-                              )}
-                            >
-                              <Sidebar
-                                worktreeScrollOffsetRef={worktreeSidebarScrollOffsetRef}
-                                worktreeScrollAnchorRef={worktreeSidebarScrollAnchorRef}
-                              />
-                            </RecoverableRenderErrorBoundary>
+                            {workspaceSidebarOnLeft
+                              ? renderWorkspaceSidebar(
+                                  translate(
+                                    'auto.App.bdc71dddc9',
+                                    'The active workspace remains open. Retry the list or switch views.'
+                                  )
+                                )
+                              : activitySidebarNode}
                           </div>
                         </div>
-                      ) : (
-                        <RecoverableRenderErrorBoundary
-                          boundaryId="sidebar.worktrees"
-                          surface="sidebar"
-                          resetKey={activeView}
-                          title={translate(
-                            'auto.App.1468601e7b',
-                            'The workspace list hit an error.'
-                          )}
-                          description={translate(
+                      ) : workspaceSidebarOnLeft ? (
+                        renderWorkspaceSidebar(
+                          translate(
                             'auto.App.cba0fafda5',
                             'The active page remains open. Retry the list or switch views.'
-                          )}
-                        >
-                          <Sidebar
-                            worktreeScrollOffsetRef={worktreeSidebarScrollOffsetRef}
-                            worktreeScrollAnchorRef={worktreeSidebarScrollAnchorRef}
-                          />
-                        </RecoverableRenderErrorBoundary>
+                          )
+                        )
+                      ) : (
+                        activitySidebarNode
                       )
                     ) : null}
                     <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
@@ -2250,28 +2274,16 @@ function App(): React.JSX.Element {
                     </div>
                   </div>
                 </div>
-                {/* Why: keep the shell mounted for layout stability (heavy panels disconnect while closed); unmount on the distraction-free tasks view. */}
-                {showRightSidebarControls ? (
-                  <RecoverableRenderErrorBoundary
-                    boundaryId="right-sidebar"
-                    surface="right-sidebar"
-                    resetKey={
-                      rightSidebarTab === 'explorer'
-                        ? `${rightSidebarTab}:${rightSidebarExplorerView}`
-                        : rightSidebarTab
-                    }
-                    title={translate('auto.App.ed6b168d00', 'The right sidebar hit an error.')}
-                    description={translate(
-                      'auto.App.8d1e160ed1',
-                      'Retry the sidebar or switch tabs to reload this surface.'
-                    )}
-                  >
-                    <RightSidebar
-                      edge={activitySidebarEdge}
-                      windowControlsEdge={sidebarSlots.windowControlsEdge}
-                    />
-                  </RecoverableRenderErrorBoundary>
-                ) : null}
+                {workspaceSidebarOnLeft
+                  ? activitySidebarNode
+                  : showSidebar
+                    ? renderWorkspaceSidebar(
+                        translate(
+                          'auto.App.bdc71dddc9',
+                          'The active workspace remains open. Retry the list or switch views.'
+                        )
+                      )
+                    : null}
               </div>
             </RecoverableRenderErrorBoundary>
             {shouldMountFloatingTerminalPanel ? (
