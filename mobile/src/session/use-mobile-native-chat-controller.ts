@@ -21,6 +21,10 @@ import { sendMobileNativeChatMessage } from './mobile-native-chat-send'
 import { useMobileNativeChatAnswerSend } from './use-mobile-native-chat-answer-send'
 import { useMobileNativeChatDrafts } from './use-mobile-native-chat-drafts'
 import { useMobileNativeChatFileSearch } from './use-mobile-native-chat-file-search'
+import {
+  useMobileNativeChatSkills,
+  type MobileNativeChatSkillDiscovery
+} from './use-mobile-native-chat-skills'
 import { useMobileNativeChatSession } from './use-mobile-native-chat-session'
 import { useMobileNativeChatPrompts } from './use-mobile-native-chat-prompts'
 import { useMobileNativeChatStop } from './use-mobile-native-chat-stop'
@@ -55,6 +59,8 @@ export type MobileNativeChatController = {
   handleNativeChatStop: () => void
   nativeChatFilePaths: string[]
   loadNativeChatFiles: (query: string) => void
+  nativeChatSkillDiscovery: MobileNativeChatSkillDiscovery
+  handleNativeChatPickerTextChange: (text: string) => void
   handleNativeChatSend: (text: string) => Promise<boolean>
 }
 
@@ -215,6 +221,15 @@ export function useMobileNativeChatController(args: {
     client,
     worktreeId
   })
+  const nativeChatSkillDiscovery = useMobileNativeChatSkills({
+    client,
+    worktreeId,
+    agent: activeChatResolution?.agent ?? null
+  })
+  const handleNativeChatPickerTextChange = useCallback(
+    (text: string) => setChatComposerText(text),
+    [setChatComposerText]
+  )
 
   const handleNativeChatSend = useCallback(
     async (text: string): Promise<boolean> => {
@@ -272,6 +287,8 @@ export function useMobileNativeChatController(args: {
     handleNativeChatStop,
     nativeChatFilePaths,
     loadNativeChatFiles,
+    nativeChatSkillDiscovery,
+    handleNativeChatPickerTextChange,
     handleNativeChatSend
   }
 }
