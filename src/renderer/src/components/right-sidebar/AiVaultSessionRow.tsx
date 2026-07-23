@@ -132,7 +132,15 @@ export function VaultSessionRow({
           // Why: users naturally drag the session row itself; matching that
           // gesture avoids hidden affordances and text-selection false starts.
           draggable={!resumeDisabled}
-          onClick={() => {
+          onClick={(event) => {
+            // Radix portals this row's dropdown and context menus out of its
+            // DOM, but React still bubbles their clicks back here through the
+            // component tree. Without this, choosing Delete expands the row
+            // behind the confirm dialog and cancelling leaves it expanded.
+            const target = event.target
+            if (target instanceof Node && !event.currentTarget.contains(target)) {
+              return
+            }
             onToggleDetails()
           }}
           onDragStart={startResumeDrag}
