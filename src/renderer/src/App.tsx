@@ -25,7 +25,7 @@ import { SYNC_FIT_PANES_EVENT, TOGGLE_TERMINAL_PANE_EXPAND_EVENT } from '@/const
 import { syncZoomCSSVar } from '@/lib/ui-zoom'
 import { resolveLeftSidebarStyleVariables } from '@/lib/left-sidebar-appearance'
 import { canShowRightSidebarForView } from '@/lib/right-sidebar-visibility'
-import { resolveSidebarSlotLayout } from '@/lib/sidebar-slot-layout'
+import { resolveSidebarSlotChrome, resolveSidebarSlotLayout } from '@/lib/sidebar-slot-layout'
 import {
   isPairedWebClientWindow,
   shouldRenderDesktopWindowChrome
@@ -1431,12 +1431,13 @@ function App(): React.JSX.Element {
   const workspaceSidebarOnLeft = sidebarSlots.leftOccupant === 'workspace'
   // Full-page navigation surfaces own the whole content area, so suppress right-sidebar controls.
   const showRightSidebarControls = !creationLayoutActive && canShowRightSidebarForView(activeView)
-  // Why: the left column's collapse/float behavior must follow whichever sidebar actually occupies it,
-  // not the workspace list's state — otherwise a left-mounted activity sidebar can't reclaim its space.
-  const leftSlotOpen = workspaceSidebarOnLeft ? sidebarOpen : rightSidebarOpen
-  const trailingSlotOpen = workspaceSidebarOnLeft ? rightSidebarOpen : sidebarOpen
-  const leftColumnHeaderFloating =
-    leftTitlebarChromeLayout.shouldMount && !leftSlotOpen && !stackedSidebarOpen
+  const { leftSlotOpen, trailingSlotOpen, leftColumnHeaderFloating } = resolveSidebarSlotChrome({
+    leftOccupant: sidebarSlots.leftOccupant,
+    workspaceSidebarOpen: sidebarOpen,
+    activitySidebarOpen: rightSidebarOpen,
+    leftTitlebarChromeMounted: leftTitlebarChromeLayout.shouldMount,
+    stackedSidebarOpen
+  })
   // Why: the two mount points differ only in recovery copy, so keep both i18n keys rather than collapsing them.
   const renderWorkspaceSidebar = (description: string): React.JSX.Element => (
     <RecoverableRenderErrorBoundary

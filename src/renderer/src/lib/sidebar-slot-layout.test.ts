@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSidebarSlotLayout } from './sidebar-slot-layout'
+import { resolveSidebarSlotChrome, resolveSidebarSlotLayout } from './sidebar-slot-layout'
+
+const CHROME_BASE = {
+  leftOccupant: 'workspace',
+  workspaceSidebarOpen: true,
+  activitySidebarOpen: true,
+  leftTitlebarChromeMounted: true,
+  stackedSidebarOpen: false
+} as const
 
 describe('resolveSidebarSlotLayout', () => {
   it('keeps the workspace list on the left by default', () => {
@@ -67,5 +75,69 @@ describe('resolveSidebarSlotLayout', () => {
         })
       ).toMatchObject({ windowControlsEdge: null, windowControlsOccupant: null })
     }
+  })
+})
+
+describe('resolveSidebarSlotChrome', () => {
+  it('reads the left slot from the workspace list while it holds that edge', () => {
+    expect(resolveSidebarSlotChrome({ ...CHROME_BASE, workspaceSidebarOpen: false })).toMatchObject(
+      { leftSlotOpen: false, trailingSlotOpen: true }
+    )
+  })
+
+  it('reads the left slot from the activity sidebar once the lists swap', () => {
+    // Why: the regression this guards — the collapsed left slot kept reporting the workspace
+    // list's state, so a left-mounted activity sidebar never released its column.
+    expect(
+      resolveSidebarSlotChrome({
+        ...CHROME_BASE,
+        leftOccupant: 'activity',
+        activitySidebarOpen: false
+      })
+    ).toMatchObject({ leftSlotOpen: false, trailingSlotOpen: true })
+  })
+
+  it('leaves the left slot open when only the trailing sidebar collapses', () => {
+    for (const leftOccupant of ['workspace', 'activity'] as const) {
+      const trailingClosed =
+        leftOccupant === 'workspace'
+          ? { activitySidebarOpen: false }
+          : { workspaceSidebarOpen: false }
+      expect(
+        resolveSidebarSlotChrome({ ...CHROME_BASE, leftOccupant, ...trailingClosed })
+      ).toMatchObject({
+        leftSlotOpen: true,
+        trailingSlotOpen: false,
+        leftColumnHeaderFloating: false
+      })
+    }
+  })
+
+  it('floats the left header only when its own slot collapsed under mounted chrome', () => {
+    expect(
+      resolveSidebarSlotChrome({ ...CHROME_BASE, workspaceSidebarOpen: false })
+        .leftColumnHeaderFloating
+    ).toBe(true)
+    expect(resolveSidebarSlotChrome(CHROME_BASE).leftColumnHeaderFloating).toBe(false)
+  })
+
+  it('keeps the header in flow when the left column draws no titlebar chrome', () => {
+    expect(
+      resolveSidebarSlotChrome({
+        ...CHROME_BASE,
+        workspaceSidebarOpen: false,
+        leftTitlebarChromeMounted: false
+      }).leftColumnHeaderFloating
+    ).toBe(false)
+  })
+
+  it('keeps the header in flow in stacked views, which draw their own full-width titlebar', () => {
+    expect(
+      resolveSidebarSlotChrome({
+        ...CHROME_BASE,
+        workspaceSidebarOpen: false,
+        stackedSidebarOpen: true
+      }).leftColumnHeaderFloating
+    ).toBe(false)
   })
 })
