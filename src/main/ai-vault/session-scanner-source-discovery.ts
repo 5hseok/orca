@@ -25,9 +25,9 @@ export const COPILOT_SESSIONS_DIR = join(
   'session-state'
 )
 export const CURSOR_PROJECTS_DIR = join(homedir(), '.cursor', 'projects')
-const GROK_SESSIONS_DIR = resolveGrokSessionsDir()
+export const GROK_SESSIONS_DIR = resolveGrokSessionsDir()
 export const HERMES_SESSIONS_DIR = join(homedir(), '.hermes', 'sessions')
-const ROVO_SESSIONS_DIR = join(homedir(), '.rovodev', 'sessions')
+export const ROVO_SESSIONS_DIR = join(homedir(), '.rovodev', 'sessions')
 export const OPENCLAW_STATE_DIR =
   process.env.OPENCLAW_STATE_DIR?.trim() || join(homedir(), '.openclaw')
 export const PI_SESSIONS_DIR = normalizeAgentSessionsDir(

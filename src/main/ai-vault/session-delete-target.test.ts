@@ -14,6 +14,10 @@ const COPILOT_ROOT = join(HOME, '.copilot', 'session-state')
 const DEVIN_ROOT = join(HOME, '.local', 'share', 'devin', 'cli', 'transcripts')
 const PI_ROOT = join(HOME, '.pi', 'agent', 'sessions')
 const OMP_ROOT = join(HOME, '.omp', 'agent', 'sessions')
+const CLAUDE_ROOT = join(HOME, '.claude', 'projects')
+const CLAUDE_SESSION_ENV_ROOT = join(HOME, '.claude', 'session-env')
+const ROVO_ROOT = join(HOME, '.rovodev', 'sessions')
+const GROK_ROOT = join(HOME, '.grok', 'sessions')
 
 describe('validateAiVaultSessionDeleteTarget', () => {
   it('allows a supported agent whose file resolves inside its known root', () => {
@@ -26,7 +30,14 @@ describe('validateAiVaultSessionDeleteTarget', () => {
     expect(result).toEqual({
       allowed: true,
       agent: 'gemini',
-      resolvedPath: join(GEMINI_ROOT, 'project-a', 'session-1.json')
+      resolvedPath: join(GEMINI_ROOT, 'project-a', 'session-1.json'),
+      removals: [
+        {
+          path: join(GEMINI_ROOT, 'project-a', 'session-1.json'),
+          kind: 'file',
+          roots: [GEMINI_ROOT]
+        }
+      ]
     })
   })
 
@@ -130,13 +141,13 @@ describe('validateAiVaultSessionDeleteTarget', () => {
     expect(result).toEqual({ allowed: false, agent: 'openclaw', reason: 'file-predicate-mismatch' })
   })
 
-  it('rejects an unsupported agent', () => {
+  it('rejects an agent whose own registry would keep a dangling entry (codex)', () => {
     const result = validateAiVaultSessionDeleteTarget({
-      agent: 'claude',
-      filePath: join(HOME, '.claude', 'projects', 'proj', 'session-1.jsonl'),
+      agent: 'codex',
+      filePath: join(HOME, '.codex', 'sessions', 'rollout-1.jsonl'),
       executionHostId: 'local'
     })
-    expect(result).toEqual({ allowed: false, agent: 'claude', reason: 'unsupported-agent' })
+    expect(result).toEqual({ allowed: false, agent: 'codex', reason: 'unsupported-agent' })
   })
 
   it('rejects a non-local execution host', () => {
@@ -291,5 +302,136 @@ describe('openclaw scanner/deletion shared path rules', () => {
   it('isOpenClawSessionFilePath requires a sessions path segment', () => {
     expect(isOpenClawSessionFilePath(join('agent-1', 'sessions', 'session-1.jsonl'))).toBe(true)
     expect(isOpenClawSessionFilePath(join('agent-1', 'session-1.jsonl'))).toBe(false)
+  })
+
+  // D-7: the directory-shaped agents. Their delete unit is a path set derived
+  // from the one file discovery surfaced, not that file alone.
+  describe('directory-shaped agents (D-7)', () => {
+    it('plans claude companions before the transcript, so a failure keeps the row', () => {
+      const filePath = join(CLAUDE_ROOT, '-proj', 'sess-1.jsonl')
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'claude',
+        filePath,
+        executionHostId: 'local',
+        rootOptions: { claudeProjectsDir: CLAUDE_ROOT }
+      })
+
+      expect(result).toEqual({
+        allowed: true,
+        agent: 'claude',
+        resolvedPath: filePath,
+        removals: [
+          {
+            path: join(CLAUDE_ROOT, '-proj', 'sess-1', 'subagents'),
+            kind: 'directory',
+            roots: [CLAUDE_ROOT]
+          },
+          {
+            path: join(CLAUDE_SESSION_ENV_ROOT, 'sess-1'),
+            kind: 'directory',
+            roots: [CLAUDE_SESSION_ENV_ROOT]
+          },
+          { path: filePath, kind: 'file', roots: [CLAUDE_ROOT] }
+        ]
+      })
+    })
+
+    it("never plans file-history, the rewind buffer for the user's own files", () => {
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'claude',
+        filePath: join(CLAUDE_ROOT, '-proj', 'sess-1.jsonl'),
+        executionHostId: 'local',
+        rootOptions: { claudeProjectsDir: CLAUDE_ROOT }
+      })
+
+      expect(result.allowed).toBe(true)
+      expect(
+        result.allowed && result.removals.some((removal) => removal.path.includes('file-history'))
+      ).toBe(false)
+    })
+
+    it("pairs a WSL-home claude session with that distro's session-env, not the local one", () => {
+      const wslHome = join('/tmp', 'orca-wsl-home')
+      const filePath = join(wslHome, '.claude', 'projects', '-proj', 'sess-2.jsonl')
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'claude',
+        filePath,
+        executionHostId: 'local',
+        wslHomeDirs: [wslHome],
+        rootOptions: { claudeProjectsDir: CLAUDE_ROOT }
+      })
+
+      expect(result.allowed && result.removals[1]).toEqual({
+        path: join(wslHome, '.claude', 'session-env', 'sess-2'),
+        kind: 'directory',
+        roots: [join(wslHome, '.claude', 'session-env')]
+      })
+    })
+
+    it('rejects a Task subagent transcript, which is only ever removed with its parent', () => {
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'claude',
+        filePath: join(CLAUDE_ROOT, '-proj', 'sess-1', 'subagents', 'agent-abc.jsonl'),
+        executionHostId: 'local',
+        rootOptions: { claudeProjectsDir: CLAUDE_ROOT }
+      })
+
+      expect(result).toEqual({
+        allowed: false,
+        agent: 'claude',
+        reason: 'file-predicate-mismatch'
+      })
+    })
+
+    it("removes rovo's session directory, not just the metadata.json inside it", () => {
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'rovo',
+        filePath: join(ROVO_ROOT, 'sess-1', 'metadata.json'),
+        executionHostId: 'local',
+        rootOptions: { rovoSessionsDir: ROVO_ROOT }
+      })
+
+      expect(result).toEqual({
+        allowed: true,
+        agent: 'rovo',
+        resolvedPath: join(ROVO_ROOT, 'sess-1', 'metadata.json'),
+        removals: [{ path: join(ROVO_ROOT, 'sess-1'), kind: 'directory', roots: [ROVO_ROOT] }]
+      })
+    })
+
+    it("removes grok's session directory under its encoded-cwd group", () => {
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'grok',
+        filePath: join(GROK_ROOT, '-Users-me-proj', 'sess-1', 'summary.json'),
+        executionHostId: 'local',
+        rootOptions: { grokSessionsDir: GROK_ROOT }
+      })
+
+      expect(result.allowed && result.removals).toEqual([
+        { path: join(GROK_ROOT, '-Users-me-proj', 'sess-1'), kind: 'directory', roots: [GROK_ROOT] }
+      ])
+    })
+
+    it("rejects grok's chat_history.jsonl — only summary.json names a session", () => {
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'grok',
+        filePath: join(GROK_ROOT, 'group', 'sess-1', 'chat_history.jsonl'),
+        executionHostId: 'local',
+        rootOptions: { grokSessionsDir: GROK_ROOT }
+      })
+
+      expect(result).toEqual({ allowed: false, agent: 'grok', reason: 'invalid-extension' })
+    })
+
+    it('refuses a metadata.json sitting in the sessions root, which would trash every session', () => {
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'rovo',
+        filePath: join(ROVO_ROOT, 'metadata.json'),
+        executionHostId: 'local',
+        rootOptions: { rovoSessionsDir: ROVO_ROOT }
+      })
+
+      expect(result).toEqual({ allowed: false, agent: 'rovo', reason: 'no-session-directory' })
+    })
   })
 })

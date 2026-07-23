@@ -25,6 +25,8 @@ import { deleteAiVaultSessionFile } from './session-delete'
 
 const HOME = join('/tmp', 'orca-ai-vault-delete-exec-fixture-home')
 const GEMINI_ROOT = join(HOME, '.gemini', 'tmp')
+const CLAUDE_ROOT = join(HOME, '.claude', 'projects')
+const ROVO_ROOT = join(HOME, '.rovodev', 'sessions')
 
 function enoent(): NodeJS.ErrnoException {
   const error = new Error('not found') as NodeJS.ErrnoException
@@ -66,7 +68,11 @@ describe('deleteAiVaultSessionFile', () => {
 
     const result = await deleteAiVaultSessionFile(baseArgs(filePath))
 
-    expect(result).toEqual({ outcome: 'rejected', agent: 'gemini', reason: 'not-a-regular-file' })
+    expect(result).toEqual({
+      outcome: 'rejected',
+      agent: 'gemini',
+      reason: 'unexpected-target-kind'
+    })
     expect(trashItemMock).not.toHaveBeenCalled()
   })
 
@@ -76,7 +82,11 @@ describe('deleteAiVaultSessionFile', () => {
 
     const result = await deleteAiVaultSessionFile(baseArgs(filePath))
 
-    expect(result).toEqual({ outcome: 'rejected', agent: 'gemini', reason: 'not-a-regular-file' })
+    expect(result).toEqual({
+      outcome: 'rejected',
+      agent: 'gemini',
+      reason: 'unexpected-target-kind'
+    })
     expect(trashItemMock).not.toHaveBeenCalled()
   })
 
@@ -128,15 +138,15 @@ describe('deleteAiVaultSessionFile', () => {
   })
 
   it('short-circuits a rejected validation (unsupported agent) before touching the filesystem', async () => {
-    const filePath = join(HOME, '.claude', 'projects', 'proj', 'session-1.jsonl')
+    const filePath = join(HOME, '.codex', 'sessions', 'rollout-1.jsonl')
 
     const result = await deleteAiVaultSessionFile({
-      agent: 'claude',
+      agent: 'codex',
       filePath,
       executionHostId: 'local'
     })
 
-    expect(result).toEqual({ outcome: 'rejected', agent: 'claude', reason: 'unsupported-agent' })
+    expect(result).toEqual({ outcome: 'rejected', agent: 'codex', reason: 'unsupported-agent' })
     expect(lstatMock).not.toHaveBeenCalled()
     expect(realpathMock).not.toHaveBeenCalled()
     expect(trashItemMock).not.toHaveBeenCalled()
@@ -153,5 +163,88 @@ describe('deleteAiVaultSessionFile', () => {
     expect(tryDeleteWslUncPathMock).toHaveBeenCalledWith(filePath)
     expect(lstatMock).not.toHaveBeenCalled()
     expect(trashItemMock).not.toHaveBeenCalled()
+  })
+
+  // D-7: a session whose delete unit is a path set. What matters here is the
+  // order — the transcript is what puts the row on screen, so it must be the
+  // last thing removed.
+  describe('directory-shaped agents (D-7)', () => {
+    const claudeArgs = {
+      agent: 'claude' as const,
+      filePath: join(CLAUDE_ROOT, '-proj', 'sess-1.jsonl'),
+      executionHostId: 'local' as const,
+      rootOptions: { claudeProjectsDir: CLAUDE_ROOT }
+    }
+
+    it('trashes the subagents and session-env dirs before the transcript', async () => {
+      lstatMock.mockImplementation((path: string) =>
+        Promise.resolve(
+          path.endsWith('.jsonl') ? { isFile: () => true } : { isDirectory: () => true }
+        )
+      )
+      realpathMock.mockImplementation((path: string) => Promise.resolve(path))
+      trashItemMock.mockResolvedValue(undefined)
+
+      const result = await deleteAiVaultSessionFile(claudeArgs)
+
+      expect(result).toEqual({ outcome: 'deleted' })
+      expect(trashItemMock.mock.calls.map(([path]) => path)).toEqual([
+        join(CLAUDE_ROOT, '-proj', 'sess-1', 'subagents'),
+        join(HOME, '.claude', 'session-env', 'sess-1'),
+        claudeArgs.filePath
+      ])
+    })
+
+    it('still deletes when a companion is absent — most sessions spawn no subagent', async () => {
+      lstatMock.mockImplementation((path: string) =>
+        path.endsWith('.jsonl') ? Promise.resolve({ isFile: () => true }) : Promise.reject(enoent())
+      )
+      realpathMock.mockImplementation((path: string) => Promise.resolve(path))
+      trashItemMock.mockResolvedValue(undefined)
+
+      const result = await deleteAiVaultSessionFile(claudeArgs)
+
+      expect(result).toEqual({ outcome: 'deleted' })
+      expect(trashItemMock.mock.calls.map(([path]) => path)).toEqual([claudeArgs.filePath])
+    })
+
+    it('leaves the transcript in place when a companion removal is rejected', async () => {
+      // A file where the plan expects the subagents directory: refuse rather
+      // than coerce, and stop before the transcript so the row stays to retry.
+      lstatMock.mockImplementation((path: string) =>
+        Promise.resolve(
+          path.endsWith('subagents')
+            ? { isFile: () => true, isDirectory: () => false }
+            : { isFile: () => true, isDirectory: () => true }
+        )
+      )
+      realpathMock.mockImplementation((path: string) => Promise.resolve(path))
+
+      const result = await deleteAiVaultSessionFile(claudeArgs)
+
+      expect(result).toEqual({
+        outcome: 'rejected',
+        agent: 'claude',
+        reason: 'unexpected-target-kind'
+      })
+      expect(trashItemMock).not.toHaveBeenCalled()
+    })
+
+    it("trashes rovo's session directory rather than the metadata file", async () => {
+      const sessionDir = join(ROVO_ROOT, 'sess-1')
+      lstatMock.mockResolvedValue({ isDirectory: () => true })
+      realpathMock.mockImplementation((path: string) => Promise.resolve(path))
+      trashItemMock.mockResolvedValue(undefined)
+
+      const result = await deleteAiVaultSessionFile({
+        agent: 'rovo',
+        filePath: join(sessionDir, 'metadata.json'),
+        executionHostId: 'local',
+        rootOptions: { rovoSessionsDir: ROVO_ROOT }
+      })
+
+      expect(result).toEqual({ outcome: 'deleted' })
+      expect(trashItemMock).toHaveBeenCalledWith(sessionDir)
+    })
   })
 })
