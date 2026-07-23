@@ -437,6 +437,8 @@ import type {
   OpenCodeUsageSummary
 } from '../shared/opencode-usage-types'
 import type {
+  AiVaultDeleteSessionArgs,
+  AiVaultDeleteSessionResult,
   AiVaultListArgs,
   AiVaultListResult,
   AiVaultSubagentListArgs,
@@ -840,6 +842,8 @@ export type AiVaultApi = {
   ) => Promise<AiVaultPrepareSessionResumeResult>
   /** Lists the Task subagent transcripts of one session, on demand. */
   listSubagentSessions: (args: AiVaultSubagentListArgs) => Promise<AiVaultSubagentListResult>
+  /** Moves a deletable session's transcript to the OS trash (D-1); local sessions only (D-3). */
+  deleteSession: (args: AiVaultDeleteSessionArgs) => Promise<AiVaultDeleteSessionResult>
   /** Fires when any app window regains OS focus; returns an unsubscribe. */
   onWindowFocused: (callback: () => void) => () => void
 }
