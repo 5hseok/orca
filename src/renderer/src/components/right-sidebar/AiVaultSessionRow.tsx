@@ -14,6 +14,7 @@ import { SessionInlineDetails } from './AiVaultSessionDetails'
 import { latestSessionConversationTurn } from './ai-vault-session-display'
 import { SessionActionMenuItems } from './AiVaultSessionActionMenuItems'
 import { SessionRowTrailingActions } from './SessionRowTrailingActions'
+import { resolveAiVaultSessionDeletability } from './ai-vault-session-deletability'
 import type { AiVaultSessionResumeActions } from './ai-vault-session-resume'
 import {
   shouldShowAiVaultSessionWorktreeLine,
@@ -51,7 +52,8 @@ export function VaultSessionRow({
   onCopyPath,
   onOpenLog,
   onRevealLog,
-  onOpenCwd
+  onOpenCwd,
+  onRequestDelete
 }: {
   session: AiVaultSession
   liveState: AgentStatusState | null
@@ -77,10 +79,14 @@ export function VaultSessionRow({
   onOpenLog?: () => void
   onRevealLog?: () => void
   onOpenCwd?: () => void
+  onRequestDelete: (session: AiVaultSession) => void
 }) {
   const updatedAt = session.updatedAt ?? session.modifiedAt
   const detailsId = getSessionDetailsId(session.id)
   const latestTurn = latestSessionConversationTurn(session)
+  // Computed once so the dropdown menu and the context menu never disagree.
+  const deletability = resolveAiVaultSessionDeletability(session)
+  const requestDelete = (): void => onRequestDelete(session)
   const detailsTooltip = detailsExpanded
     ? translate('auto.components.right.sidebar.AiVaultSessionRow.hideDetails', 'Hide Details')
     : translate('auto.components.right.sidebar.AiVaultSessionRow.showDetails', 'Show Details')
@@ -169,6 +175,8 @@ export function VaultSessionRow({
               onOpenLog={onOpenLog}
               onRevealLog={onRevealLog}
               onOpenCwd={onOpenCwd}
+              deletability={deletability}
+              onRequestDelete={requestDelete}
             />
           </div>
           {detailsExpanded && shouldShowAiVaultSessionWorktreeLine(worktreeInfo, { vaultScope }) ? (
@@ -233,6 +241,9 @@ export function VaultSessionRow({
           onOpenLog={onOpenLog}
           onRevealLog={onRevealLog}
           onOpenCwd={onOpenCwd}
+          agent={session.agent}
+          deletability={deletability}
+          onDelete={requestDelete}
         />
       </ContextMenuContent>
     </ContextMenu>

@@ -11,6 +11,11 @@ import { parseHostAccessLink } from '../../../shared/remote-pairing-address'
 import { verifyRemotePairingRuntimeStatus } from '../../../shared/remote-pairing-verification'
 import type { AiVaultListArgs, AiVaultListResult } from '../../../shared/ai-vault-types'
 import type {
+  AiVaultDeleteSessionArgs,
+  AiVaultListArgs,
+  AiVaultListResult
+} from '../../../shared/ai-vault-types'
+import type {
   AiVaultPrepareSessionResumeArgs,
   AiVaultPrepareSessionResumeResult
 } from '../../../shared/ai-vault-resume-preparation'
@@ -1542,6 +1547,15 @@ function createAiVaultApi(): NonNullable<Partial<PreloadApi>['aiVault']> {
     listSubagentSessions: () => Promise.resolve({ sessions: [], issues: [] }),
     // Why: full first-prompt re-parse is local-FS only; web/runtime falls back to preview text.
     getFirstUserPrompt: () => Promise.resolve({ prompt: null }),
+    // Why: session deletion is local-only (D-3) and has no runtime RPC; a web
+    // client's sessions are runtime-hosted, so report the same non-local
+    // rejection the UI already gates on rather than pretend to delete.
+    deleteSession: (args: AiVaultDeleteSessionArgs) =>
+      Promise.resolve({
+        outcome: 'rejected',
+        agent: args.agent,
+        reason: 'non-local-host' as const
+      }),
     onWindowFocused: () => noopUnsubscribe
   }
 }
