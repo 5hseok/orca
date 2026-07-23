@@ -322,7 +322,7 @@ describe('openclaw scanner/deletion shared path rules', () => {
         resolvedPath: filePath,
         removals: [
           {
-            path: join(CLAUDE_ROOT, '-proj', 'sess-1', 'subagents'),
+            path: join(CLAUDE_ROOT, '-proj', 'sess-1'),
             kind: 'directory',
             roots: [CLAUDE_ROOT]
           },
@@ -365,6 +365,21 @@ describe('openclaw scanner/deletion shared path rules', () => {
         path: join(wslHome, '.claude', 'session-env', 'sess-2'),
         kind: 'directory',
         roots: [join(wslHome, '.claude', 'session-env')]
+      })
+    })
+
+    it('refuses a transcript whose stem would resolve to the project dir itself', () => {
+      const result = validateAiVaultSessionDeleteTarget({
+        agent: 'claude',
+        filePath: join(CLAUDE_ROOT, '-proj', '..jsonl'),
+        executionHostId: 'local',
+        rootOptions: { claudeProjectsDir: CLAUDE_ROOT }
+      })
+
+      expect(result).toEqual({
+        allowed: false,
+        agent: 'claude',
+        reason: 'no-session-directory'
       })
     })
 
