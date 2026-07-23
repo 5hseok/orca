@@ -63,6 +63,9 @@ export type AiVaultSessionDeleteRejectionCode =
   | 'path-outside-known-roots'
   | 'invalid-extension'
   | 'file-predicate-mismatch'
+  // D-4 fs-side guard (S-2): resolvedPath's lstat() isn't a regular file
+  // (it's a directory or a symlink), or its realpath escapes the agent's roots.
+  | 'not-a-regular-file'
 
 // CALLER CONTRACT (D-4): `allowed: true` is a pure, path-only judgement — the
 // validator never touches the filesystem, so it cannot tell a real session
