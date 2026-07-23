@@ -189,7 +189,7 @@ describe('deleteAiVaultSessionFile', () => {
 
       expect(result).toEqual({ outcome: 'deleted' })
       expect(trashItemMock.mock.calls.map(([path]) => path)).toEqual([
-        join(CLAUDE_ROOT, '-proj', 'sess-1', 'subagents'),
+        join(CLAUDE_ROOT, '-proj', 'sess-1'),
         join(HOME, '.claude', 'session-env', 'sess-1'),
         claudeArgs.filePath
       ])
@@ -209,11 +209,11 @@ describe('deleteAiVaultSessionFile', () => {
     })
 
     it('leaves the transcript in place when a companion removal is rejected', async () => {
-      // A file where the plan expects the subagents directory: refuse rather
+      // A file where the plan expects the session directory: refuse rather
       // than coerce, and stop before the transcript so the row stays to retry.
       lstatMock.mockImplementation((path: string) =>
         Promise.resolve(
-          path.endsWith('subagents')
+          path === join(CLAUDE_ROOT, '-proj', 'sess-1')
             ? { isFile: () => true, isDirectory: () => false }
             : { isFile: () => true, isDirectory: () => true }
         )

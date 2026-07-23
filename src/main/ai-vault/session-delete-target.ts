@@ -233,10 +233,15 @@ export function validateAiVaultSessionDeleteTarget(
 
 // The ordered path set that removing this session means (D-7). Companions
 // first, the scanner-surfaced path last — see the ordering note on
-// AiVaultSessionDeleteAllowedResult. Returns null when the path can't name a
-// session of its own, which only happens for a directory-shaped agent whose
-// file sits directly in the sessions root (removing that would trash every
-// session at once).
+// AiVaultSessionDeleteAllowedResult. Returns null when the path names no
+// session directory of its own, which would make the removal reach the root
+// holding every session instead.
+//
+// `~/.claude/session-env/<uuid>/` is a companion because it holds that
+// session's generated shell exports and nothing else. Its sibling
+// `file-history/<uuid>/` deliberately is not: that is the rewind buffer with
+// earlier versions of the user's own files, and retiring a session is no
+// reason to take away the only copy that can restore them.
 function sessionDeleteRemovals(args: {
   agent: AiVaultDeletableAgent
   resolvedPath: string
@@ -255,35 +260,28 @@ function sessionDeleteRemovals(args: {
   }
 
   if (agent === 'claude') {
+    const sessionId = basename(resolvedPath, extname(resolvedPath))
+    // A degenerate stem ('.' from `..jsonl`, or empty) would resolve the
+    // session directory to the project directory and trash every session in it.
+    if (!sessionId || sessionId === '.' || sessionId === '..') {
+      return null
+    }
+    // <enc>/<uuid>/, the directory named after the transcript. It holds
+    // `subagents/` today; taking the parent rather than that one subdirectory
+    // is what keeps an empty <uuid>/ from being left behind on every delete.
+    // Derived from the scanner's own subagents path so the two can't drift.
+    const sessionDir = dirname(subagentTranscriptsDirFor(resolvedPath))
+    // <home>/.claude/projects -> <home>/.claude/session-env, so a WSL-home
+    // session cleans up that distro's session-env, not the local host's.
+    const sessionEnvRoot = join(dirname(matchedRoot), 'session-env')
     return [
-      // Reuses the scanner's own derivation so the directory removed here is
-      // exactly the one it counts subagents from.
-      { path: subagentTranscriptsDirFor(resolvedPath), kind: 'directory', roots: resolvedRoots },
-      ...claudeSessionEnvRemoval(resolvedPath, matchedRoot),
+      { path: sessionDir, kind: 'directory', roots: resolvedRoots },
+      { path: join(sessionEnvRoot, sessionId), kind: 'directory', roots: [sessionEnvRoot] },
       { path: resolvedPath, kind: 'file', roots: resolvedRoots }
     ]
   }
 
   return [{ path: resolvedPath, kind: 'file', roots: resolvedRoots }]
-}
-
-// `~/.claude/session-env/<uuid>/` holds the generated shell exports for one
-// session and nothing else, so it goes with the transcript (D-7). Its sibling
-// `file-history/<uuid>/` deliberately does NOT: that is the rewind buffer
-// holding earlier versions of the user's own files, and retiring a session is
-// no reason to take away the only copy that can restore them.
-function claudeSessionEnvRemoval(
-  resolvedPath: string,
-  matchedProjectsRoot: string
-): readonly AiVaultSessionDeleteRemoval[] {
-  const sessionId = basename(resolvedPath, extname(resolvedPath))
-  if (!sessionId) {
-    return []
-  }
-  // <home>/.claude/projects -> <home>/.claude/session-env, so a WSL-home
-  // session cleans up that distro's session-env, not the local host's.
-  const sessionEnvRoot = join(dirname(matchedProjectsRoot), 'session-env')
-  return [{ path: join(sessionEnvRoot, sessionId), kind: 'directory', roots: [sessionEnvRoot] }]
 }
 
 function rejected(
