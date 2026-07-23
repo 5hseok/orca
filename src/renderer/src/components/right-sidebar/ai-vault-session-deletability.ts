@@ -1,8 +1,4 @@
-import {
-  AI_VAULT_UNSUPPORTED_DELETE_REASONS,
-  isAiVaultDeletableAgent,
-  type AiVaultUnsupportedDeleteReasonCode
-} from '../../../../shared/ai-vault-session-deletion'
+import { isAiVaultDeletableAgent } from '../../../../shared/ai-vault-session-deletion'
 import type { AiVaultSession } from '../../../../shared/ai-vault-types'
 import {
   canUseLocalAiVaultSessionPathActions,
@@ -16,17 +12,10 @@ export type AiVaultSessionDeletabilityReasonCode =
 
 export type AiVaultSessionDeletableResult = { deletable: true }
 
-export type AiVaultSessionNotDeletableResult =
-  | { deletable: false; reason: 'non-local-host' }
-  | { deletable: false; reason: 'synthetic-path' }
-  | {
-      deletable: false
-      reason: 'unsupported-agent'
-      // Why an array, not one code: an agent can carry more than one cause
-      // (e.g. antigravity is directory-shaped AND registry-backed), and a S-5
-      // tooltip can join all of them without re-deriving them from the agent.
-      agentReasonCodes: readonly AiVaultUnsupportedDeleteReasonCode[]
-    }
+export type AiVaultSessionNotDeletableResult = {
+  deletable: false
+  reason: AiVaultSessionDeletabilityReasonCode
+}
 
 export type AiVaultSessionDeletabilityResult =
   | AiVaultSessionDeletableResult
@@ -59,11 +48,7 @@ export function resolveAiVaultSessionDeletability(
     return { deletable: false, reason: 'synthetic-path' }
   }
   if (!isAiVaultDeletableAgent(session.agent)) {
-    return {
-      deletable: false,
-      reason: 'unsupported-agent',
-      agentReasonCodes: AI_VAULT_UNSUPPORTED_DELETE_REASONS[session.agent]
-    }
+    return { deletable: false, reason: 'unsupported-agent' }
   }
   return { deletable: true }
 }
