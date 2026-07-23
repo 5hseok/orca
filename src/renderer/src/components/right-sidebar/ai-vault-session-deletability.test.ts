@@ -45,17 +45,14 @@ describe('resolveAiVaultSessionDeletability', () => {
     })
   })
 
-  it('blocks a directory-shaped agent (claude)', () => {
+  it('allows a directory-shaped agent (claude), whose subagents dir goes with it', () => {
     expect(
       resolveAiVaultSessionDeletability({
         agent: 'claude',
         executionHostId: 'local',
-        filePath: '/home/user/.claude/sessions/sess-dir/log.jsonl'
+        filePath: '/home/user/.claude/projects/-proj/sess-1.jsonl'
       })
-    ).toEqual({
-      deletable: false,
-      reason: 'unsupported-agent'
-    })
+    ).toEqual({ deletable: true })
   })
 
   it('blocks a multi-cause agent (antigravity) with the same single reason', () => {

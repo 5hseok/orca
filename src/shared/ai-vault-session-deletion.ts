@@ -1,17 +1,18 @@
 import type { AiVaultAgent } from './ai-vault-types'
 
-// Agents where a single file IS the whole session: deleting that one file is
-// a complete deletion (D-2). Kept here so main and renderer can never
+// Agents whose sessions Orca can remove completely (D-2/D-7): everything the
+// session wrote lives at paths derived from the one path the scanner surfaced,
+// and nothing there is shared with another session. For most agents that is a
+// single file; for claude, rovo, and grok it is a directory (see
+// aiVaultSessionDeleteRemovals). Kept here so main and renderer can never
 // disagree on what "supported for deletion" means.
 //
-// Why every other agent is excluded — recorded here because the UI
+// Why the remaining agents are excluded — recorded here because the UI
 // deliberately doesn't tell the user (a provider's storage layout is Orca's
 // problem, not the reader's):
-// - claude, rovo, grok: a sibling directory holds the rest of the session
-//   (subagents/, session_context.json, chat_history.jsonl), so removing the
-//   transcript file alone leaves the conversation on disk.
-// - antigravity, kimi: directory-shaped as above, and a separate registry
-//   (history.jsonl / session_index.jsonl) would keep a dangling entry.
+// - antigravity, kimi: a separate registry (history.jsonl / session_index.jsonl)
+//   would keep a dangling entry. Antigravity's history.jsonl carries no
+//   conversation id, so which line to drop can't be determined at all.
 // - codex: session_index.jsonl plus hardlink aliases between the Orca-managed
 //   home and ~/.codex, so a one-sided delete reappears on the next scan.
 // - opencode 1.17.x: a SQLite row, not a file; its path is the synthetic
@@ -25,7 +26,10 @@ export const AI_VAULT_DELETABLE_AGENTS = [
   'openclaw',
   'droid',
   'pi',
-  'omp'
+  'omp',
+  'claude',
+  'rovo',
+  'grok'
 ] as const satisfies readonly AiVaultAgent[]
 
 export type AiVaultDeletableAgent = (typeof AI_VAULT_DELETABLE_AGENTS)[number]
@@ -51,21 +55,41 @@ export type AiVaultSessionDeleteRejectionCode =
   | 'path-outside-known-roots'
   | 'invalid-extension'
   | 'file-predicate-mismatch'
-  // D-4 fs-side guard (S-2): resolvedPath's lstat() isn't a regular file
-  // (it's a directory or a symlink), or its realpath escapes the agent's roots.
-  | 'not-a-regular-file'
+  // A directory-shaped agent's file sits directly in the sessions root, so it
+  // names no session directory of its own — removing it would trash every
+  // session at once.
+  | 'no-session-directory'
+  // D-4 fs-side guard (S-2): a removal's lstat() disagrees with its declared
+  // kind — a symlink (lstat never dereferences), or a file where the plan
+  // expects a directory and vice versa.
+  | 'unexpected-target-kind'
+
+// One path the executor removes. `kind` is what the path must be on disk; a
+// mismatch is a rejection, never a coerced delete. `roots` are the directories
+// the path's realpath must still resolve inside — a symlinked parent escapes
+// the validator's textual root check, which only the fs side can catch (D-4b).
+export type AiVaultSessionDeleteRemoval = {
+  path: string
+  kind: 'file' | 'directory'
+  roots: readonly string[]
+}
 
 // CALLER CONTRACT (D-4): `allowed: true` is a pure, path-only judgement — the
 // validator never touches the filesystem, so it cannot tell a real session
 // file from a same-named directory or from a symlink planted inside a root
-// that points outside it. Before deleting, the caller MUST re-check on disk
-// that `resolvedPath` is a regular file (lstat().isFile(), not a directory or
-// symlink) and that its realpath still resolves inside the agent's known
-// roots. That fs-side guard lives in the delete executor (S-2), not here.
+// that points outside it. Before removing anything, the caller MUST re-check
+// each removal on disk against its `kind` and re-resolve it against its
+// `roots`. That fs-side guard lives in the delete executor (S-2), not here.
 export type AiVaultSessionDeleteAllowedResult = {
   allowed: true
   agent: AiVaultDeletableAgent
+  // The session's own transcript path — the last entry of `removals`, kept
+  // separate because callers (cache invalidation) key off it.
   resolvedPath: string
+  // Ordered: companions first, the transcript last. A companion that failed
+  // leaves the session row on screen to retry from; removing the transcript
+  // first would drop the row and strand the rest on disk.
+  removals: readonly AiVaultSessionDeleteRemoval[]
 }
 
 export type AiVaultSessionDeleteRejectedResult = {

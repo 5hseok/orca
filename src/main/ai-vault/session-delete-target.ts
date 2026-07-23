@@ -1,11 +1,12 @@
 import { homedir } from 'node:os'
-import { basename, extname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import type { AiVaultAgent } from '../../shared/ai-vault-types'
 import {
   isAiVaultDeletableAgent,
   isAiVaultSyntheticSessionPath,
   type AiVaultDeletableAgent,
   type AiVaultSessionDeleteRejectionCode,
+  type AiVaultSessionDeleteRemoval,
   type AiVaultSessionDeleteValidationResult
 } from '../../shared/ai-vault-session-deletion'
 import {
@@ -15,6 +16,7 @@ import {
 } from '../../shared/execution-host'
 import { isPathInsideOrEqual } from '../../shared/cross-platform-path'
 import {
+  claudeProjectsRootDirs,
   COPILOT_SESSIONS_DIR,
   CURSOR_PROJECTS_DIR,
   DEVIN_TRANSCRIPTS_DIR,
@@ -22,11 +24,17 @@ import {
   HERMES_SESSIONS_DIR,
   OMP_SESSIONS_DIR,
   OPENCLAW_STATE_DIR,
-  PI_SESSIONS_DIR
+  PI_SESSIONS_DIR,
+  ROVO_SESSIONS_DIR
 } from './session-scanner-source-discovery'
+import { resolveGrokSessionsDir } from '../../shared/grok-session-paths'
 import { sessionRootDirs } from './session-scanner-root-dirs'
 import { droidSessionRootDirs } from './session-scanner-droid-kimi-sources'
 import { openClawAgentsRootDir, isOpenClawSessionFilePath } from './session-scanner-discovery'
+import {
+  SUBAGENT_DIR_NAME,
+  subagentTranscriptsDirFor
+} from './session-scanner-subagent-transcripts'
 import type { AiVaultScanOptions } from './session-scanner-types'
 
 // The session root dirs a single deletable agent's files must resolve inside
@@ -91,6 +99,23 @@ function deletableAgentSessionRootDirs(
       ].map(openClawAgentsRootDir)
     case 'droid':
       return droidSessionRootDirs(options, wslHomeDirs)
+    case 'claude':
+      return claudeProjectsRootDirs({
+        claudeProjectsDir: options.claudeProjectsDir,
+        wslHomeDirs
+      })
+    case 'rovo':
+      return sessionRootDirs(options.rovoSessionsDir ?? ROVO_SESSIONS_DIR, wslHomeDirs, [
+        '.rovodev',
+        'sessions'
+      ])
+    case 'grok':
+      // Resolved lazily for the same reason the scanner does: a module-scope
+      // call binds across chunks at init time and breaks on bundle ordering.
+      return sessionRootDirs(options.grokSessionsDir ?? resolveGrokSessionsDir(), wslHomeDirs, [
+        '.grok',
+        'sessions'
+      ])
   }
 }
 
@@ -104,7 +129,10 @@ const AI_VAULT_DELETE_TARGET_EXTENSIONS: Record<AiVaultDeletableAgent, readonly 
   openclaw: ['.jsonl'],
   droid: ['.jsonl'],
   pi: ['.jsonl'],
-  omp: ['.jsonl']
+  omp: ['.jsonl'],
+  claude: ['.jsonl'],
+  rovo: ['.json'],
+  grok: ['.json']
 }
 
 // Mirrors each agent's discovery filePredicate (session-scanner-source-discovery.ts /
@@ -115,8 +143,20 @@ const AI_VAULT_DELETE_TARGET_FILE_PREDICATES: Partial<
 > = {
   cursor: (filePath) => pathSegments(filePath).includes('agent-transcripts'),
   hermes: (filePath) => basename(filePath).startsWith('session_'),
-  openclaw: isOpenClawSessionFilePath
+  openclaw: isOpenClawSessionFilePath,
+  // A Task subagent transcript is never a session row of its own (discovery
+  // prunes the subtree), so it must not be deletable on its own either — it
+  // goes with its parent or not at all.
+  claude: (filePath) => !pathSegments(filePath).includes(SUBAGENT_DIR_NAME),
+  rovo: (filePath) => basename(filePath) === 'metadata.json',
+  grok: (filePath) => basename(filePath) === 'summary.json'
 }
+
+// Agents whose session is the directory holding the file the scanner
+// surfaced, not the file itself (D-7). Everything else in that directory
+// belongs to the same session — rovo's session_context.json, grok's
+// chat_history.jsonl — so the directory is the only complete delete unit.
+const AI_VAULT_DIRECTORY_SHAPED_DELETE_AGENTS = new Set<AiVaultDeletableAgent>(['rovo', 'grok'])
 
 export type ValidateAiVaultSessionDeleteTargetArgs = {
   agent: AiVaultAgent
@@ -136,7 +176,7 @@ export type ValidateAiVaultSessionDeleteTargetArgs = {
 // input — IPC payloads are untyped at runtime, so a malformed or hostile
 // filePath resolves to a rejection like every other invalid input.
 // A returned `allowed: true` is NOT sufficient to delete: see the caller
-// contract on AiVaultSessionDeleteAllowedResult (lstat().isFile() + realpath
+// contract on AiVaultSessionDeleteAllowedResult (each removal's kind + realpath
 // root re-check must run in the fs-touching executor before removal).
 export function validateAiVaultSessionDeleteTarget(
   args: ValidateAiVaultSessionDeleteTargetArgs
@@ -164,7 +204,13 @@ export function validateAiVaultSessionDeleteTarget(
   // compares textually and would otherwise pass `<root>/../../etc/x.jsonl`.
   const resolvedPath = resolve(filePath)
   const roots = deletableAgentSessionRootDirs(agent, args.rootOptions ?? {}, args.wslHomeDirs ?? [])
-  if (!roots.some((root) => isPathInsideOrEqual(resolve(root), resolvedPath))) {
+  // Keep the root that actually contains this path: a companion's own root is
+  // derived from it (claude's session-env sits beside the projects dir), so a
+  // WSL-home session can never pair with the local host's companion root.
+  const matchedRoot = roots
+    .map((root) => resolve(root))
+    .find((root) => isPathInsideOrEqual(root, resolvedPath))
+  if (!matchedRoot) {
     return rejected(agent, 'path-outside-known-roots')
   }
 
@@ -177,7 +223,67 @@ export function validateAiVaultSessionDeleteTarget(
     return rejected(agent, 'file-predicate-mismatch')
   }
 
-  return { allowed: true, agent, resolvedPath }
+  const removals = sessionDeleteRemovals({ agent, resolvedPath, matchedRoot, roots })
+  if (!removals) {
+    return rejected(agent, 'no-session-directory')
+  }
+
+  return { allowed: true, agent, resolvedPath, removals }
+}
+
+// The ordered path set that removing this session means (D-7). Companions
+// first, the scanner-surfaced path last — see the ordering note on
+// AiVaultSessionDeleteAllowedResult. Returns null when the path can't name a
+// session of its own, which only happens for a directory-shaped agent whose
+// file sits directly in the sessions root (removing that would trash every
+// session at once).
+function sessionDeleteRemovals(args: {
+  agent: AiVaultDeletableAgent
+  resolvedPath: string
+  matchedRoot: string
+  roots: readonly string[]
+}): readonly AiVaultSessionDeleteRemoval[] | null {
+  const { agent, resolvedPath, matchedRoot, roots } = args
+  const resolvedRoots = roots.map((root) => resolve(root))
+
+  if (AI_VAULT_DIRECTORY_SHAPED_DELETE_AGENTS.has(agent)) {
+    const sessionDir = dirname(resolvedPath)
+    if (sessionDir === matchedRoot || !isPathInsideOrEqual(matchedRoot, sessionDir)) {
+      return null
+    }
+    return [{ path: sessionDir, kind: 'directory', roots: resolvedRoots }]
+  }
+
+  if (agent === 'claude') {
+    return [
+      // Reuses the scanner's own derivation so the directory removed here is
+      // exactly the one it counts subagents from.
+      { path: subagentTranscriptsDirFor(resolvedPath), kind: 'directory', roots: resolvedRoots },
+      ...claudeSessionEnvRemoval(resolvedPath, matchedRoot),
+      { path: resolvedPath, kind: 'file', roots: resolvedRoots }
+    ]
+  }
+
+  return [{ path: resolvedPath, kind: 'file', roots: resolvedRoots }]
+}
+
+// `~/.claude/session-env/<uuid>/` holds the generated shell exports for one
+// session and nothing else, so it goes with the transcript (D-7). Its sibling
+// `file-history/<uuid>/` deliberately does NOT: that is the rewind buffer
+// holding earlier versions of the user's own files, and retiring a session is
+// no reason to take away the only copy that can restore them.
+function claudeSessionEnvRemoval(
+  resolvedPath: string,
+  matchedProjectsRoot: string
+): readonly AiVaultSessionDeleteRemoval[] {
+  const sessionId = basename(resolvedPath, extname(resolvedPath))
+  if (!sessionId) {
+    return []
+  }
+  // <home>/.claude/projects -> <home>/.claude/session-env, so a WSL-home
+  // session cleans up that distro's session-env, not the local host's.
+  const sessionEnvRoot = join(dirname(matchedProjectsRoot), 'session-env')
+  return [{ path: join(sessionEnvRoot, sessionId), kind: 'directory', roots: [sessionEnvRoot] }]
 }
 
 function rejected(
