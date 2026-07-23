@@ -10460,12 +10460,8 @@
             "subagentCountPlural": "{{value0}} 个子智能体",
             "delete": "删除",
             "deleteReasonNonLocalHost": "只能删除此设备上的会话。",
-            "deleteReasonSyntheticPath": "此会话没有可删除的单一文件。",
-            "deleteReasonUnsupportedAgent": "{{value0}} 会话在此处无法删除：{{value1}}",
-            "deleteReasonDirectoryShapedSession": "以文件夹形式存储会话，而非单个文件",
-            "deleteReasonDanglingRegistryEntry": "使用 Orca 无法安全更新的自有会话注册表",
-            "deleteReasonCodexHardlinkAliases": "可能将同一份记录链接到多个会话 ID",
-            "deleteReasonSyntheticStoragePath": "将会话存储在共享数据库文件中，而非独立文件"
+            "deleteReasonSyntheticPath": "此会话无法在 Orca 中删除。",
+            "deleteReasonUnsupportedAgent": "{{value0}} 会话无法在 Orca 中删除。"
           },
           "AiVaultSessionDeleteDialog": {
             "title": "要删除此会话吗？",

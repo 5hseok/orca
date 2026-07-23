@@ -3,6 +3,19 @@ import type { AiVaultAgent } from './ai-vault-types'
 // Agents where a single file IS the whole session: deleting that one file is
 // a complete deletion (D-2). Kept here so main and renderer can never
 // disagree on what "supported for deletion" means.
+//
+// Why every other agent is excluded — recorded here because the UI
+// deliberately doesn't tell the user (a provider's storage layout is Orca's
+// problem, not the reader's):
+// - claude, rovo, grok: a sibling directory holds the rest of the session
+//   (subagents/, session_context.json, chat_history.jsonl), so removing the
+//   transcript file alone leaves the conversation on disk.
+// - antigravity, kimi: directory-shaped as above, and a separate registry
+//   (history.jsonl / session_index.jsonl) would keep a dangling entry.
+// - codex: session_index.jsonl plus hardlink aliases between the Orca-managed
+//   home and ~/.codex, so a one-sided delete reappears on the next scan.
+// - opencode 1.17.x: a SQLite row, not a file; its path is the synthetic
+//   <dbPath>#<sessionId> form.
 export const AI_VAULT_DELETABLE_AGENTS = [
   'gemini',
   'copilot',
@@ -19,31 +32,6 @@ export type AiVaultDeletableAgent = (typeof AI_VAULT_DELETABLE_AGENTS)[number]
 
 export function isAiVaultDeletableAgent(agent: AiVaultAgent): agent is AiVaultDeletableAgent {
   return (AI_VAULT_DELETABLE_AGENTS as readonly AiVaultAgent[]).includes(agent)
-}
-
-// Why a session stays undeletable even though it isn't hidden from the menu:
-// the UI shows Delete as a disabled item with this reason instead (D-2).
-export type AiVaultUnsupportedDeleteReasonCode =
-  | 'directory-shaped-session'
-  | 'dangling-registry-entry'
-  | 'codex-hardlink-aliases'
-  | 'synthetic-storage-path'
-
-type AiVaultUnsupportedDeleteAgent = Exclude<AiVaultAgent, AiVaultDeletableAgent>
-
-// An agent can carry more than one reason (e.g. antigravity is both
-// directory-shaped and registry-backed); order is not significant.
-export const AI_VAULT_UNSUPPORTED_DELETE_REASONS: Record<
-  AiVaultUnsupportedDeleteAgent,
-  readonly AiVaultUnsupportedDeleteReasonCode[]
-> = {
-  claude: ['directory-shaped-session'],
-  rovo: ['directory-shaped-session'],
-  grok: ['directory-shaped-session'],
-  antigravity: ['directory-shaped-session', 'dangling-registry-entry'],
-  kimi: ['directory-shaped-session', 'dangling-registry-entry'],
-  codex: ['dangling-registry-entry', 'codex-hardlink-aliases'],
-  opencode: ['synthetic-storage-path']
 }
 
 // A '#' marker means an OpenCode 1.17.x SQLite row's synthetic

@@ -10483,12 +10483,8 @@
             "subagentCountPlural": "{{value0}} subagents",
             "delete": "Delete",
             "deleteReasonNonLocalHost": "Only sessions on this device can be deleted.",
-            "deleteReasonSyntheticPath": "This session doesn't have its own file to delete.",
-            "deleteReasonUnsupportedAgent": "{{value0}} sessions can't be deleted here: {{value1}}",
-            "deleteReasonDirectoryShapedSession": "stores sessions as a folder, not a single file",
-            "deleteReasonDanglingRegistryEntry": "keeps its own session registry that Orca can't safely update",
-            "deleteReasonCodexHardlinkAliases": "may link one transcript under multiple session IDs",
-            "deleteReasonSyntheticStoragePath": "stores sessions in a shared database file, not a file of their own"
+            "deleteReasonSyntheticPath": "This session can't be deleted from Orca.",
+            "deleteReasonUnsupportedAgent": "{{value0}} sessions can't be deleted from Orca."
           },
           "AiVaultSessionDeleteDialog": {
             "title": "Delete this session?",

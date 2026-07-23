@@ -45,7 +45,7 @@ describe('resolveAiVaultSessionDeletability', () => {
     })
   })
 
-  it('blocks a directory-shaped agent (claude) with its shared reason codes', () => {
+  it('blocks a directory-shaped agent (claude)', () => {
     expect(
       resolveAiVaultSessionDeletability({
         agent: 'claude',
@@ -54,16 +54,11 @@ describe('resolveAiVaultSessionDeletability', () => {
       })
     ).toEqual({
       deletable: false,
-      reason: 'unsupported-agent',
-      agentReasonCodes: ['directory-shaped-session']
+      reason: 'unsupported-agent'
     })
   })
 
-  it('surfaces both reason codes for an agent with multiple causes (antigravity)', () => {
-    // Why this case matters: agentReasonCodes is an array precisely so a
-    // multi-cause agent (directory-shaped AND registry-backed) can drive a
-    // tooltip that lists every reason. If this collapsed to one code the array
-    // shape would be dead weight.
+  it('blocks a multi-cause agent (antigravity) with the same single reason', () => {
     expect(
       resolveAiVaultSessionDeletability({
         agent: 'antigravity',
@@ -72,12 +67,11 @@ describe('resolveAiVaultSessionDeletability', () => {
       })
     ).toEqual({
       deletable: false,
-      reason: 'unsupported-agent',
-      agentReasonCodes: ['directory-shaped-session', 'dangling-registry-entry']
+      reason: 'unsupported-agent'
     })
   })
 
-  it('blocks a registry/hardlink-backed agent (codex) with its shared reason codes', () => {
+  it('blocks a registry/hardlink-backed agent (codex)', () => {
     expect(
       resolveAiVaultSessionDeletability({
         agent: 'codex',
@@ -86,12 +80,11 @@ describe('resolveAiVaultSessionDeletability', () => {
       })
     ).toEqual({
       deletable: false,
-      reason: 'unsupported-agent',
-      agentReasonCodes: ['dangling-registry-entry', 'codex-hardlink-aliases']
+      reason: 'unsupported-agent'
     })
   })
 
-  it('blocks opencode on a non-synthetic path with its synthetic-storage reason code', () => {
+  it('blocks opencode on a non-synthetic path as an unsupported agent', () => {
     expect(
       resolveAiVaultSessionDeletability({
         agent: 'opencode',
@@ -100,8 +93,7 @@ describe('resolveAiVaultSessionDeletability', () => {
       })
     ).toEqual({
       deletable: false,
-      reason: 'unsupported-agent',
-      agentReasonCodes: ['synthetic-storage-path']
+      reason: 'unsupported-agent'
     })
   })
 

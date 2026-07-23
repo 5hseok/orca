@@ -10460,12 +10460,8 @@
             "subagentCountPlural": "{{value0}} 件のサブエージェント",
             "delete": "削除",
             "deleteReasonNonLocalHost": "このデバイス上のセッションのみ削除できます。",
-            "deleteReasonSyntheticPath": "このセッションには削除できる単一のファイルがありません。",
-            "deleteReasonUnsupportedAgent": "{{value0}} のセッションはここでは削除できません: {{value1}}",
-            "deleteReasonDirectoryShapedSession": "セッションを単一ファイルではなくフォルダー形式で保存します",
-            "deleteReasonDanglingRegistryEntry": "Orca が安全に更新できない独自のセッションレジストリを保持しています",
-            "deleteReasonCodexHardlinkAliases": "1 つのトランスクリプトが複数のセッション ID にリンクされる場合があります",
-            "deleteReasonSyntheticStoragePath": "セッションを専用ファイルではなく共有データベースファイルに保存します"
+            "deleteReasonSyntheticPath": "このセッションは Orca では削除できません。",
+            "deleteReasonUnsupportedAgent": "{{value0}} のセッションは Orca では削除できません。"
           },
           "AiVaultSessionDeleteDialog": {
             "title": "このセッションを削除しますか?",

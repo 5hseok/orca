@@ -10460,12 +10460,8 @@
             "subagentCountPlural": "{{value0}} subagentes",
             "delete": "Eliminar",
             "deleteReasonNonLocalHost": "Solo se pueden eliminar las sesiones de este dispositivo.",
-            "deleteReasonSyntheticPath": "Esta sesión no tiene un único archivo que se pueda eliminar.",
-            "deleteReasonUnsupportedAgent": "Las sesiones de {{value0}} no se pueden eliminar aquí: {{value1}}",
-            "deleteReasonDirectoryShapedSession": "guarda las sesiones como una carpeta, no como un único archivo",
-            "deleteReasonDanglingRegistryEntry": "mantiene su propio registro de sesiones que Orca no puede actualizar de forma segura",
-            "deleteReasonCodexHardlinkAliases": "puede enlazar una misma transcripción bajo varios ID de sesión",
-            "deleteReasonSyntheticStoragePath": "guarda las sesiones en un archivo de base de datos compartido, no en un archivo propio"
+            "deleteReasonSyntheticPath": "Esta sesión no se puede eliminar desde Orca.",
+            "deleteReasonUnsupportedAgent": "Las sesiones de {{value0}} no se pueden eliminar desde Orca."
           },
           "AiVaultSessionDeleteDialog": {
             "title": "¿Eliminar esta sesión?",

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { aiVaultSessionDeleteReasonText } from './ai-vault-session-delete-reason'
 
 // translate() with no loaded catalog returns the English fallback, so these
-// assertions pin the English copy and, crucially, the composition logic.
+// assertions pin the English copy.
 describe('aiVaultSessionDeleteReasonText', () => {
   it('explains a non-local host', () => {
     expect(
@@ -10,37 +10,24 @@ describe('aiVaultSessionDeleteReasonText', () => {
     ).toBe('Only sessions on this device can be deleted.')
   })
 
-  it('explains a session with no file of its own', () => {
+  it('states the limit without exposing storage internals for a synthetic path', () => {
     expect(
       aiVaultSessionDeleteReasonText({ deletable: false, reason: 'synthetic-path' }, 'opencode')
-    ).toBe("This session doesn't have its own file to delete.")
+    ).toBe("This session can't be deleted from Orca.")
   })
 
-  it('names the agent and its single reason', () => {
+  it('names the agent without explaining why it is unsupported', () => {
     expect(
-      aiVaultSessionDeleteReasonText(
-        {
-          deletable: false,
-          reason: 'unsupported-agent',
-          agentReasonCodes: ['directory-shaped-session']
-        },
-        'claude'
-      )
-    ).toBe("Claude sessions can't be deleted here: stores sessions as a folder, not a single file")
+      aiVaultSessionDeleteReasonText({ deletable: false, reason: 'unsupported-agent' }, 'claude')
+    ).toBe("Claude sessions can't be deleted from Orca.")
   })
 
-  it('joins multiple reason codes with a semicolon (the array-shape core case)', () => {
+  it('gives a multi-cause agent the same single sentence', () => {
     expect(
       aiVaultSessionDeleteReasonText(
-        {
-          deletable: false,
-          reason: 'unsupported-agent',
-          agentReasonCodes: ['directory-shaped-session', 'dangling-registry-entry']
-        },
+        { deletable: false, reason: 'unsupported-agent' },
         'antigravity'
       )
-    ).toBe(
-      "Antigravity sessions can't be deleted here: stores sessions as a folder, not a single file; keeps its own session registry that Orca can't safely update"
-    )
+    ).toBe("Antigravity sessions can't be deleted from Orca.")
   })
 })
