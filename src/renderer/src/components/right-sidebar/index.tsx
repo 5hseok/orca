@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- Why: the right sidebar owns activity-bar visibility, routing, and resize behavior as one interaction surface; splitting the tab table away would make hidden-tab fallbacks harder to audit. */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Plug, Files, GitBranch, ListChecks, PanelRight, Workflow } from 'lucide-react'
+import { Plug, Files, GitBranch, ListChecks, PanelLeft, PanelRight, Workflow } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
 import { useRepoById } from '@/store/selectors'
@@ -269,20 +269,25 @@ function RightSidebarInner({
           type="button"
           className="sidebar-toggle mr-1"
           onClick={toggleRightSidebar}
-          aria-label={translate(
-            'auto.components.right.sidebar.index.e8e2e4ce74',
-            'Toggle right sidebar'
-          )}
+          aria-label={
+            onLeftEdge
+              ? translate('menu.toggleLeftSidebar', 'Toggle Left Sidebar')
+              : translate('auto.components.right.sidebar.index.e8e2e4ce74', 'Toggle right sidebar')
+          }
         >
-          <PanelRight size={16} />
+          {onLeftEdge ? <PanelLeft size={16} /> : <PanelRight size={16} />}
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={6}>
-        {translate(
-          'auto.components.right.sidebar.index.9fffaf17c1',
-          'Toggle right sidebar ({{value0}})',
-          { value0: rightSidebarShortcut }
-        )}
+        {onLeftEdge
+          ? translate('menu.toggleLeftSidebar', 'Toggle Left Sidebar')
+          : translate(
+              'auto.components.right.sidebar.index.9fffaf17c1',
+              'Toggle right sidebar ({{value0}})',
+              {
+                value0: rightSidebarShortcut
+              }
+            )}
       </TooltipContent>
     </Tooltip>
   ) : null
