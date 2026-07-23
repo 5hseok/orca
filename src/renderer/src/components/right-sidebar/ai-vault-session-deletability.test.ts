@@ -59,6 +59,24 @@ describe('resolveAiVaultSessionDeletability', () => {
     })
   })
 
+  it('surfaces both reason codes for an agent with multiple causes (antigravity)', () => {
+    // Why this case matters: agentReasonCodes is an array precisely so a
+    // multi-cause agent (directory-shaped AND registry-backed) can drive a
+    // tooltip that lists every reason. If this collapsed to one code the array
+    // shape would be dead weight.
+    expect(
+      resolveAiVaultSessionDeletability({
+        agent: 'antigravity',
+        executionHostId: 'local',
+        filePath: '/home/user/.antigravity/brain/conv-1/.system_generated/logs/transcript.jsonl'
+      })
+    ).toEqual({
+      deletable: false,
+      reason: 'unsupported-agent',
+      agentReasonCodes: ['directory-shaped-session', 'dangling-registry-entry']
+    })
+  })
+
   it('blocks a registry/hardlink-backed agent (codex) with its shared reason codes', () => {
     expect(
       resolveAiVaultSessionDeletability({
