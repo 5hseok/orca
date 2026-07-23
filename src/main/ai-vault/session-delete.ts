@@ -1,7 +1,6 @@
 import { lstat, realpath } from 'node:fs/promises'
 import { shell } from 'electron'
-import type { AiVaultAgent } from '../../shared/ai-vault-types'
-import type { AiVaultSessionDeleteRejectionCode } from '../../shared/ai-vault-session-deletion'
+import type { AiVaultDeleteSessionResult } from '../../shared/ai-vault-types'
 import {
   validateAiVaultSessionDeleteTarget,
   type ValidateAiVaultSessionDeleteTargetArgs
@@ -9,10 +8,9 @@ import {
 import { tryDeleteWslUncPath } from '../wsl-unc-delete'
 import { isENOENT } from '../ipc/filesystem-auth'
 
-export type AiVaultSessionDeleteExecutionResult =
-  | { outcome: 'deleted' }
-  | { outcome: 'rejected'; agent: AiVaultAgent; reason: AiVaultSessionDeleteRejectionCode }
-  | { outcome: 'failed'; agent: AiVaultAgent; error: string }
+// Moved to shared/ai-vault-types.ts (S-3): the IPC handler and the renderer
+// both need this exact shape, and main-only files aren't importable there.
+export type AiVaultSessionDeleteExecutionResult = AiVaultDeleteSessionResult
 
 // Removes a supported AI Vault session's transcript file for real (D-1).
 // Never throws: IPC payloads are untyped at runtime, so both a rejected

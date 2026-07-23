@@ -244,6 +244,7 @@ import type {
 import type { KeybindingActionId, KeybindingFileSnapshot } from '../shared/keybindings'
 import type {
   AiVaultFirstUserPromptArgs,
+  AiVaultDeleteSessionArgs,
   AiVaultListArgs,
   AiVaultSubagentListArgs
 } from '../shared/ai-vault-types'
@@ -4242,6 +4243,8 @@ const api = {
       ipcRenderer.invoke('aiVault:listSubagentSessions', args),
     getFirstUserPrompt: (args: AiVaultFirstUserPromptArgs): Promise<unknown> =>
       ipcRenderer.invoke('aiVault:getFirstUserPrompt', args),
+    deleteSession: (args: AiVaultDeleteSessionArgs): Promise<unknown> =>
+      ipcRenderer.invoke('aiVault:deleteSession', args),
     onWindowFocused: (callback: () => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent) => callback()
       ipcRenderer.on('aiVault:windowFocused', listener)
