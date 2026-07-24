@@ -1904,15 +1904,23 @@ function App(): React.JSX.Element {
         <button
           className="sidebar-toggle mr-2"
           onClick={actions.toggleRightSidebar}
-          aria-label={translate('auto.App.9e0b441a91', 'Toggle right sidebar')}
+          // Why: on the swapped layout this toggle sits on the left showing a left-panel icon,
+          // so its label must read "left" too — mirrors the RightSidebar header's own toggle.
+          aria-label={
+            activitySidebarEdge === 'left'
+              ? translate('menu.toggleLeftSidebar', 'Toggle Left Sidebar')
+              : translate('auto.App.9e0b441a91', 'Toggle right sidebar')
+          }
         >
           {activitySidebarEdge === 'left' ? <PanelLeft size={16} /> : <PanelRight size={16} />}
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={6}>
-        {translate('auto.App.c184e056de', 'Toggle right sidebar ({{value0}})', {
-          value0: rightSidebarShortcutLabel
-        })}
+        {activitySidebarEdge === 'left'
+          ? translate('menu.toggleLeftSidebar', 'Toggle Left Sidebar')
+          : translate('auto.App.c184e056de', 'Toggle right sidebar ({{value0}})', {
+              value0: rightSidebarShortcutLabel
+            })}
       </TooltipContent>
     </Tooltip>
   ) : null
