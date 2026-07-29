@@ -4995,6 +4995,25 @@
         "WorktreeDeveloperMenu": {
           "developer": "Developer",
           "parkTerminal": "Park terminal"
+        },
+        "HiddenWorktreeImportSection": {
+          "15211f2e20": "에이전트 스크래치",
+          "5aac009b02": "가져오기",
+          "7327c4f733": "숨기기",
+          "0c5d5b4f6d": "개별 가져오기",
+          "cdb536486b": "Orca 외부 워크트리를 전부 표시하는 대신 필요한 것만 고르세요. 에이전트가 레포 안에 만든 스크래치 워크트리는 여기서 가져와야만 표시됩니다.",
+          "3aeef4e6a6": "{{value0}}개 모두 가져오기",
+          "23d8116c08": "개별로 가져온 워크트리"
+        },
+        "hidden": {
+          "worktree": {
+            "import": {
+              "actions": {
+                "1bf57d9d59": "선택한 워크트리를 가져올 수 없습니다. 다시 시도하세요.",
+                "fa72047d1a": "선택한 워크트리를 숨길 수 없습니다. 다시 시도하세요."
+              }
+            }
+          }
         }
       },
       "shared": {

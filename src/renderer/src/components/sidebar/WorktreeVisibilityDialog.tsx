@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAppStore } from '@/store'
 import {
@@ -13,11 +13,21 @@ import {
   getHiddenExternalWorktrees,
   getVisibleExternalWorktrees
 } from '../../../../shared/external-worktree-inbox'
+import {
+  getImportableHiddenWorktrees,
+  getIndividuallyImportedWorktrees
+} from '../../../../shared/hidden-worktree-import'
 import { isGitRepoKind } from '../../../../shared/repo-kind'
 import {
   effectiveExternalWorktreeVisibility,
   isLegacyRepoForExternalWorktreeVisibility
 } from '../../../../shared/worktree-ownership'
+import HiddenWorktreeImportSection from './HiddenWorktreeImportSection'
+import {
+  hideImportedWorktrees,
+  importHiddenWorktrees,
+  type HiddenWorktreeImportActionState
+} from './hidden-worktree-import-actions'
 import { translate } from '@/i18n/i18n'
 
 export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
@@ -40,6 +50,41 @@ export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
   const otherCount = getVisibleExternalWorktrees(detected).length
   const hiddenWorktreeLabel = `${hiddenCount} ${hiddenCount === 1 ? 'worktree' : 'worktrees'}`
   const shownWorktreeLabel = `${otherCount} ${otherCount === 1 ? 'worktree' : 'worktrees'}`
+  const importableWorktrees = getImportableHiddenWorktrees(detected)
+  const individuallyImportedWorktrees = getIndividuallyImportedWorktrees(detected, repo ?? {})
+
+  const [importActionState, setImportActionState] =
+    useState<HiddenWorktreeImportActionState | null>(null)
+
+  const runImportAction = useCallback(
+    (
+      action: typeof importHiddenWorktrees | typeof hideImportedWorktrees,
+      worktreePaths: string[]
+    ) => {
+      if (!repo) {
+        return
+      }
+      void action({
+        projectId: repo.id,
+        repo,
+        worktreePaths,
+        setActionState: (_projectId, state) => setImportActionState(state),
+        updateRepo,
+        fetchWorktrees
+      })
+    },
+    [fetchWorktrees, repo, updateRepo]
+  )
+
+  const handleImport = useCallback(
+    (worktreePaths: string[]) => runImportAction(importHiddenWorktrees, worktreePaths),
+    [runImportAction]
+  )
+
+  const handleHide = useCallback(
+    (worktreePaths: string[]) => runImportAction(hideImportedWorktrees, worktreePaths),
+    [runImportAction]
+  )
 
   const handleToggle = useCallback(async () => {
     if (!repoId) {
@@ -114,6 +159,15 @@ export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
               : translate('auto.components.sidebar.WorktreeVisibilityDialog.f1f71b9f02', 'Import')}
           </Button>
         </div>
+
+        <HiddenWorktreeImportSection
+          importableWorktrees={importableWorktrees}
+          importedWorktrees={individuallyImportedWorktrees}
+          pending={importActionState?.pending ?? false}
+          error={importActionState?.error ?? null}
+          onImport={handleImport}
+          onHide={handleHide}
+        />
       </DialogContent>
     </Dialog>
   )

@@ -4995,6 +4995,25 @@
         "WorktreeDeveloperMenu": {
           "developer": "Developer",
           "parkTerminal": "Park terminal"
+        },
+        "HiddenWorktreeImportSection": {
+          "15211f2e20": "temporal de agente",
+          "5aac009b02": "Importar",
+          "7327c4f733": "Ocultar",
+          "0c5d5b4f6d": "Importar individualmente",
+          "cdb536486b": "Elige worktrees concretos en lugar de mostrar todos los que no son de Orca. Los worktrees temporales que los agentes crean dentro del repositorio siguen ocultos hasta que los importes aquí.",
+          "3aeef4e6a6": "Importar los {{value0}}",
+          "23d8116c08": "Importados individualmente"
+        },
+        "hidden": {
+          "worktree": {
+            "import": {
+              "actions": {
+                "1bf57d9d59": "No se pudieron importar los worktrees seleccionados. Inténtalo de nuevo.",
+                "fa72047d1a": "No se pudieron ocultar los worktrees seleccionados. Inténtalo de nuevo."
+              }
+            }
+          }
         }
       },
       "shared": {

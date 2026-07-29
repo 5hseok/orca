@@ -5018,6 +5018,25 @@
         "WorktreeDeveloperMenu": {
           "developer": "Developer",
           "parkTerminal": "Park terminal"
+        },
+        "HiddenWorktreeImportSection": {
+          "15211f2e20": "agent scratch",
+          "5aac009b02": "Import",
+          "7327c4f733": "Hide",
+          "0c5d5b4f6d": "Import individually",
+          "cdb536486b": "Pick single worktrees instead of showing every non-Orca one. Scratch worktrees agents create inside the repo stay hidden until imported here.",
+          "3aeef4e6a6": "Import all {{value0}}",
+          "23d8116c08": "Imported individually"
+        },
+        "hidden": {
+          "worktree": {
+            "import": {
+              "actions": {
+                "1bf57d9d59": "Could not import the selected worktrees. Try again.",
+                "fa72047d1a": "Could not hide the selected worktrees. Try again."
+              }
+            }
+          }
         }
       },
       "shared": {
