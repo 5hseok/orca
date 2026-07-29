@@ -5033,7 +5033,8 @@
             "import": {
               "actions": {
                 "1bf57d9d59": "Could not import the selected worktrees. Try again.",
-                "fa72047d1a": "Could not hide the selected worktrees. Try again."
+                "fa72047d1a": "Could not hide the selected worktrees. Try again.",
+                "fff20ed302": "The change could not be applied or undone. Reopen this dialog to see the current state."
               }
             }
           }

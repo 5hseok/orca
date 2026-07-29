@@ -6,8 +6,7 @@ import path from 'node:path'
 import type { Page } from '@stablyai/playwright-test'
 import { test, expect } from './helpers/orca-app'
 import { waitForSessionReady } from './helpers/store'
-
-const tempRoots: string[] = []
+import { worktreeRow } from './worktree-row-locators'
 
 const SCRATCH_BRANCH = 'fix/app-api/processing-lock-release'
 const EXTERNAL_BRANCH = 'payments-refactor'
@@ -16,13 +15,19 @@ function git(cwd: string, args: string[]): void {
   execFileSync('git', args, { cwd, stdio: 'pipe' })
 }
 
-async function createFixture(): Promise<{
+async function createFixture(
+  registerPostElectronShutdownCleanup: (cleanup: () => Promise<void>) => void
+): Promise<{
   mainPath: string
   scratchPath: string
   externalPath: string
 }> {
   const rootPath = realpathSync(await mkdtemp(path.join(os.tmpdir(), 'orca-hidden-import-')))
-  tempRoots.push(rootPath)
+  // Why: the fixture holds watched worktrees; removing it before Electron exits
+  // fails with EPERM on Windows.
+  registerPostElectronShutdownCleanup(async () => {
+    rmSync(rootPath, { recursive: true, force: true })
+  })
 
   const mainPath = path.join(rootPath, 'orca')
   mkdirSync(mainPath, { recursive: true })
@@ -72,15 +77,24 @@ async function addProject(orcaPage: Page, mainPath: string): Promise<string> {
   )
 }
 
-test.afterEach(() => {
-  for (const root of tempRoots.splice(0)) {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
+async function setRepoVisibility(
+  orcaPage: Page,
+  repoId: string,
+  externalWorktreeVisibility: 'show' | 'hide'
+): Promise<void> {
+  await orcaPage.evaluate(
+    async ({ repoId, externalWorktreeVisibility }) => {
+      await window.__store?.getState().updateRepo(repoId, { externalWorktreeVisibility })
+      await window.__store?.getState().fetchWorktrees(repoId, { requireAuthoritative: true })
+    },
+    { repoId, externalWorktreeVisibility }
+  )
+}
 
 test.describe('Hidden worktree import', () => {
   test('imports an agent scratch worktree the repo-wide toggle cannot reveal', async ({
-    orcaPage
+    orcaPage,
+    registerPostElectronShutdownCleanup
   }) => {
     await waitForSessionReady(orcaPage)
 
@@ -91,20 +105,21 @@ test.describe('Hidden worktree import', () => {
     })
     await expect(orcaPage.getByRole('button', { name: /Automations/i }).first()).toBeVisible()
 
-    const fixture = await createFixture()
+    const fixture = await createFixture(registerPostElectronShutdownCleanup)
     const repoId = await addProject(orcaPage, fixture.mainPath)
 
-    // Why: adding a project with linked worktrees flips the repo to `show`; park
-    // it back on the default so both hidden ownerships are in play.
-    await orcaPage.evaluate(async (repoId) => {
-      await window.__store?.getState().updateRepo(repoId, { externalWorktreeVisibility: 'hide' })
-      await window.__store?.getState().fetchWorktrees(repoId, { requireAuthoritative: true })
-    }, repoId)
+    const scratchRow = worktreeRow(orcaPage, `${repoId}::${fixture.scratchPath}`)
+    const externalRow = worktreeRow(orcaPage, `${repoId}::${fixture.externalPath}`)
 
-    const scratchRow = orcaPage.locator(`[data-worktree-id="${repoId}::${fixture.scratchPath}"]`)
-    const externalRow = orcaPage.locator(`[data-worktree-id="${repoId}::${fixture.externalPath}"]`)
+    // Why: adding a project with linked worktrees flips the repo to `show`, which
+    // is the state that must still leave the scratch worktree hidden (#9535).
+    await setRepoVisibility(orcaPage, repoId, 'show')
+    await expect(externalRow).toHaveCount(1)
     await expect(scratchRow).toHaveCount(0)
+
+    await setRepoVisibility(orcaPage, repoId, 'hide')
     await expect(externalRow).toHaveCount(0)
+    await expect(scratchRow).toHaveCount(0)
 
     await orcaPage.evaluate((repoId) => {
       window.__store?.getState().openModal('worktree-visibility', { repoId })

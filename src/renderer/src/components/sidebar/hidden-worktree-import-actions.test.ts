@@ -92,6 +92,25 @@ describe('hidden worktree import actions', () => {
     })
   })
 
+  it('reports an ambiguous state when the rollback write also fails', async () => {
+    const updateRepo = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    const setActionState = vi.fn()
+
+    await importHiddenWorktrees({
+      projectId,
+      repo: repo([]),
+      worktreePaths: [worktreePath],
+      updateRepo,
+      fetchWorktrees: vi.fn().mockResolvedValue(false),
+      setActionState
+    })
+
+    expect(setActionState).toHaveBeenLastCalledWith(projectId, {
+      pending: false,
+      error: expect.stringContaining('could not be applied or undone')
+    })
+  })
+
   it('surfaces an error without refreshing when the repo update fails', async () => {
     const fetchWorktrees = vi.fn().mockResolvedValue(true)
     const setActionState = vi.fn()

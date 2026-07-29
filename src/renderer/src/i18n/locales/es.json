@@ -5010,7 +5010,8 @@
             "import": {
               "actions": {
                 "1bf57d9d59": "No se pudieron importar los worktrees seleccionados. Inténtalo de nuevo.",
-                "fa72047d1a": "No se pudieron ocultar los worktrees seleccionados. Inténtalo de nuevo."
+                "fa72047d1a": "No se pudieron ocultar los worktrees seleccionados. Inténtalo de nuevo.",
+                "fff20ed302": "No se pudo aplicar ni deshacer el cambio. Vuelve a abrir este diálogo para ver el estado actual."
               }
             }
           }

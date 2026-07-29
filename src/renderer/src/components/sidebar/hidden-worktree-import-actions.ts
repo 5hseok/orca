@@ -39,6 +39,13 @@ function hiddenWorktreeHideError(): string {
   )
 }
 
+function hiddenWorktreeRollbackError(): string {
+  return translate(
+    'auto.components.sidebar.hidden.worktree.import.actions.fff20ed302',
+    'The change could not be applied or undone. Reopen this dialog to see the current state.'
+  )
+}
+
 async function applyImportedPaths(
   args: HiddenWorktreeImportDeps,
   nextPaths: string[],
@@ -58,8 +65,15 @@ async function applyImportedPaths(
   }
   const refreshed = await args.fetchWorktrees(args.projectId, { requireAuthoritative: true })
   if (!refreshed) {
-    await args.updateRepo(args.projectId, { importedExternalWorktreePaths: rollbackPaths })
-    args.setActionState(args.projectId, { pending: false, error: errorMessage })
+    // Why: a rollback that also fails leaves the persisted list ahead of the
+    // sidebar, so say that rather than inviting a retry against stale state.
+    const rolledBack = await args.updateRepo(args.projectId, {
+      importedExternalWorktreePaths: rollbackPaths
+    })
+    args.setActionState(args.projectId, {
+      pending: false,
+      error: rolledBack ? errorMessage : hiddenWorktreeRollbackError()
+    })
     return
   }
   args.setActionState(args.projectId, null)

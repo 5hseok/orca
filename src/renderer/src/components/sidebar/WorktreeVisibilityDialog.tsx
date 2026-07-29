@@ -51,10 +51,16 @@ export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
   const hiddenWorktreeLabel = `${hiddenCount} ${hiddenCount === 1 ? 'worktree' : 'worktrees'}`
   const shownWorktreeLabel = `${otherCount} ${otherCount === 1 ? 'worktree' : 'worktrees'}`
   const importableWorktrees = getImportableHiddenWorktrees(detected)
-  const individuallyImportedWorktrees = getIndividuallyImportedWorktrees(detected, repo ?? {})
+  const individuallyImportedWorktrees = getIndividuallyImportedWorktrees(detected, repo)
 
-  const [importActionState, setImportActionState] =
-    useState<HiddenWorktreeImportActionState | null>(null)
+  // Why: the dialog is reused across projects, so a pending or failed action
+  // from one must not disable controls or report an error against the next.
+  const [importActionState, setImportActionState] = useState<{
+    projectId: string
+    state: HiddenWorktreeImportActionState
+  } | null>(null)
+  const activeImportActionState =
+    importActionState?.projectId === repoId ? importActionState.state : null
 
   const runImportAction = useCallback(
     (
@@ -68,7 +74,8 @@ export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
         projectId: repo.id,
         repo,
         worktreePaths,
-        setActionState: (_projectId, state) => setImportActionState(state),
+        setActionState: (projectId, state) =>
+          setImportActionState(state ? { projectId, state } : null),
         updateRepo,
         fetchWorktrees
       })
@@ -163,8 +170,8 @@ export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
         <HiddenWorktreeImportSection
           importableWorktrees={importableWorktrees}
           importedWorktrees={individuallyImportedWorktrees}
-          pending={importActionState?.pending ?? false}
-          error={importActionState?.error ?? null}
+          pending={activeImportActionState?.pending ?? false}
+          error={activeImportActionState?.error ?? null}
           onImport={handleImport}
           onHide={handleHide}
         />

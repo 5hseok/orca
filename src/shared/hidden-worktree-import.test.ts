@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { DetectedWorktree, DetectedWorktreeListResult } from './types'
+import type { DetectedWorktree, DetectedWorktreeListResult, Repo } from './types'
 import {
   addHiddenWorktreeImportPaths,
   getImportableHiddenWorktrees,
@@ -43,6 +43,19 @@ function detectedResult(
   return { repoId: 'repo-1', authoritative, source: 'git', worktrees }
 }
 
+function repo(overrides: Partial<Repo> = {}): Repo {
+  return {
+    id: 'repo-1',
+    path: '/repo',
+    displayName: 'orca',
+    badgeColor: '#000000',
+    addedAt: Date.UTC(2026, 5, 1),
+    externalWorktreeVisibility: 'hide',
+    externalWorktreeVisibilityLegacy: false,
+    ...overrides
+  }
+}
+
 describe('getImportableHiddenWorktrees', () => {
   it('covers every hidden ownership Orca keeps out of the sidebar', () => {
     const worktrees = [
@@ -81,27 +94,54 @@ describe('getIndividuallyImportedWorktrees', () => {
     const imported = detectedWorktree({ id: 'imported', visible: true })
     const result = getIndividuallyImportedWorktrees(
       detectedResult([imported, detectedWorktree({ id: 'hidden' })]),
-      { importedExternalWorktreePaths: [scratchPath] }
+      repo({ importedExternalWorktreePaths: [scratchPath] })
     )
 
     expect(result.map((worktree) => worktree.id)).toEqual(['imported'])
   })
 
-  it('excludes worktrees the repo-wide show toggle reveals, since hiding them would be a no-op', () => {
+  it('excludes an imported worktree the repo-wide show toggle also reveals, since hiding it would be a no-op', () => {
+    const externalPath = '/repo-worktrees/payments'
     const result = getIndividuallyImportedWorktrees(
       detectedResult([
-        detectedWorktree({ id: 'shown-by-toggle', ownership: 'external', visible: true })
+        detectedWorktree({
+          id: 'shown-by-toggle',
+          path: externalPath,
+          ownership: 'external',
+          visible: true
+        })
       ]),
-      { importedExternalWorktreePaths: [] }
+      repo({
+        externalWorktreeVisibility: 'show',
+        importedExternalWorktreePaths: [externalPath]
+      })
     )
 
     expect(result).toEqual([])
   })
 
+  it('keeps an imported scratch worktree while the toggle is show, since only the import reveals it', () => {
+    const result = getIndividuallyImportedWorktrees(
+      detectedResult([detectedWorktree({ id: 'scratch', visible: true })]),
+      repo({
+        externalWorktreeVisibility: 'show',
+        importedExternalWorktreePaths: [scratchPath]
+      })
+    )
+
+    expect(result.map((worktree) => worktree.id)).toEqual(['scratch'])
+  })
+
+  it('returns nothing without a repo', () => {
+    expect(
+      getIndividuallyImportedWorktrees(detectedResult([detectedWorktree({ visible: true })]), null)
+    ).toEqual([])
+  })
+
   it('excludes the selected checkout', () => {
     const result = getIndividuallyImportedWorktrees(
       detectedResult([detectedWorktree({ visible: true, selectedCheckout: true })]),
-      { importedExternalWorktreePaths: [scratchPath] }
+      repo({ importedExternalWorktreePaths: [scratchPath] })
     )
 
     expect(result).toEqual([])

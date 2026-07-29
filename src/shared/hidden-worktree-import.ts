@@ -3,6 +3,8 @@ import {
   isExplicitlyImportedExternalWorktreePath,
   mergeExternalWorktreeInboxPaths
 } from './external-worktree-inbox'
+import { isLegacyRepoForExternalWorktreeVisibility } from './external-worktree-visibility'
+import { shouldShowWorktree } from './worktree-ownership'
 import type { DetectedWorktree, DetectedWorktreeListResult, Repo } from './types'
 
 /**
@@ -25,23 +27,35 @@ export function getImportableHiddenWorktrees(
 }
 
 /**
- * Visible only because a path was individually imported. Worktrees the
- * repo-wide `show` toggle reveals are excluded: dropping their path would not
- * hide them, so offering the action would be a no-op.
+ * Visible only because a path was individually imported. A worktree the repo
+ * would show anyway is excluded: dropping its path would leave it on screen, so
+ * the hide action would be a no-op. Asking `shouldShowWorktree` with the import
+ * list withheld keeps that judgement on the one rule that owns it.
  */
 export function getIndividuallyImportedWorktrees(
   detected: DetectedWorktreeListResult | undefined,
-  repo: Pick<Repo, 'importedExternalWorktreePaths'>
+  repo: Repo | null | undefined
 ): DetectedWorktree[] {
-  if (detected?.authoritative !== true) {
+  if (detected?.authoritative !== true || !repo) {
     return []
   }
-  return detected.worktrees.filter(
-    (worktree) =>
-      isImportCandidate(worktree) &&
-      worktree.visible &&
-      isExplicitlyImportedExternalWorktreePath(worktree.path, repo)
-  )
+  const isLegacyRepoForVisibility = isLegacyRepoForExternalWorktreeVisibility(repo)
+  return detected.worktrees.filter((worktree) => {
+    if (!isImportCandidate(worktree) || !worktree.visible) {
+      return false
+    }
+    if (!isExplicitlyImportedExternalWorktreePath(worktree.path, repo)) {
+      return false
+    }
+    return !shouldShowWorktree({
+      worktree,
+      ownership: worktree.ownership,
+      repo,
+      isLegacyRepoForVisibility,
+      isSelectedCheckout: worktree.selectedCheckout,
+      importedExternalWorktreePaths: undefined
+    })
+  })
 }
 
 export function addHiddenWorktreeImportPaths(
