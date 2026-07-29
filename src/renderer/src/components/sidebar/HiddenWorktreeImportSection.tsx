@@ -27,6 +27,13 @@ function shortBranchName(branch: string | undefined): string {
   return (branch ?? '').replace(/^refs\/heads\//, '')
 }
 
+// Why: a worktree with no Orca metadata takes its display name from the branch,
+// so rendering both would print the same string twice.
+function secondaryBranchLine(worktree: HiddenWorktreePreview): string {
+  const branch = shortBranchName(worktree.branch)
+  return branch === worktree.displayName ? '' : branch
+}
+
 function WorktreeRow({
   worktree,
   actionLabel,
@@ -38,7 +45,7 @@ function WorktreeRow({
   pending: boolean
   onAction: () => void
 }): React.JSX.Element {
-  const branch = shortBranchName(worktree.branch)
+  const branch = secondaryBranchLine(worktree)
   return (
     <li className="flex min-w-0 items-center gap-2 py-1">
       <div className="min-w-0 flex-1">

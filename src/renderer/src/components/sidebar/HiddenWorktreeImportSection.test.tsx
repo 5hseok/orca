@@ -50,6 +50,22 @@ describe('HiddenWorktreeImportSection', () => {
     expect(markup).not.toContain('refs/heads/')
   })
 
+  it('drops the branch line when the worktree is named after its branch', () => {
+    const markup = render({
+      importableWorktrees: [
+        {
+          id: 'branch-named',
+          displayName: 'payments-refactor',
+          path: '/worktrees/payments-refactor',
+          branch: 'refs/heads/payments-refactor',
+          ownership: 'external' as const
+        }
+      ]
+    })
+
+    expect(markup.match(/payments-refactor/g)).toHaveLength(1)
+  })
+
   it('marks only agent scratch rows so the reason for hiding is visible', () => {
     expect(render().match(/agent scratch/g)).toHaveLength(1)
     expect(render({ importableWorktrees: [importable[1]] })).not.toContain('agent scratch')
