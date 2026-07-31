@@ -87,6 +87,22 @@ describe('HiddenWorktreeImportSection', () => {
     expect(render({ importableWorktrees: [], importedWorktrees: [] })).toBe('')
   })
 
+  it('keeps pending and error feedback visible while optimistic state leaves no rows', () => {
+    const pendingMarkup = render({
+      importableWorktrees: [],
+      importedWorktrees: [],
+      pending: true
+    })
+    const errorMarkup = render({
+      importableWorktrees: [],
+      importedWorktrees: [],
+      error: 'The change could not be applied or undone.'
+    })
+
+    expect(pendingMarkup).toContain('aria-busy="true"')
+    expect(errorMarkup).toContain('role="alert"')
+  })
+
   it('disables the actions and marks the section busy while pending', () => {
     const markup = render({ pending: true })
 

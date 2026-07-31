@@ -111,7 +111,7 @@ export default function HiddenWorktreeImportSection({
     return () => window.clearTimeout(timer)
   }, [pending])
 
-  if (importableWorktrees.length === 0 && importedWorktrees.length === 0) {
+  if (importableWorktrees.length === 0 && importedWorktrees.length === 0 && !pending && !error) {
     return null
   }
 
