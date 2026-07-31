@@ -226,6 +226,7 @@ import { assertWorktreeUnlockedForRemoval } from '../../shared/worktree-removal'
 import {
   LOCAL_EXECUTION_HOST_ID,
   getRepoExecutionHostId,
+  getWorktreeExecutionHostId,
   parseExecutionHostId,
   toSshExecutionHostId,
   type ExecutionHostId
@@ -2366,6 +2367,54 @@ type ResolvedWorktree = Worktree & {
   childWorktreeIds: string[]
   lineage: WorktreeLineage | null
   git: GitWorktreeInfo
+}
+
+type RuntimeWorktreeVisibilityContext = {
+  repo: Repo
+  agentScratchWorktreePathMatcher: AgentScratchWorktreePathMatcher
+  explicitlyImportedWorktreePathMatcher: ExplicitExternalWorktreePathMatcher
+}
+
+function runtimeWorktreeRepoHostKey(repoId: string, hostId: ExecutionHostId): string {
+  return `${hostId}\0${repoId}`
+}
+
+function runtimeWorktreeRepoHostKeyForWorktree(worktree: Worktree): string {
+  return runtimeWorktreeRepoHostKey(
+    worktree.repoId,
+    getWorktreeExecutionHostId(worktree, undefined)
+  )
+}
+
+function buildRuntimeWorktreeVisibilityContexts(
+  repos: readonly Repo[],
+  worktrees: readonly Worktree[]
+): ReadonlyMap<string, RuntimeWorktreeVisibilityContext> {
+  const checkoutPathsByRepoHost = new Map<string, string[]>()
+  for (const worktree of worktrees) {
+    const key = runtimeWorktreeRepoHostKeyForWorktree(worktree)
+    const checkoutPaths = checkoutPathsByRepoHost.get(key) ?? []
+    checkoutPaths.push(worktree.path)
+    checkoutPathsByRepoHost.set(key, checkoutPaths)
+  }
+  return new Map(
+    repos.map((repo) => {
+      const key = runtimeWorktreeRepoHostKey(repo.id, getRepoExecutionHostId(repo))
+      return [
+        key,
+        {
+          repo,
+          agentScratchWorktreePathMatcher: createAgentScratchWorktreePathMatcher([
+            repo.path,
+            ...(checkoutPathsByRepoHost.get(key) ?? [])
+          ]),
+          explicitlyImportedWorktreePathMatcher: createExplicitExternalWorktreePathMatcher(
+            repo.importedExternalWorktreePaths
+          )
+        }
+      ]
+    })
+  )
 }
 
 type LinearAgentWriteTarget = {
@@ -16560,19 +16609,22 @@ export class OrcaRuntimeService {
     }
     const resolvedWorktreeSnapshot = await this.listResolvedWorktreeSnapshot()
     const repos = this.store?.getRepos() ?? []
-    const importedPathMatchersByRepoId = new Map(
-      repos.map((repo) => [
-        repo.id,
-        createExplicitExternalWorktreePathMatcher(repo.importedExternalWorktreePaths)
-      ])
+    const visibilityContexts = buildRuntimeWorktreeVisibilityContexts(
+      repos,
+      resolvedWorktreeSnapshot.worktrees
     )
-    const resolvedWorktrees = resolvedWorktreeSnapshot.worktrees.filter((worktree) =>
-      this.isRuntimeWorktreeVisible(
+    const resolvedWorktrees = resolvedWorktreeSnapshot.worktrees.filter((worktree) => {
+      const context = visibilityContexts.get(runtimeWorktreeRepoHostKeyForWorktree(worktree))
+      if (!context) {
+        return true
+      }
+      return this.isRuntimeWorktreeVisible(
+        context.repo,
         worktree,
-        undefined,
-        importedPathMatchersByRepoId.get(worktree.repoId)
+        context.agentScratchWorktreePathMatcher,
+        context.explicitlyImportedWorktreePathMatcher
       )
-    )
+    })
     // Why: worktree.ps backs the mobile sidebar, so it must use the same
     // host-owned imported-worktree visibility gate as worktree.list/desktop.
     const freshPtyLiveness = await this.refreshPtyWorktreeRecordsFromController(resolvedWorktrees)
@@ -19712,35 +19764,23 @@ export class OrcaRuntimeService {
     }
     const resolved = await this.listResolvedWorktrees()
     const repoId = repoSelector ? (await this.resolveRepoSelector(repoSelector)).id : null
-    const checkoutPathsByRepoId = new Map<string, string[]>()
-    for (const worktree of resolved) {
-      const checkoutPaths = checkoutPathsByRepoId.get(worktree.repoId) ?? []
-      checkoutPaths.push(worktree.path)
-      checkoutPathsByRepoId.set(worktree.repoId, checkoutPaths)
-    }
-    const agentScratchMatchersByRepoId = new Map(
-      (this.store?.getRepos() ?? []).map((repo) => [
-        repo.id,
-        createAgentScratchWorktreePathMatcher([
-          repo.path,
-          ...(checkoutPathsByRepoId.get(repo.id) ?? [])
-        ])
-      ])
-    )
-    const importedPathMatchersByRepoId = new Map(
-      (this.store?.getRepos() ?? []).map((repo) => [
-        repo.id,
-        createExplicitExternalWorktreePathMatcher(repo.importedExternalWorktreePaths)
-      ])
+    const visibilityContexts = buildRuntimeWorktreeVisibilityContexts(
+      this.store?.getRepos() ?? [],
+      resolved
     )
     const worktrees = resolved.filter((worktree) => {
       if (repoId && worktree.repoId !== repoId) {
         return false
       }
+      const context = visibilityContexts.get(runtimeWorktreeRepoHostKeyForWorktree(worktree))
+      if (!context) {
+        return true
+      }
       return this.isRuntimeWorktreeVisible(
+        context.repo,
         worktree,
-        agentScratchMatchersByRepoId.get(worktree.repoId),
-        importedPathMatchersByRepoId.get(worktree.repoId)
+        context.agentScratchWorktreePathMatcher,
+        context.explicitlyImportedWorktreePathMatcher
       )
     })
     return {
@@ -19873,12 +19913,12 @@ export class OrcaRuntimeService {
   }
 
   private isRuntimeWorktreeVisible(
+    repo: Repo,
     worktree: Worktree,
     agentScratchWorktreePathMatcher?: AgentScratchWorktreePathMatcher,
     explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher
   ): boolean {
-    const repo = this.store?.getRepo(worktree.repoId)
-    if (!repo || !this.store) {
+    if (!this.store) {
       return true
     }
     return this.toRuntimeDetectedWorktree(

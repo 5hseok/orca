@@ -35676,6 +35676,56 @@ describe('OrcaRuntimeService', () => {
     expect(listWorktrees).toHaveBeenCalledTimes(1)
   })
 
+  it('scopes imported runtime visibility to the repo host when ids collide', async () => {
+    const localRepoPath = '/local/repo'
+    const localScratchPath = `${localRepoPath}/.claude/worktrees/agent-local`
+    const remoteRepoPath = '/remote/repo'
+    const repos = [
+      {
+        id: 'same-repo',
+        path: localRepoPath,
+        displayName: 'local repo',
+        badgeColor: 'blue' as const,
+        addedAt: 1
+      },
+      {
+        id: 'same-repo',
+        path: remoteRepoPath,
+        displayName: 'remote repo',
+        badgeColor: 'red' as const,
+        addedAt: 2,
+        connectionId: 'ssh-1',
+        importedExternalWorktreePaths: [localScratchPath]
+      }
+    ]
+    const metaById: Record<string, WorktreeMeta> = {}
+    const runtimeStore = {
+      ...store,
+      getRepos: () => repos,
+      getRepo: (id: string) => repos.find((repo) => repo.id === id),
+      getAllWorktreeMeta: () => metaById,
+      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
+      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
+        metaById[worktreeId] = { ...(metaById[worktreeId] ?? makeWorktreeMeta()), ...meta }
+        return metaById[worktreeId]
+      }
+    }
+    vi.mocked(listWorktrees).mockResolvedValue([
+      makeWorktreeInfo(localRepoPath),
+      makeWorktreeInfo(localScratchPath)
+    ])
+    registerSshGitProvider('ssh-1', {
+      listWorktrees: vi.fn().mockResolvedValue([makeWorktreeInfo(remoteRepoPath)])
+    } as never)
+
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    const listed = await runtime.listManagedWorktrees()
+    const ps = await runtime.getWorktreePs()
+
+    expect(listed.worktrees.map((worktree) => worktree.path)).not.toContain(localScratchPath)
+    expect(ps.worktrees.map((worktree) => worktree.path)).not.toContain(localScratchPath)
+  })
+
   it('bounds repeated detected worktree scans across the reported 15-repo shape', async () => {
     vi.mocked(listWorktrees).mockReset()
     const repos = Array.from({ length: 15 }, (_, index) => ({
