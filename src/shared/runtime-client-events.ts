@@ -9,7 +9,7 @@ import type { TerminalSideEffectBatch } from './terminal-side-effect-facts'
 import type { RuntimeNativeChatLaunchDraftResolution } from './runtime-types'
 
 export type RuntimeClientEvent =
-  | { type: 'reposChanged' }
+  | { type: 'reposChanged'; repoId?: string }
   | { type: 'worktreesChanged'; repoId: string }
   | ({ type: 'nativeChatLaunchDraftResolved' } & RuntimeNativeChatLaunchDraftResolution)
   | { type: 'terminalSideEffects'; batch: TerminalSideEffectBatch }

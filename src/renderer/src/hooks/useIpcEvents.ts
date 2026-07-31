@@ -891,16 +891,21 @@ export function useIpcEvents(): void {
     }
 
     const runtimeProjectRefreshScheduler = createRuntimeProjectRefreshScheduler({
-      refresh: async (environmentId) => {
+      refresh: async (environmentId, repoIds) => {
         // Why: refresh the env's SSH bucket on (re)connect so a pre-drop snapshot can't keep a reconnect overlay stale.
         void hydrateRuntimeEnvironmentSshState(environmentId, { force: true }).catch(() => {})
         const repos = await useAppStore.getState().fetchRuntimeEnvironmentRepos(environmentId)
-        await refreshRuntimeProjectWorktrees(environmentId, repos, (repoId, options) =>
-          useAppStore.getState().fetchWorktrees(repoId, options)
+        await refreshRuntimeProjectWorktrees(
+          environmentId,
+          repos,
+          (repoId, options) => useAppStore.getState().fetchWorktrees(repoId, options),
+          repoIds ?? undefined
         )
-        await useAppStore.getState().fetchWorktreeLineage({
-          executionHostId: toRuntimeExecutionHostId(environmentId)
-        })
+        if (!repoIds) {
+          await useAppStore.getState().fetchWorktreeLineage({
+            executionHostId: toRuntimeExecutionHostId(environmentId)
+          })
+        }
       },
       onError: (error) => {
         console.error('Failed to refresh runtime projects:', error)
@@ -932,7 +937,7 @@ export function useIpcEvents(): void {
         return
       }
       if (event.type === 'reposChanged') {
-        runtimeProjectRefreshScheduler.request(environmentId)
+        runtimeProjectRefreshScheduler.request(environmentId, event.repoId)
         return
       }
       if (event.type === 'sshStateChanged') {

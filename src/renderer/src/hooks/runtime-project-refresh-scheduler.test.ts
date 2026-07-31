@@ -16,10 +16,25 @@ describe('refreshRuntimeProjectWorktrees', () => {
 
     expect(fetchWorktrees).toHaveBeenCalledTimes(2)
     expect(fetchWorktrees).toHaveBeenNthCalledWith(1, 'same-repo', {
-      executionHostId: 'runtime:env-1'
+      executionHostId: 'runtime:env-1',
+      suppressLineageRefresh: true
     })
     expect(fetchWorktrees).toHaveBeenNthCalledWith(2, 'same-repo', {
-      executionHostId: 'runtime:env-1'
+      executionHostId: 'runtime:env-1',
+      suppressLineageRefresh: true
+    })
+  })
+
+  it('refreshes only the repo named by a targeted event', async () => {
+    const fetchWorktrees = vi.fn().mockResolvedValue(true)
+    const repos = Array.from({ length: 10 }, (_, index) => ({ id: `repo-${index}` }))
+
+    await refreshRuntimeProjectWorktrees('env-1', repos, fetchWorktrees, new Set(['repo-4']))
+
+    expect(fetchWorktrees).toHaveBeenCalledTimes(1)
+    expect(fetchWorktrees).toHaveBeenCalledWith('repo-4', {
+      executionHostId: 'runtime:env-1',
+      suppressLineageRefresh: true
     })
   })
 })
@@ -51,7 +66,7 @@ describe('createRuntimeProjectRefreshScheduler', () => {
 
     await vi.advanceTimersByTimeAsync(1)
     expect(refresh).toHaveBeenCalledTimes(1)
-    expect(refresh).toHaveBeenCalledWith('env-1')
+    expect(refresh).toHaveBeenCalledWith('env-1', null)
 
     scheduler.stop()
   })
@@ -75,6 +90,24 @@ describe('createRuntimeProjectRefreshScheduler', () => {
 
     await vi.advanceTimersByTimeAsync(1)
     expect(refresh).toHaveBeenCalledTimes(2)
+
+    scheduler.stop()
+  })
+
+  it('coalesces targeted repo events without broadening to sibling repos', async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    const scheduler = createRuntimeProjectRefreshScheduler({
+      refresh,
+      debounceMs: 100,
+      minIntervalMs: 1_000
+    })
+
+    scheduler.request('env-1', 'repo-a')
+    scheduler.request('env-1', 'repo-b')
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect([...refresh.mock.calls[0][1]]).toEqual(['repo-a', 'repo-b'])
 
     scheduler.stop()
   })

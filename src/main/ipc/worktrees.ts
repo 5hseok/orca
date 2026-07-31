@@ -65,6 +65,7 @@ import {
   toDetectedWorktree
 } from '../../shared/worktree-ownership'
 import { createAgentScratchWorktreePathMatcher } from '../../shared/agent-scratch-worktrees'
+import { createExplicitExternalWorktreePathMatcher } from '../../shared/external-worktree-inbox'
 import {
   assertWorktreeCleanForRemoval,
   forceDeleteLocalBranch,
@@ -828,6 +829,9 @@ function buildDetectedGitWorktrees(
     repo.path,
     ...liveWorktrees.map((worktree) => worktree.path)
   ])
+  const explicitlyImportedWorktreePathMatcher = createExplicitExternalWorktreePathMatcher(
+    repo.importedExternalWorktreePaths
+  )
   const detected = liveWorktrees.map((gitWorktree) => {
     const worktreeId = `${repo.id}::${gitWorktree.path}`
     let meta = store.getWorktreeMeta(worktreeId)
@@ -839,7 +843,8 @@ function buildDetectedGitWorktrees(
       settings,
       knownOrcaLayouts,
       isLegacyRepoForVisibility,
-      agentScratchWorktreePathMatcher
+      agentScratchWorktreePathMatcher,
+      explicitlyImportedWorktreePathMatcher
     })
     if (!detected.visible) {
       return detected
@@ -853,7 +858,8 @@ function buildDetectedGitWorktrees(
       settings,
       knownOrcaLayouts,
       isLegacyRepoForVisibility,
-      agentScratchWorktreePathMatcher
+      agentScratchWorktreePathMatcher,
+      explicitlyImportedWorktreePathMatcher
     })
   })
   return projectResolvedWorktreeLineage(detected, store.getAllWorktreeLineage?.() ?? {})
@@ -975,6 +981,9 @@ function listFolderWorkspaces(store: Store, repo: Repo): Worktree[] {
 
 function buildFolderDetectedWorktrees(store: Store, repo: Repo): DetectedWorktree[] {
   const settings = store.getSettings()
+  const explicitlyImportedWorktreePathMatcher = createExplicitExternalWorktreePathMatcher(
+    repo.importedExternalWorktreePaths
+  )
   return listFolderWorkspaces(store, repo).map((worktree) =>
     toDetectedWorktree({
       repo,
@@ -982,7 +991,8 @@ function buildFolderDetectedWorktrees(store: Store, repo: Repo): DetectedWorktre
       meta: store.getWorktreeMeta(worktree.id),
       settings,
       knownOrcaLayouts: [],
-      isLegacyRepoForVisibility: true
+      isLegacyRepoForVisibility: true,
+      explicitlyImportedWorktreePathMatcher
     })
   )
 }
@@ -1058,6 +1068,9 @@ function buildDisconnectedDetectedWorktrees(
     repo.path,
     ...worktrees.map((worktree) => worktree.path)
   ])
+  const explicitlyImportedWorktreePathMatcher = createExplicitExternalWorktreePathMatcher(
+    repo.importedExternalWorktreePaths
+  )
   const detected = worktrees.map((worktree) => {
     const meta = store.getWorktreeMeta(worktree.id)
     const detected = toDetectedWorktree({
@@ -1067,7 +1080,8 @@ function buildDisconnectedDetectedWorktrees(
       settings,
       knownOrcaLayouts: [],
       isLegacyRepoForVisibility: true,
-      agentScratchWorktreePathMatcher
+      agentScratchWorktreePathMatcher,
+      explicitlyImportedWorktreePathMatcher
     })
     return applyMetadataFallbackVisibility(detected)
   })

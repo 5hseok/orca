@@ -1,7 +1,7 @@
 import { toRuntimeExecutionHostId, type ExecutionHostId } from '../../../shared/execution-host'
 
 export type RuntimeProjectRefreshSchedulerDeps = {
-  refresh: (environmentId: string) => Promise<void>
+  refresh: (environmentId: string, repoIds: ReadonlySet<string> | null) => Promise<void>
   debounceMs?: number
   minIntervalMs?: number
   now?: () => number
@@ -9,7 +9,7 @@ export type RuntimeProjectRefreshSchedulerDeps = {
 }
 
 export type RuntimeProjectRefreshScheduler = {
-  request: (environmentId: string) => void
+  request: (environmentId: string, repoId?: string) => void
   stop: () => void
 }
 
@@ -17,6 +17,8 @@ type RefreshEntry = {
   inFlight: boolean
   lastStartedAt: number
   pending: boolean
+  refreshAll: boolean
+  pendingRepoIds: Set<string>
   timer: ReturnType<typeof setTimeout> | null
 }
 
@@ -29,24 +31,26 @@ export async function refreshRuntimeProjectWorktrees(
   repos: readonly { id: string }[],
   fetchWorktrees: (
     repoId: string,
-    options: { executionHostId: ExecutionHostId }
+    options: { executionHostId: ExecutionHostId; suppressLineageRefresh: true }
   ) => Promise<unknown>,
+  repoIds?: ReadonlySet<string>,
   concurrency = DEFAULT_REFRESH_CONCURRENCY
 ): Promise<void> {
+  const reposToRefresh = repoIds ? repos.filter((repo) => repoIds.has(repo.id)) : repos
   let nextIndex = 0
   const failures: { repoId: string; error: unknown }[] = []
-  const workerCount = Math.min(concurrency, repos.length)
+  const workerCount = Math.min(concurrency, reposToRefresh.length)
   const executionHostId = toRuntimeExecutionHostId(environmentId)
 
   // Why: one coalesced event can represent many repos; bound probes without dropping host identity.
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
-      while (nextIndex < repos.length) {
+      while (nextIndex < reposToRefresh.length) {
         const index = nextIndex
         nextIndex += 1
-        const repoId = repos[index].id
+        const repoId = reposToRefresh[index].id
         try {
-          await fetchWorktrees(repoId, { executionHostId })
+          await fetchWorktrees(repoId, { executionHostId, suppressLineageRefresh: true })
         } catch (error) {
           failures.push({ repoId, error })
         }
@@ -79,6 +83,8 @@ export function createRuntimeProjectRefreshScheduler(
         inFlight: false,
         lastStartedAt: 0,
         pending: false,
+        refreshAll: false,
+        pendingRepoIds: new Set(),
         timer: null
       }
       entries.set(environmentId, entry)
@@ -106,8 +112,11 @@ export function createRuntimeProjectRefreshScheduler(
     entry.pending = false
     entry.inFlight = true
     entry.lastStartedAt = now()
+    const repoIds = entry.refreshAll ? null : new Set(entry.pendingRepoIds)
+    entry.refreshAll = false
+    entry.pendingRepoIds.clear()
     try {
-      await deps.refresh(environmentId)
+      await deps.refresh(environmentId, repoIds)
     } catch (error) {
       deps.onError?.(error)
     } finally {
@@ -120,12 +129,23 @@ export function createRuntimeProjectRefreshScheduler(
     }
   }
 
-  const request = (environmentId: string): void => {
+  const request = (environmentId: string, repoId?: string): void => {
     const trimmedEnvironmentId = environmentId.trim()
     if (!trimmedEnvironmentId || stopped) {
       return
     }
     const entry = getEntry(trimmedEnvironmentId)
+    if (!entry.pending) {
+      entry.refreshAll = false
+      entry.pendingRepoIds.clear()
+    }
+    const trimmedRepoId = repoId?.trim()
+    if (trimmedRepoId && !entry.refreshAll) {
+      entry.pendingRepoIds.add(trimmedRepoId)
+    } else if (!trimmedRepoId) {
+      entry.refreshAll = true
+      entry.pendingRepoIds.clear()
+    }
     entry.pending = true
     schedule(trimmedEnvironmentId, entry)
   }

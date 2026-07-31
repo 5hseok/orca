@@ -11,7 +11,10 @@ import {
   isAgentScratchWorktreePath,
   type AgentScratchWorktreePathMatcher
 } from './agent-scratch-worktrees'
-import { isExplicitlyImportedExternalWorktreePath } from './external-worktree-inbox'
+import {
+  isExplicitlyImportedExternalWorktreePath,
+  type ExplicitExternalWorktreePathMatcher
+} from './external-worktree-inbox'
 import {
   effectiveExternalWorktreeVisibility,
   isLegacyRepoForExternalWorktreeVisibility
@@ -178,6 +181,7 @@ export function toDetectedWorktree(args: {
   knownOrcaLayouts: OrcaWorkspaceLayout[]
   isLegacyRepoForVisibility?: boolean
   agentScratchWorktreePathMatcher?: AgentScratchWorktreePathMatcher
+  explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher
 }): DetectedWorktree {
   const ownership = classifyWorktreeOwnership(args)
   const selectedCheckout = areRuntimePathsEqual(args.worktree.path, args.repo.path)
@@ -189,7 +193,8 @@ export function toDetectedWorktree(args: {
     repo: args.repo,
     isLegacyRepoForVisibility,
     isSelectedCheckout: selectedCheckout,
-    importedExternalWorktreePaths: args.repo.importedExternalWorktreePaths
+    importedExternalWorktreePaths: args.repo.importedExternalWorktreePaths,
+    explicitlyImportedWorktreePathMatcher: args.explicitlyImportedWorktreePathMatcher
   })
 
   return {
@@ -207,6 +212,7 @@ export function shouldShowWorktree(args: {
   isLegacyRepoForVisibility: boolean
   isSelectedCheckout: boolean
   importedExternalWorktreePaths?: readonly string[] | undefined
+  explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher
 }): boolean {
   if (args.isSelectedCheckout) {
     return true
@@ -214,11 +220,12 @@ export function shouldShowWorktree(args: {
   if (args.ownership === 'orca-managed') {
     return true
   }
-  if (
-    isExplicitlyImportedExternalWorktreePath(args.worktree.path, {
-      importedExternalWorktreePaths: args.importedExternalWorktreePaths
-    })
-  ) {
+  const isExplicitlyImported = args.explicitlyImportedWorktreePathMatcher
+    ? args.explicitlyImportedWorktreePathMatcher(args.worktree.path)
+    : isExplicitlyImportedExternalWorktreePath(args.worktree.path, {
+        importedExternalWorktreePaths: args.importedExternalWorktreePaths
+      })
+  if (isExplicitlyImported) {
     return true
   }
   // Why: agent scratch stays hidden even when the repo shows non-Orca

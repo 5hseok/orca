@@ -3224,7 +3224,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           : false
       }
       // Direct SSH lineage requires its own qualified authority result.
-      if (!directSshAuthority) {
+      if (!directSshAuthority && !options?.suppressLineageRefresh) {
         await refreshRemoteWorktreeLineageBestEffort(settings, set)
       }
       return directCallerAuthority ? refresh.providerResult! : refresh.result.authoritative

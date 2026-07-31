@@ -50,6 +50,7 @@ export type WorktreeFetchOptions = {
   requireAuthoritative?: boolean
   executionHostId?: ExecutionHostId
   forceLocalOwner?: boolean
+  suppressLineageRefresh?: boolean
 }
 
 export type DirectSshWorktreeFetchOptions = WorktreeFetchOptions & {

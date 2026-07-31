@@ -7985,6 +7985,8 @@ describe('OrcaRuntimeService', () => {
       updateRepo: vi.fn(() => updated as never)
     }
     const runtime = new OrcaRuntimeService(runtimeStore as never)
+    const events: RuntimeClientEvent[] = []
+    runtime.onClientEvent((event) => events.push(event))
 
     await expect(runtime.updateRepo(repo.id, { worktreeBasePath: '../worktrees' })).resolves.toBe(
       updated
@@ -7992,6 +7994,7 @@ describe('OrcaRuntimeService', () => {
 
     expect(prepareLocalWorktreeRootForRepoMock).toHaveBeenCalledWith(runtimeStore, updated)
     expect(invalidateAuthorizedRootsCacheMock).toHaveBeenCalled()
+    expect(events).toContainEqual({ type: 'reposChanged', repoId: repo.id })
   })
 
   it('prepares the runtime worktree root when repo-backed project host setup base path changes', () => {

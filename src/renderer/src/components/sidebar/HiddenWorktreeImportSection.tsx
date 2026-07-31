@@ -1,5 +1,5 @@
-import React from 'react'
-import { EyeOff } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { EyeOff, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -100,6 +100,17 @@ export default function HiddenWorktreeImportSection({
   onImport,
   onHide
 }: HiddenWorktreeImportSectionProps): React.JSX.Element | null {
+  const [showPending, setShowPending] = useState(false)
+  useEffect(() => {
+    if (!pending) {
+      setShowPending(false)
+      return
+    }
+    // Why: local imports are often instant; defer visible feedback so only slower remote scans animate.
+    const timer = window.setTimeout(() => setShowPending(true), 200)
+    return () => window.clearTimeout(timer)
+  }, [pending])
+
   if (importableWorktrees.length === 0 && importedWorktrees.length === 0) {
     return null
   }
@@ -125,7 +136,11 @@ export default function HiddenWorktreeImportSection({
     >
       <div className="flex items-start gap-3">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground">
-          <EyeOff className="size-4" />
+          {showPending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <EyeOff className="size-4" />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">{sectionTitle}</div>

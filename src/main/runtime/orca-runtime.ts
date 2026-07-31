@@ -447,6 +447,10 @@ import {
   type AgentScratchWorktreePathMatcher
 } from '../../shared/agent-scratch-worktrees'
 import {
+  createExplicitExternalWorktreePathMatcher,
+  type ExplicitExternalWorktreePathMatcher
+} from '../../shared/external-worktree-inbox'
+import {
   BROWSER_HEADLESS_RUNTIME_CAPABILITY,
   BROWSER_CERTIFICATE_TRUST_RUNTIME_CAPABILITY,
   MIN_COMPATIBLE_RUNTIME_CLIENT_VERSION,
@@ -4932,9 +4936,9 @@ export class OrcaRuntimeService {
     }
   }
 
-  private notifyReposChanged(): void {
+  private notifyReposChanged(repoId?: string): void {
     this.notifier?.reposChanged()
-    this.emitClientEvent({ type: 'reposChanged' })
+    this.emitClientEvent({ type: 'reposChanged', ...(repoId ? { repoId } : {}) })
   }
 
   // Why: SSH state changes originate in main's ssh handlers, not in runtime
@@ -16513,13 +16517,24 @@ export class OrcaRuntimeService {
       throw new Error('invalid_limit')
     }
     const resolvedWorktreeSnapshot = await this.listResolvedWorktreeSnapshot()
+    const repos = this.store?.getRepos() ?? []
+    const importedPathMatchersByRepoId = new Map(
+      repos.map((repo) => [
+        repo.id,
+        createExplicitExternalWorktreePathMatcher(repo.importedExternalWorktreePaths)
+      ])
+    )
     const resolvedWorktrees = resolvedWorktreeSnapshot.worktrees.filter((worktree) =>
-      this.isRuntimeWorktreeVisible(worktree)
+      this.isRuntimeWorktreeVisible(
+        worktree,
+        undefined,
+        importedPathMatchersByRepoId.get(worktree.repoId)
+      )
     )
     // Why: worktree.ps backs the mobile sidebar, so it must use the same
     // host-owned imported-worktree visibility gate as worktree.list/desktop.
     const freshPtyLiveness = await this.refreshPtyWorktreeRecordsFromController(resolvedWorktrees)
-    const repoById = new Map((this.store?.getRepos() ?? []).map((repo) => [repo.id, repo]))
+    const repoById = new Map(repos.map((repo) => [repo.id, repo]))
     const platformByRepoId = resolvedWorktreeSnapshot.platformByRepoId
     const summaries = new Map<string, RuntimeWorktreePsSummary>()
 
@@ -17928,7 +17943,7 @@ export class OrcaRuntimeService {
       throw new Error('repo_not_found')
     }
     this.invalidateResolvedWorktreeCache()
-    this.notifyReposChanged()
+    this.notifyReposChanged(repo.id)
     return updated
   }
 
@@ -17988,7 +18003,7 @@ export class OrcaRuntimeService {
     if ('worktreeBasePath' in updates) {
       this.invalidateWorktreeScanCacheForRepo(repo.id)
     }
-    this.notifyReposChanged()
+    this.notifyReposChanged(repo.id)
     return updated
   }
 
@@ -19670,13 +19685,20 @@ export class OrcaRuntimeService {
         ])
       ])
     )
+    const importedPathMatchersByRepoId = new Map(
+      (this.store?.getRepos() ?? []).map((repo) => [
+        repo.id,
+        createExplicitExternalWorktreePathMatcher(repo.importedExternalWorktreePaths)
+      ])
+    )
     const worktrees = resolved.filter((worktree) => {
       if (repoId && worktree.repoId !== repoId) {
         return false
       }
       return this.isRuntimeWorktreeVisible(
         worktree,
-        agentScratchMatchersByRepoId.get(worktree.repoId)
+        agentScratchMatchersByRepoId.get(worktree.repoId),
+        importedPathMatchersByRepoId.get(worktree.repoId)
       )
     })
     return {
@@ -19699,9 +19721,19 @@ export class OrcaRuntimeService {
     repo: Repo
   ): Promise<DetectedWorktreeListResult> {
     const store = this.requireStore()
+    const explicitlyImportedWorktreePathMatcher = createExplicitExternalWorktreePathMatcher(
+      repo.importedExternalWorktreePaths
+    )
     if (isFolderRepo(repo)) {
       const worktrees = listRuntimeFolderWorkspaces(store, repo)
-      const detected = worktrees.map((worktree) => this.toRuntimeDetectedWorktree(repo, worktree))
+      const detected = worktrees.map((worktree) =>
+        this.toRuntimeDetectedWorktree(
+          repo,
+          worktree,
+          undefined,
+          explicitlyImportedWorktreePathMatcher
+        )
+      )
       return {
         repoId: repo.id,
         authoritative: true,
@@ -19732,7 +19764,8 @@ export class OrcaRuntimeService {
       const detectedWorktree = this.toRuntimeDetectedWorktree(
         repo,
         worktree,
-        agentScratchWorktreePathMatcher
+        agentScratchWorktreePathMatcher,
+        explicitlyImportedWorktreePathMatcher
       )
       if (scan.ok) {
         return detectedWorktree
@@ -19799,19 +19832,26 @@ export class OrcaRuntimeService {
 
   private isRuntimeWorktreeVisible(
     worktree: Worktree,
-    agentScratchWorktreePathMatcher?: AgentScratchWorktreePathMatcher
+    agentScratchWorktreePathMatcher?: AgentScratchWorktreePathMatcher,
+    explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher
   ): boolean {
     const repo = this.store?.getRepo(worktree.repoId)
     if (!repo || !this.store) {
       return true
     }
-    return this.toRuntimeDetectedWorktree(repo, worktree, agentScratchWorktreePathMatcher).visible
+    return this.toRuntimeDetectedWorktree(
+      repo,
+      worktree,
+      agentScratchWorktreePathMatcher,
+      explicitlyImportedWorktreePathMatcher
+    ).visible
   }
 
   private toRuntimeDetectedWorktree(
     repo: Repo,
     worktree: Worktree,
-    agentScratchWorktreePathMatcher?: AgentScratchWorktreePathMatcher
+    agentScratchWorktreePathMatcher?: AgentScratchWorktreePathMatcher,
+    explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher
   ): DetectedWorktree {
     const settings = this.store?.getSettings()
     if (!settings) {
@@ -19829,7 +19869,8 @@ export class OrcaRuntimeService {
       settings,
       knownOrcaLayouts: buildKnownOrcaWorkspaceLayouts(settings, repo),
       isLegacyRepoForVisibility: isLegacyRepoForExternalWorktreeVisibility(repo),
-      agentScratchWorktreePathMatcher
+      agentScratchWorktreePathMatcher,
+      explicitlyImportedWorktreePathMatcher
     })
   }
 

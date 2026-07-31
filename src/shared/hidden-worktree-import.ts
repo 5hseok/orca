@@ -1,6 +1,6 @@
 import {
   areExternalWorktreeInboxPathsEqual,
-  isExplicitlyImportedExternalWorktreePath,
+  createExplicitExternalWorktreePathMatcher,
   mergeExternalWorktreeInboxPaths
 } from './external-worktree-inbox'
 import { isLegacyRepoForExternalWorktreeVisibility } from './external-worktree-visibility'
@@ -40,11 +40,14 @@ export function getIndividuallyImportedWorktrees(
     return []
   }
   const isLegacyRepoForVisibility = isLegacyRepoForExternalWorktreeVisibility(repo)
+  const isImportedPath = createExplicitExternalWorktreePathMatcher(
+    repo.importedExternalWorktreePaths
+  )
   return detected.worktrees.filter((worktree) => {
     if (!isImportCandidate(worktree) || !worktree.visible) {
       return false
     }
-    if (!isExplicitlyImportedExternalWorktreePath(worktree.path, repo)) {
+    if (!isImportedPath(worktree.path)) {
       return false
     }
     return !shouldShowWorktree({

@@ -1,6 +1,7 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useRef, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAppStore } from '@/store'
+import { findRepoForHost, getRepoHostIdentity } from '@/store/slices/repo-host-identity'
 import {
   Dialog,
   DialogContent,
@@ -29,19 +30,51 @@ import {
   type HiddenWorktreeImportActionState
 } from './hidden-worktree-import-actions'
 import { translate } from '@/i18n/i18n'
+import {
+  getRepoExecutionHostId,
+  getWorktreeExecutionHostId,
+  toRuntimeExecutionHostId
+} from '../../../../shared/execution-host'
+
+function detectedWorktreeMatchesHost(
+  worktree: Parameters<typeof getWorktreeExecutionHostId>[0] & {
+    runtimeOwnerEnvironmentId?: string
+  },
+  hostId: string
+): boolean {
+  if (
+    worktree.runtimeOwnerEnvironmentId &&
+    toRuntimeExecutionHostId(worktree.runtimeOwnerEnvironmentId) === hostId
+  ) {
+    return true
+  }
+  return getWorktreeExecutionHostId(worktree, undefined) === hostId
+}
 
 export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
   const activeModal = useAppStore((s) => s.activeModal)
   const modalData = useAppStore((s) => s.modalData)
   const closeModal = useAppStore((s) => s.closeModal)
   const repos = useAppStore((s) => s.repos)
+  const settings = useAppStore((s) => s.settings)
   const updateRepo = useAppStore((s) => s.updateRepo)
   const fetchWorktrees = useAppStore((s) => s.fetchWorktrees)
   const detectedWorktreesByRepo = useAppStore((s) => s.detectedWorktreesByRepo)
 
   const repoId = typeof modalData.repoId === 'string' ? modalData.repoId : ''
-  const repo = repos.find((candidate) => candidate.id === repoId) ?? null
-  const detected = repoId ? detectedWorktreesByRepo[repoId] : undefined
+  const requestedHostId = typeof modalData.hostId === 'string' ? modalData.hostId : null
+  const repo = findRepoForHost(repos, repoId, { hostId: requestedHostId, settings })
+  const repoHostId = repo ? getRepoExecutionHostId(repo) : null
+  const detectedForRepo = repoId ? detectedWorktreesByRepo[repoId] : undefined
+  const detected =
+    detectedForRepo && repoHostId
+      ? {
+          ...detectedForRepo,
+          worktrees: detectedForRepo.worktrees.filter((worktree) =>
+            detectedWorktreeMatchesHost(worktree, repoHostId)
+          )
+        }
+      : undefined
   const showOther = repo
     ? effectiveExternalWorktreeVisibility(repo, isLegacyRepoForExternalWorktreeVisibility(repo)) ===
       'show'
@@ -56,31 +89,40 @@ export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
   // Why: the dialog is reused across projects, so a pending or failed action
   // from one must not disable controls or report an error against the next.
   const [importActionState, setImportActionState] = useState<{
-    projectId: string
+    repoHostIdentity: string
     state: HiddenWorktreeImportActionState
   } | null>(null)
+  const importActionGenerationRef = useRef(0)
+  const repoHostIdentity = repo ? getRepoHostIdentity(repo) : null
   const activeImportActionState =
-    importActionState?.projectId === repoId ? importActionState.state : null
+    importActionState?.repoHostIdentity === repoHostIdentity ? importActionState.state : null
 
   const runImportAction = useCallback(
     (
       action: typeof importHiddenWorktrees | typeof hideImportedWorktrees,
       worktreePaths: string[]
     ) => {
-      if (!repo) {
+      if (!repo || !repoHostIdentity) {
         return
       }
+      const actionHostId = getRepoExecutionHostId(repo)
+      const actionGeneration = ++importActionGenerationRef.current
       void action({
         projectId: repo.id,
         repo,
         worktreePaths,
-        setActionState: (projectId, state) =>
-          setImportActionState(state ? { projectId, state } : null),
-        updateRepo,
-        fetchWorktrees
+        setActionState: (_projectId, state) => {
+          if (actionGeneration === importActionGenerationRef.current) {
+            setImportActionState(state ? { repoHostIdentity, state } : null)
+          }
+        },
+        updateRepo: (projectId, updates) =>
+          updateRepo(projectId, updates, { hostId: actionHostId }),
+        fetchWorktrees: (projectId, options) =>
+          fetchWorktrees(projectId, { ...options, executionHostId: actionHostId })
       })
     },
-    [fetchWorktrees, repo, updateRepo]
+    [fetchWorktrees, repo, repoHostIdentity, updateRepo]
   )
 
   const handleImport = useCallback(
@@ -94,20 +136,24 @@ export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
   )
 
   const handleToggle = useCallback(async () => {
-    if (!repoId) {
+    if (!repoId || !repoHostId) {
       return
     }
-    await updateRepo(repoId, {
-      externalWorktreeVisibility: showOther ? 'hide' : 'show',
-      // Why: showing hidden externals again should re-enable the inbox if the
-      // user previously opted out of discovery prompts for this repo.
-      // Why: null is the transport sentinel for clearing on remote runtime paths
-      // where `undefined` is stripped before persistence.
-      ...(!showOther ? { externalWorktreeDiscoverySuppressedAt: null } : {})
-    })
-    await fetchWorktrees(repoId)
+    await updateRepo(
+      repoId,
+      {
+        externalWorktreeVisibility: showOther ? 'hide' : 'show',
+        // Why: showing hidden externals again should re-enable the inbox if the
+        // user previously opted out of discovery prompts for this repo.
+        // Why: null is the transport sentinel for clearing on remote runtime paths
+        // where `undefined` is stripped before persistence.
+        ...(!showOther ? { externalWorktreeDiscoverySuppressedAt: null } : {})
+      },
+      { hostId: repoHostId }
+    )
+    await fetchWorktrees(repoId, { executionHostId: repoHostId })
     closeModal()
-  }, [closeModal, fetchWorktrees, repoId, showOther, updateRepo])
+  }, [closeModal, fetchWorktrees, repoHostId, repoId, showOther, updateRepo])
 
   if (activeModal !== 'worktree-visibility' || !repo || !isGitRepoKind(repo)) {
     return null
@@ -115,7 +161,7 @@ export default function WorktreeVisibilityDialog(): React.JSX.Element | null {
 
   return (
     <Dialog open onOpenChange={(open) => !open && closeModal()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto scrollbar-sleek sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
             {translate(

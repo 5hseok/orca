@@ -146,6 +146,32 @@ describe('getIndividuallyImportedWorktrees', () => {
 
     expect(result).toEqual([])
   })
+
+  it('indexes imported paths once instead of rescanning them for every worktree', () => {
+    let indexedReads = 0
+    const importedPaths = new Proxy(
+      [...Array.from({ length: 999 }, (_, index) => `/stale/${index}`), scratchPath],
+      {
+        get(target, property, receiver) {
+          if (typeof property === 'string' && /^\d+$/.test(property)) {
+            indexedReads += 1
+          }
+          return Reflect.get(target, property, receiver)
+        }
+      }
+    )
+    const worktrees = Array.from({ length: 100 }, (_, index) =>
+      detectedWorktree({ id: `scratch-${index}`, visible: true })
+    )
+
+    expect(
+      getIndividuallyImportedWorktrees(
+        detectedResult(worktrees),
+        repo({ importedExternalWorktreePaths: importedPaths })
+      )
+    ).toHaveLength(worktrees.length)
+    expect(indexedReads).toBe(importedPaths.length)
+  })
 })
 
 describe('hidden worktree import path list', () => {

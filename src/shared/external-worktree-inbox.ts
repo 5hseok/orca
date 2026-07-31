@@ -15,6 +15,17 @@ export function areExternalWorktreeInboxPathsEqual(leftPath: string, rightPath: 
   )
 }
 
+export type ExplicitExternalWorktreePathMatcher = (worktreePath: string) => boolean
+
+export function createExplicitExternalWorktreePathMatcher(
+  importedPaths: readonly string[] | undefined
+): ExplicitExternalWorktreePathMatcher {
+  const normalizedPaths = new Set(
+    (importedPaths ?? []).map((path) => normalizeExternalWorktreeInboxPath(path))
+  )
+  return (worktreePath) => normalizedPaths.has(normalizeExternalWorktreeInboxPath(worktreePath))
+}
+
 export function mergeExternalWorktreeInboxPaths(
   existing: readonly string[] | undefined,
   additions: readonly string[]
