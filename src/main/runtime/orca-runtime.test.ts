@@ -32523,7 +32523,8 @@ describe('OrcaRuntimeService', () => {
       })
     ])
     expect(summaries.worktrees[0]?.agents).toHaveLength(100)
-    expect(getRepo).toHaveBeenCalledTimes(1)
+    // Why: the per-poll host index resolves repo ownership without per-worktree store lookups.
+    expect(getRepo).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -32727,7 +32728,8 @@ describe('OrcaRuntimeService', () => {
 
     expect(summaries).toMatchObject({ totalCount: 2_000, truncated: true })
     expect(summaries.worktrees.every((worktree) => worktree.agents?.length === 0)).toBe(true)
-    expect(getRepo).toHaveBeenCalledTimes(remoteWorktrees.length)
+    // Why: the per-poll host index resolves repo ownership without per-worktree store lookups.
+    expect(getRepo).not.toHaveBeenCalled()
     // Why: the prior fallback read every worktree path per distinct miss, exceeding the 3s worktree.ps poll interval at this scale.
     expect(pathReadCount).toBeLessThan(40_000)
   })

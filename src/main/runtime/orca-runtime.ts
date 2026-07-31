@@ -16613,6 +16613,7 @@ export class OrcaRuntimeService {
       repos,
       resolvedWorktreeSnapshot.worktrees
     )
+    const settings = this.store?.getSettings()
     const resolvedWorktrees = resolvedWorktreeSnapshot.worktrees.filter((worktree) => {
       const context = visibilityContexts.get(runtimeWorktreeRepoHostKeyForWorktree(worktree))
       if (!context) {
@@ -16622,7 +16623,8 @@ export class OrcaRuntimeService {
         context.repo,
         worktree,
         context.agentScratchWorktreePathMatcher,
-        context.explicitlyImportedWorktreePathMatcher
+        context.explicitlyImportedWorktreePathMatcher,
+        settings
       )
     })
     // Why: worktree.ps backs the mobile sidebar, so it must use the same
@@ -19768,6 +19770,7 @@ export class OrcaRuntimeService {
       this.store?.getRepos() ?? [],
       resolved
     )
+    const settings = this.store?.getSettings()
     const worktrees = resolved.filter((worktree) => {
       if (repoId && worktree.repoId !== repoId) {
         return false
@@ -19780,7 +19783,8 @@ export class OrcaRuntimeService {
         context.repo,
         worktree,
         context.agentScratchWorktreePathMatcher,
-        context.explicitlyImportedWorktreePathMatcher
+        context.explicitlyImportedWorktreePathMatcher,
+        settings
       )
     })
     return {
@@ -19916,7 +19920,8 @@ export class OrcaRuntimeService {
     repo: Repo,
     worktree: Worktree,
     agentScratchWorktreePathMatcher?: AgentScratchWorktreePathMatcher,
-    explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher
+    explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher,
+    settings?: ReturnType<RuntimeStore['getSettings']>
   ): boolean {
     if (!this.store) {
       return true
@@ -19925,7 +19930,8 @@ export class OrcaRuntimeService {
       repo,
       worktree,
       agentScratchWorktreePathMatcher,
-      explicitlyImportedWorktreePathMatcher
+      explicitlyImportedWorktreePathMatcher,
+      settings
     ).visible
   }
 
@@ -19933,9 +19939,9 @@ export class OrcaRuntimeService {
     repo: Repo,
     worktree: Worktree,
     agentScratchWorktreePathMatcher?: AgentScratchWorktreePathMatcher,
-    explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher
+    explicitlyImportedWorktreePathMatcher?: ExplicitExternalWorktreePathMatcher,
+    settings = this.store?.getSettings()
   ): DetectedWorktree {
-    const settings = this.store?.getSettings()
     if (!settings) {
       return {
         ...worktree,
