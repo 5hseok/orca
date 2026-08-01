@@ -19765,17 +19765,21 @@ export class OrcaRuntimeService {
       throw new Error('invalid_limit')
     }
     const resolved = await this.listResolvedWorktrees()
-    const repoId = repoSelector ? (await this.resolveRepoSelector(repoSelector)).id : null
+    const selectedRepo = repoSelector ? await this.resolveRepoSelector(repoSelector) : null
+    const selectedRepoHostKey = selectedRepo
+      ? runtimeWorktreeRepoHostKey(selectedRepo.id, getRepoExecutionHostId(selectedRepo))
+      : null
     const visibilityContexts = buildRuntimeWorktreeVisibilityContexts(
       this.store?.getRepos() ?? [],
       resolved
     )
     const settings = this.store?.getSettings()
     const worktrees = resolved.filter((worktree) => {
-      if (repoId && worktree.repoId !== repoId) {
+      const repoHostKey = runtimeWorktreeRepoHostKeyForWorktree(worktree)
+      if (selectedRepoHostKey && repoHostKey !== selectedRepoHostKey) {
         return false
       }
-      const context = visibilityContexts.get(runtimeWorktreeRepoHostKeyForWorktree(worktree))
+      const context = visibilityContexts.get(repoHostKey)
       if (!context) {
         return true
       }

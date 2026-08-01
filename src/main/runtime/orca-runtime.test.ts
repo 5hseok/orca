@@ -35722,9 +35722,11 @@ describe('OrcaRuntimeService', () => {
 
     const runtime = new OrcaRuntimeService(runtimeStore as never)
     const listed = await runtime.listManagedWorktrees()
+    const remoteListed = await runtime.listManagedWorktrees(`path:${remoteRepoPath}`)
     const ps = await runtime.getWorktreePs()
 
     expect(listed.worktrees.map((worktree) => worktree.path)).not.toContain(localScratchPath)
+    expect(remoteListed.worktrees.map((worktree) => worktree.path)).toEqual([remoteRepoPath])
     expect(ps.worktrees.map((worktree) => worktree.path)).not.toContain(localScratchPath)
   })
 
