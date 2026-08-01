@@ -2568,7 +2568,7 @@ class WorktreeIdRequiresFullPathError extends Error {
 
 type ResolvedWorktreeSnapshot = {
   worktrees: ResolvedWorktree[]
-  platformByRepoId: ReadonlyMap<string, NodeJS.Platform>
+  platformByRepoHostKey: ReadonlyMap<string, NodeJS.Platform>
 }
 
 type ResolvedWorktreeCache = ResolvedWorktreeSnapshot & {
@@ -16630,8 +16630,10 @@ export class OrcaRuntimeService {
     // Why: worktree.ps backs the mobile sidebar, so it must use the same
     // host-owned imported-worktree visibility gate as worktree.list/desktop.
     const freshPtyLiveness = await this.refreshPtyWorktreeRecordsFromController(resolvedWorktrees)
-    const repoById = new Map(repos.map((repo) => [repo.id, repo]))
-    const platformByRepoId = resolvedWorktreeSnapshot.platformByRepoId
+    const repoByHostKey = new Map(
+      repos.map((repo) => [runtimeWorktreeRepoHostKey(repo.id, getRepoExecutionHostId(repo)), repo])
+    )
+    const platformByRepoHostKey = resolvedWorktreeSnapshot.platformByRepoHostKey
     const summaries = new Map<string, RuntimeWorktreePsSummary>()
 
     // Why: the GitHub cache is keyed by `repoPath::branch` (no refs/heads/ prefix),
@@ -16640,9 +16642,10 @@ export class OrcaRuntimeService {
     // expensive `gh` CLI calls. Falls back to meta.linkedPR if no cache entry exists.
     const ghCache = this.store?.getGitHubCache?.()
     for (const worktree of resolvedWorktrees) {
+      const repoHostKey = runtimeWorktreeRepoHostKeyForWorktree(worktree)
       const meta =
         this.store?.getWorktreeMeta?.(worktree.id) ?? this.store?.getAllWorktreeMeta()[worktree.id]
-      const repo = repoById.get(worktree.repoId)
+      const repo = repoByHostKey.get(repoHostKey)
       let linkedPR: { number: number; state: string } | null = null
       const branch = worktree.branch.replace(/^refs\/heads\//, '')
       if (branch && ghCache) {
@@ -16660,7 +16663,7 @@ export class OrcaRuntimeService {
       if (!linkedPR && meta?.linkedPR != null) {
         linkedPR = { number: meta.linkedPR, state: 'unknown' }
       }
-      const terminalPlatform = platformByRepoId.get(worktree.repoId) ?? process.platform
+      const terminalPlatform = platformByRepoHostKey.get(repoHostKey) ?? process.platform
       // Why: use the instance-validated lineage from attachLineageToResolvedWorktrees,
       // not the raw store entry — shipped mobile clients trust parentWorktreeId as-is,
       // so a stale same-path entry would nest replacement checkouts under old parents.
@@ -16763,7 +16766,7 @@ export class OrcaRuntimeService {
     const runtimeWorktreeSummaryPathIndex = buildRuntimeWorktreeSummaryPathIndex(
       summaries,
       resolvedWorktrees,
-      platformByRepoId
+      platformByRepoHostKey
     )
     const missingRuntimeWorktreeIds = new Set<string>()
     const countedPtyIds = new Set<string>()
@@ -16894,8 +16897,7 @@ export class OrcaRuntimeService {
     const mirroredWorktreeIdByTabId = new Map<string, string>()
     const sessionsByHostId = new Map<ExecutionHostId, WorkspaceSessionState>()
     for (const summary of summaries.values()) {
-      const repo = repoById.get(summary.repoId)
-      const hostId = repo ? getRepoExecutionHostId(repo) : 'local'
+      const hostId = summary.hostId ?? LOCAL_EXECUTION_HOST_ID
       const session = this.store?.getWorkspaceSession?.(hostId)
       if (session) {
         sessionsByHostId.set(hostId, session)
@@ -27375,7 +27377,7 @@ export class OrcaRuntimeService {
 
   private async listResolvedWorktreeSnapshot(): Promise<ResolvedWorktreeSnapshot> {
     if (!this.store) {
-      return { worktrees: [], platformByRepoId: new Map() }
+      return { worktrees: [], platformByRepoHostKey: new Map() }
     }
     const now = Date.now()
     if (this.resolvedWorktreeCache && this.resolvedWorktreeCache.expiresAt > now) {
@@ -27399,15 +27401,15 @@ export class OrcaRuntimeService {
 
   private async computeResolvedWorktrees(generation: number): Promise<ResolvedWorktreeSnapshot> {
     if (!this.store) {
-      return { worktrees: [], platformByRepoId: new Map() }
+      return { worktrees: [], platformByRepoHostKey: new Map() }
     }
     const now = Date.now()
     const metaById = this.store.getAllWorktreeMeta() ?? {}
     const repos = this.store.getRepos()
     const projectRuntimeByRepoId = resolveLocalProjectRuntimesForRepos(this.requireStore(), repos)
-    const platformByRepoId = new Map(
+    const platformByRepoHostKey = new Map(
       repos.map((repo) => [
-        repo.id,
+        runtimeWorktreeRepoHostKey(repo.id, getRepoExecutionHostId(repo)),
         getAgentLaunchPlatformForRepo(repo, projectRuntimeByRepoId.get(repo.id))
       ])
     )
@@ -27479,11 +27481,11 @@ export class OrcaRuntimeService {
     if (generation === this.resolvedWorktreeGeneration) {
       this.resolvedWorktreeCache = {
         worktrees,
-        platformByRepoId,
+        platformByRepoHostKey,
         expiresAt: now + RESOLVED_WORKTREE_CACHE_TTL_MS
       }
     }
-    return { worktrees, platformByRepoId }
+    return { worktrees, platformByRepoHostKey }
   }
 
   private pruneLineageForMissingRepoWorktrees(repo: Repo, gitWorktrees: GitWorktreeInfo[]): void {
@@ -28281,7 +28283,8 @@ export class OrcaRuntimeService {
       return null
     }
     const comparisonPlatform =
-      runtimeWorktreeSummaryPathIndex.platformByRepoId.get(parsed.repoId) ?? process.platform
+      runtimeWorktreeSummaryPathIndex.comparisonPlatformByRepoId.get(parsed.repoId) ??
+      process.platform
     const indexed = findRuntimeWorktreeSummaryByPath(
       runtimeWorktreeSummaryPathIndex,
       parsed.repoId,
@@ -35275,7 +35278,7 @@ type RuntimeWorktreeSummaryPathCandidate = {
 }
 
 type RuntimeWorktreeSummaryPathIndex = {
-  platformByRepoId: ReadonlyMap<string, NodeJS.Platform>
+  comparisonPlatformByRepoId: ReadonlyMap<string, NodeJS.Platform>
   posixAbsolute: Map<string, RuntimeWorktreeSummaryPathCandidate>
   posixRelative: Map<string, RuntimeWorktreeSummaryPathCandidate>
   windows: Map<string, RuntimeWorktreeSummaryPathCandidate>
@@ -35285,10 +35288,11 @@ type RuntimeWorktreeSummaryPathIndex = {
 function buildRuntimeWorktreeSummaryPathIndex(
   summaries: ReadonlyMap<string, RuntimeWorktreePsSummary>,
   resolvedWorktrees: readonly ResolvedWorktree[],
-  platformByRepoId: ReadonlyMap<string, NodeJS.Platform>
+  platformByRepoHostKey: ReadonlyMap<string, NodeJS.Platform>
 ): RuntimeWorktreeSummaryPathIndex {
+  const comparisonPlatformByRepoId = new Map<string, NodeJS.Platform>()
   const index: RuntimeWorktreeSummaryPathIndex = {
-    platformByRepoId,
+    comparisonPlatformByRepoId,
     posixAbsolute: new Map(),
     posixRelative: new Map(),
     windows: new Map(),
@@ -35299,7 +35303,12 @@ function buildRuntimeWorktreeSummaryPathIndex(
     if (!summary) {
       continue
     }
-    const platform = platformByRepoId.get(worktree.repoId) ?? process.platform
+    const platform =
+      platformByRepoHostKey.get(runtimeWorktreeRepoHostKeyForWorktree(worktree)) ?? process.platform
+    // Why: legacy IDs lack a host; exact current IDs resolve before this path-only fallback.
+    if (!comparisonPlatformByRepoId.has(worktree.repoId)) {
+      comparisonPlatformByRepoId.set(worktree.repoId, platform)
+    }
     const candidate = { summary, order }
     if (isPosixAbsoluteRuntimeWorktreePath(worktree.path)) {
       setFirstRuntimeWorktreePathCandidate(

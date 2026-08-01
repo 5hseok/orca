@@ -35728,6 +35728,14 @@ describe('OrcaRuntimeService', () => {
     expect(listed.worktrees.map((worktree) => worktree.path)).not.toContain(localScratchPath)
     expect(remoteListed.worktrees.map((worktree) => worktree.path)).toEqual([remoteRepoPath])
     expect(ps.worktrees.map((worktree) => worktree.path)).not.toContain(localScratchPath)
+    expect(ps.worktrees.find((worktree) => worktree.path === localRepoPath)).toMatchObject({
+      repo: 'local repo',
+      terminalPlatform: process.platform
+    })
+    expect(ps.worktrees.find((worktree) => worktree.path === remoteRepoPath)).toMatchObject({
+      repo: 'remote repo',
+      terminalPlatform: 'linux'
+    })
   })
 
   it('bounds repeated detected worktree scans across the reported 15-repo shape', async () => {
