@@ -1,6 +1,5 @@
 import type { TuiAgent } from './types'
 import type { ExecutionHostId, ExecutionHostScope } from './execution-host'
-import type { AiVaultSessionDeleteRejectionCode } from './ai-vault-session-deletion'
 
 export const AI_VAULT_AGENTS = [
   'claude',
@@ -208,21 +207,6 @@ export type AiVaultListResult = {
   /** Set only by the desktop IPC boundary: this scan was superseded, so its empty body means "nothing to apply". */
   cancelled?: true
 }
-
-export type AiVaultDeleteSessionArgs = {
-  agent: AiVaultAgent
-  filePath: string
-  // The session's host; only a local session may be deleted.
-  executionHostId?: ExecutionHostId
-}
-
-// Canonical home for the delete executor's result shape (moved here from
-// session-delete.ts): both main (IPC handler/executor) and the renderer
-// import this same type, so it must live where the renderer can reach it.
-export type AiVaultDeleteSessionResult =
-  | { outcome: 'deleted' }
-  | { outcome: 'rejected'; agent: AiVaultAgent; reason: AiVaultSessionDeleteRejectionCode }
-  | { outcome: 'failed'; agent: AiVaultAgent; error: string }
 
 export function aiVaultAgentLabel(agent: AiVaultAgent): string {
   return AI_VAULT_AGENT_LABELS[agent]

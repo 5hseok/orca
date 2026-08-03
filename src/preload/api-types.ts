@@ -500,10 +500,12 @@ import type {
   OpenCodeUsageSummary
 } from '../shared/opencode-usage-types'
 import type {
+  AiVaultDeleteSessionArgs,
+  AiVaultDeleteSessionResult
+} from '../shared/ai-vault-session-deletion'
+import type {
   AiVaultFirstUserPromptArgs,
   AiVaultFirstUserPromptResult,
-  AiVaultDeleteSessionArgs,
-  AiVaultDeleteSessionResult,
   AiVaultListArgs,
   AiVaultListResult,
   AiVaultSubagentListArgs,

@@ -14,10 +14,10 @@ import {
 } from '../ai-vault/session-list-results'
 import { scanSshAiVaultSessions } from '../ai-vault/ssh-session-list'
 import { AiVaultScanCoordinator } from '../ai-vault/ai-vault-scan-coordinator'
+import type { AiVaultDeleteSessionArgs } from '../../shared/ai-vault-session-deletion'
 import {
   AI_VAULT_SCOPE_PATHS_MAX_COUNT,
   isAiVaultScanCancelledError,
-  type AiVaultDeleteSessionArgs,
   type AiVaultFirstUserPromptArgs,
   type AiVaultListArgs,
   type AiVaultListResult,

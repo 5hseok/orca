@@ -63,12 +63,15 @@ export async function listAiVaultSessions(
   ) {
     return truncateAiVaultListResult(cachedList.result, depth, args?.scopePaths)
   }
+  // Captured here, not inside start(): the coordinator defers start() by a
+  // microtask, so an invalidation landing in that gap would otherwise be read
+  // as having happened before this scan and leave the stale result cacheable.
+  const startGeneration = cacheGeneration
   return scanCoordinator.run({
     key: scanKey,
     force: args?.force,
     signal: options.signal,
     start: async (scanSignal) => {
-      const startGeneration = cacheGeneration
       const additionalCodexSessionsDirs =
         sources.getAdditionalCodexHomePaths?.().map((homePath) => join(homePath, 'sessions')) ?? []
       const result = await scanAiVaultSessions({
