@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { ElectronApplication, Page } from '@stablyai/playwright-test'
 import { expect, test } from './helpers/orca-app'
 import type { AiVaultSession } from '../../src/shared/ai-vault-types'
+import type { AiVaultDeleteSessionResult } from '../../src/shared/ai-vault-session-deletion'
 
 // Exercises the real on-disk delete against an isolated, disposable HOME (the
 // E2E harness redirects os.homedir() there). The unit tests mock lstat/realpath/
@@ -24,13 +25,16 @@ async function findSession(
   title: string
 ): Promise<AiVaultSession | undefined> {
   const sessions = (await page.evaluate(async () => {
-    const result = await window.api.aiVault.listSessions({ executionHostScope: 'local', force: true })
+    const result = await window.api.aiVault.listSessions({
+      executionHostScope: 'local',
+      force: true
+    })
     return result.sessions
   })) as AiVaultSession[]
   return sessions.find((session) => session.agent === agent && session.title === title)
 }
 
-function deleteSession(page: Page, session: AiVaultSession): Promise<{ outcome: string }> {
+function deleteSession(page: Page, session: AiVaultSession): Promise<AiVaultDeleteSessionResult> {
   return page.evaluate(
     async (target) =>
       window.api.aiVault.deleteSession({

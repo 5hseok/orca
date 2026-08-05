@@ -83,10 +83,12 @@ describe('VaultSessionRow details toggle', () => {
     const { container } = renderRow({ onToggleDetails })
     const user = userEvent.setup()
 
-    // The row body itself: it is the draggable element (resume is enabled).
-    const row = container.querySelector('[draggable="true"]')
-    expect(row).not.toBeNull()
-    await user.click(row as Element)
+    // The session title: inside the row body, so its click reaches the row's
+    // own handler — the path a user takes to expand a row. Queried first-match
+    // because Radix's asChild trigger repeats the subtree.
+    const title = container.querySelector('[title="Drag to resume in a new tab"]')
+    expect(title).not.toBeNull()
+    await user.click(title as Element)
 
     expect(onToggleDetails).toHaveBeenCalledTimes(1)
   })
