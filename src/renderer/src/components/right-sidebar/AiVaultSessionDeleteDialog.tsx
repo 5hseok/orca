@@ -26,8 +26,8 @@ export function AiVaultSessionDeleteDialog({
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
 }): React.JSX.Element {
-  // Why: Radix keeps DialogContent mounted during the close animation; once
-  // the caller nulls `session` the copy would flash blank mid-fade-out.
+  // Radix keeps DialogContent mounted while closing; once the caller nulls
+  // `session` the copy would flash blank mid-fade-out.
   const lastSessionRef = useRef<AiVaultSession | null>(session)
   if (session) {
     lastSessionRef.current = session

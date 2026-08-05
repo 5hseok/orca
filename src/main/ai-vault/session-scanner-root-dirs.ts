@@ -1,10 +1,8 @@
 import { join } from 'node:path'
 
-// Single source of truth for how an agent's host root expands into the local
-// host root plus one per WSL distro home. Both the scanner
-// (session-scanner-source-discovery.ts, session-scanner-droid-kimi-sources.ts)
-// and the deletion validator (session-delete-target.ts) import this, so a
-// deletion root can never drift from the scanner's own root construction.
+// How an agent's host root expands into the local root plus one per WSL distro
+// home. Shared by the scanners and the deletion validator so a deletion root
+// can never drift from the scanner's own construction.
 export function sessionRootDirs(
   hostRootDir: string,
   wslHomeDirs: readonly string[],

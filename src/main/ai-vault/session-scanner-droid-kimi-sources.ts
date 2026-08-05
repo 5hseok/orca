@@ -9,9 +9,8 @@ import type { AiVaultScanOptions, SessionFileDiscovery } from './session-scanner
 const DROID_SESSIONS_DIR = join(homedir(), '.factory', 'sessions')
 const DROID_PROJECTS_DIR = join(homedir(), '.factory', 'projects')
 
-// The two roots droid session files are discovered under. Exported so
-// session-delete-target.ts checks membership against the same roots the
-// scanner walks, instead of re-declaring `.factory/*` and risking drift.
+// The two roots droid sessions are discovered under. Exported so the deletion
+// validator checks membership against these rather than re-declaring them.
 export function droidSessionRootDirs(
   options: Pick<AiVaultScanOptions, 'droidSessionsDir' | 'droidProjectsDir'>,
   wslHomeDirs: readonly string[]

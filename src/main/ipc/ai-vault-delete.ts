@@ -17,25 +17,22 @@ type AiVaultDeleteDeps = {
   invalidateMultiHostListCache: () => void
 }
 
-// Registers the IPC channel, binding the delete orchestration to the caller's
-// cache-invalidation seam.
+// Binds the delete orchestration to the caller's cache-invalidation seam.
 export function registerAiVaultDeleteHandler(deps: AiVaultDeleteDeps): void {
   ipcMain.handle('aiVault:deleteSession', (_event, args?: AiVaultDeleteSessionArgs) =>
     deleteAiVaultSession(args, deps)
   )
 }
 
-// Delegates the trash + re-validation to the executor; this
-// only adapts the untyped IPC payload and, on a real delete, invalidates the
-// caches that could otherwise still serve the deleted session for up to the
-// scan cache TTL.
+// Adapts the untyped IPC payload for the executor (which owns re-validation and
+// the trash), then invalidates on a real delete — otherwise the caches keep
+// serving the deleted session for up to the scan TTL.
 export async function deleteAiVaultSession(
   args: AiVaultDeleteSessionArgs | undefined,
   deps: AiVaultDeleteDeps
 ): Promise<AiVaultDeleteSessionResult> {
-  // deleteAiVaultSessionFile's validator tolerates a malformed agent/filePath
-  // (it never throws) but destructures `args`, so an entirely missing payload
-  // is defaulted to an empty shape here to keep the never-throws boundary.
+  // The validator tolerates a malformed agent/filePath but destructures `args`,
+  // so an absent payload is defaulted here to keep the never-throws boundary.
   const wslHomeDirs = await getAiVaultWslHomeDirs()
   const result = await deleteAiVaultSessionFile({
     agent: args?.agent as AiVaultAgent,
@@ -45,11 +42,9 @@ export async function deleteAiVaultSession(
   })
 
   if (result.outcome === 'deleted') {
-    // Three caches can otherwise resurrect the deleted session for up to the
-    // scan cache TTL: the desktop multi-host per-host leg cache, the shared
-    // local-scope scan-result cache (also used by the runtime/mobile path),
-    // and the per-file parse cache entry (cleanliness, not correctness — scan
-    // discovery walks disk first, so a trashed file is never rediscovered).
+    // Three caches could otherwise resurrect it: the desktop per-host leg
+    // cache, the shared local-scope cache (also the runtime/mobile path), and
+    // this file's parse-cache entry.
     deps.invalidateMultiHostListCache()
     invalidateAiVaultSessionListCache()
     // The parse cache is keyed by the raw path the scanner discovered (which is

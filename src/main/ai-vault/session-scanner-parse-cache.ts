@@ -97,9 +97,8 @@ export function resetSessionParseCacheForTests(): void {
   cache.clear()
 }
 
-// Drops one entry after its file is deleted (D-4): cleanliness, not
-// correctness — the entry would never be read again since scan discovery
-// walks disk first and a trashed file is simply never rediscovered.
+// Drops one entry after its file is deleted. Cleanliness, not correctness:
+// discovery walks disk first, so a trashed file is never rediscovered anyway.
 export function invalidateSessionParseCacheEntry(path: string): void {
   cache.delete(path)
 }

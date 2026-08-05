@@ -42,9 +42,8 @@ export async function discoverFiles(args: {
   }
 }
 
-// OpenClaw session files live under <stateDir>/agents; a stateDir that already
-// ends in `agents` is used as-is. Shared so session-delete-target.ts derives
-// the exact root this scanner walks instead of re-declaring the rule.
+// OpenClaw sessions live under <stateDir>/agents; a stateDir already ending in
+// `agents` is used as-is. Shared with the deletion validator.
 export function openClawAgentsRootDir(stateDir: string): string {
   return basename(stateDir) === 'agents' ? stateDir : join(stateDir, 'agents')
 }

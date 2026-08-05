@@ -12,8 +12,7 @@ export type AiVaultSessionDeletabilityReasonCode =
   | 'unsupported-agent'
   | 'session-live'
 
-// A session is actively running while its live status is set and not yet
-// 'done' — matches the active-dot rule in ai-vault-session-row-display.
+// Matches the active-dot rule in ai-vault-session-row-display.
 function isSessionLive(liveState: AgentStatusState | null | undefined): boolean {
   return liveState != null && liveState !== 'done'
 }
@@ -30,21 +29,16 @@ export type AiVaultSessionDeletabilityResult =
   | AiVaultSessionNotDeletableResult
 
 /**
- * Renderer-side judgement of whether AI Vault's UI should offer Delete for a
- * session: enabled, or disabled with a reason a tooltip can render. This is
- * NOT the security boundary — the main-process validator re-checks the
- * path on disk regardless of what this returns.
+ * Whether the UI offers Delete, and if not, the reason a tooltip renders. NOT
+ * the security boundary — main re-validates the path on disk regardless.
  *
- * The two layers agree only on deletable-or-not, NOT on the reason code: the
- * order here is host -> synthetic -> agent (agent-independent gates first, which
- * reads better for the user — an SSH session says "remote", not "unsupported
- * agent"), whereas the main validator checks agent first. A session failing
- * two gates can therefore carry a different reason on each side; that is fine
- * because a non-deletable session never reaches the main delete path, so its
- * main-side reason is never shown. What must hold — and does, because both
- * sides consult the same shared deletable-agent set and the same host/synthetic
- * predicates — is that the renderer never enables Delete for a session main
- * would reject (renderer-false is a subset of main-false).
+ * The two sides agree on deletable-or-not but deliberately not on the reason
+ * code: this checks host -> synthetic -> agent so an SSH session reads as
+ * "remote" rather than "unsupported agent", where main checks agent first. A
+ * session failing two gates can name a different reason on each side, which is
+ * harmless since a non-deletable session never reaches main. What must hold is
+ * that renderer-deletable is a subset of main-deletable, and it does: both
+ * consult the same shared agent set and host/synthetic predicates.
  */
 export function resolveAiVaultSessionDeletability(
   session: Pick<AiVaultSession, 'agent' | 'executionHostId' | 'filePath'>,
@@ -59,9 +53,9 @@ export function resolveAiVaultSessionDeletability(
   if (!isAiVaultDeletableAgent(session.agent)) {
     return { deletable: false, reason: 'unsupported-agent' }
   }
-  // Last, so a session that is otherwise deletable but still running says "wait
-  // for it to finish" rather than a permanent reason. Trashing a live agent's
-  // transcript mid-run would drop the writes it's still appending.
+  // Last, so an otherwise-deletable session reads as "wait for it to finish"
+  // rather than a permanent reason. Trashing a live transcript would drop the
+  // writes the agent is still appending.
   if (isSessionLive(liveState)) {
     return { deletable: false, reason: 'session-live' }
   }

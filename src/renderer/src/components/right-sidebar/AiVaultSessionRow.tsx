@@ -127,10 +127,9 @@ export function VaultSessionRow({
             !detailsExpanded && 'min-h-[98px]'
           )}
           onClick={(event) => {
-            // Radix portals this row's dropdown and context menus out of its
-            // DOM, but React still bubbles their clicks back here through the
-            // component tree. Without this, choosing Delete expands the row
-            // behind the confirm dialog and cancelling leaves it expanded.
+            // Radix portals this row's menus out of its DOM, but React still
+            // bubbles their clicks here — without this, choosing Delete expands
+            // the row behind the dialog.
             const target = event.target
             if (target instanceof Node && !event.currentTarget.contains(target)) {
               return

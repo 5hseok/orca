@@ -3,12 +3,8 @@ import { agentLabel } from './ai-vault-session-filters'
 import { translate } from '@/i18n/i18n'
 import type { AiVaultSessionNotDeletableResult } from './ai-vault-session-deletability'
 
-/**
- * Maps a not-deletable judgement to the reason tooltip text shown on the
- * disabled Delete menu item. Says which sessions are affected, never why
- * — the provider's storage layout is Orca's problem, not the reader's. Not the
- * security boundary — see ai-vault-session-deletability.ts.
- */
+// Tooltip text for a disabled Delete item. Says which sessions are affected,
+// never why — a provider's storage layout is Orca's problem, not the reader's.
 export function aiVaultSessionDeleteReasonText(
   result: AiVaultSessionNotDeletableResult,
   agent: AiVaultAgent
@@ -33,7 +29,7 @@ export function aiVaultSessionDeleteReasonText(
     case 'session-live':
       return translate(
         'auto.components.right.sidebar.AiVaultSessionRow.deleteReasonSessionLive',
-        "This session is still running — wait for it to finish before deleting."
+        'This session is still running — wait for it to finish before deleting.'
       )
   }
 }
