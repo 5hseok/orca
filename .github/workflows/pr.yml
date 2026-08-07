@@ -93,6 +93,23 @@ jobs:
       - name: Verify macOS entitlements
         run: pnpm verify:macos-entitlements
 
+  root_directory_guard:
+    name: root directory guard
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reject new root-level files and folders
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash .github/scripts/check-root-directory-entries.sh "$BASE_SHA" "$HEAD_SHA"
+
   typecheck:
     runs-on: ubuntu-latest
 
@@ -216,7 +233,31 @@ jobs:
             --exclude=src/main/providers/__tests__/shell-ready-framework-example.test.ts \
             --exclude=src/main/pty/omp-shell-wrapper.node-pty.test.ts \
             --exclude=src/shared/posix-command-path-lookup.test.ts \
+            --exclude=tests/e2e/cross-version-wire/** \
             --shard=${{ matrix.shard }}/${{ matrix.shard_total }}
+
+  cross-version-wire:
+    name: cross-version wire compatibility
+    runs-on: ubuntu-latest
+
+    steps:
+      # Why fetch-depth 0: the harness extracts the newest release tag to skew
+      # current code against it. The default shallow clone has no tags, which is
+      # why this cannot ride along in the sharded `test` job.
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/install-node-dependencies
+        with:
+          native-runtime: node
+
+      # A path filter that matches nothing exits 1 ("No test files found"), so this
+      # lane cannot report success while running zero tests.
+      - name: Old/new client and server terminal journey
+        run: pnpm exec vitest run --config config/vitest.config.ts tests/e2e/cross-version-wire/cross-version-terminal-wire.unit.test.ts
 
   package:
     name: package
@@ -377,6 +418,7 @@ jobs:
     if: always()
     needs:
       - static_analysis
+      - root_directory_guard
       - typecheck
       - git_compatibility
       - shell_contracts
@@ -397,6 +439,7 @@ jobs:
       - name: Require successful checks
         env:
           STATIC_ANALYSIS: ${{ needs.static_analysis.result }}
+          ROOT_DIRECTORY_GUARD: ${{ needs.root_directory_guard.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
           GIT_COMPATIBILITY: ${{ needs.git_compatibility.result }}
           SHELL_CONTRACTS: ${{ needs.shell_contracts.result }}
@@ -406,6 +449,7 @@ jobs:
         run: |
           for result in \
             "$STATIC_ANALYSIS" \
+            "$ROOT_DIRECTORY_GUARD" \
             "$TYPECHECK" \
             "$GIT_COMPATIBILITY" \
             "$SHELL_CONTRACTS" \
