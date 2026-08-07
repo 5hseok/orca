@@ -23,7 +23,7 @@ function renderActions(onContinueInNewSession?: () => void): string {
         onContinueInNewSession={onContinueInNewSession}
         onCopyId={vi.fn()}
         onCopyPath={vi.fn()}
-        deletability={{ deletable: true }}
+        deleteBlockedReason={null}
         onRequestDelete={vi.fn()}
       />
     </TooltipProvider>

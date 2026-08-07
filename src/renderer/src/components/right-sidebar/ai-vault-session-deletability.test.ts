@@ -1,141 +1,100 @@
 import { describe, expect, it } from 'vitest'
-import { resolveAiVaultSessionDeletability } from './ai-vault-session-deletability'
+import { aiVaultSessionDeleteBlockedReason } from './ai-vault-session-deletability'
 
-describe('resolveAiVaultSessionDeletability', () => {
-  it('allows a deletable agent on a local, real path', () => {
-    expect(
-      resolveAiVaultSessionDeletability({
-        agent: 'gemini',
-        executionHostId: 'local',
-        filePath: '/home/user/.gemini/sessions/log.jsonl'
-      })
-    ).toEqual({ deletable: true })
+// translate() with no loaded catalog returns the English fallback, so these
+// assertions pin the English copy as well as the gate order.
+const NON_LOCAL = 'Only sessions on this device can be deleted.'
+const SYNTHETIC = "This session can't be deleted from Orca."
+const LIVE = 'This session is still running — wait for it to finish before deleting.'
+
+const localGeminiSession = {
+  agent: 'gemini' as const,
+  executionHostId: 'local' as const,
+  filePath: '/home/user/.gemini/sessions/log.jsonl'
+}
+
+describe('aiVaultSessionDeleteBlockedReason', () => {
+  it('offers Delete for a deletable agent on a local, real path', () => {
+    expect(aiVaultSessionDeleteBlockedReason(localGeminiSession)).toBeNull()
   })
 
-  const localGeminiSession = {
-    agent: 'gemini' as const,
-    executionHostId: 'local' as const,
-    filePath: '/home/user/.gemini/sessions/log.jsonl'
-  }
-
-  it('blocks an otherwise-deletable session while its agent is still running', () => {
-    for (const live of ['working', 'blocked', 'waiting'] as const) {
-      expect(resolveAiVaultSessionDeletability(localGeminiSession, live)).toEqual({
-        deletable: false,
-        reason: 'session-live'
+  it('offers Delete for a directory-shaped agent (claude)', () => {
+    expect(
+      aiVaultSessionDeleteBlockedReason({
+        agent: 'claude',
+        executionHostId: 'local',
+        filePath: '/home/user/.claude/projects/-proj/sess-1.jsonl'
       })
+    ).toBeNull()
+  })
+
+  it('tells the user to wait while the agent is still running', () => {
+    for (const live of ['working', 'blocked', 'waiting'] as const) {
+      expect(aiVaultSessionDeleteBlockedReason(localGeminiSession, live)).toBe(LIVE)
     }
   })
 
-  it('allows a finished session (done) and one with no live state', () => {
-    expect(resolveAiVaultSessionDeletability(localGeminiSession, 'done')).toEqual({
-      deletable: true
-    })
-    expect(resolveAiVaultSessionDeletability(localGeminiSession, null)).toEqual({
-      deletable: true
-    })
+  it('offers Delete for a finished session (done) and one with no live state', () => {
+    expect(aiVaultSessionDeleteBlockedReason(localGeminiSession, 'done')).toBeNull()
+    expect(aiVaultSessionDeleteBlockedReason(localGeminiSession, null)).toBeNull()
   })
 
   it('keeps the permanent reason over "running" for an unsupported live session', () => {
     // A live but unsupported agent stays "unsupported" — it would never become
     // deletable, so "wait for it to finish" would mislead.
     expect(
-      resolveAiVaultSessionDeletability(
+      aiVaultSessionDeleteBlockedReason(
         { agent: 'codex', executionHostId: 'local', filePath: '/home/user/.codex/x.jsonl' },
         'working'
       )
-    ).toEqual({ deletable: false, reason: 'unsupported-agent' })
+    ).toBe("Codex sessions can't be deleted from Orca.")
   })
 
-  it('blocks an ssh-hosted session regardless of agent', () => {
-    expect(
-      resolveAiVaultSessionDeletability({
-        agent: 'gemini',
-        executionHostId: 'ssh:dev-box',
-        filePath: '/home/user/.gemini/sessions/log.jsonl'
-      })
-    ).toEqual({ deletable: false, reason: 'non-local-host' })
-  })
-
-  it('blocks a runtime-hosted session regardless of agent', () => {
-    expect(
-      resolveAiVaultSessionDeletability({
-        agent: 'gemini',
-        executionHostId: 'runtime:gpu-box',
-        filePath: '/home/user/.gemini/sessions/log.jsonl'
-      })
-    ).toEqual({ deletable: false, reason: 'non-local-host' })
+  it('blocks ssh- and runtime-hosted sessions regardless of agent', () => {
+    for (const executionHostId of ['ssh:dev-box', 'runtime:gpu-box'] as const) {
+      expect(aiVaultSessionDeleteBlockedReason({ ...localGeminiSession, executionHostId })).toBe(
+        NON_LOCAL
+      )
+    }
   })
 
   it('blocks a synthetic OpenCode SQLite row identity', () => {
     expect(
-      resolveAiVaultSessionDeletability({
+      aiVaultSessionDeleteBlockedReason({
         agent: 'opencode',
         executionHostId: 'local',
         filePath: '/home/user/.opencode/db.sqlite#sess_123'
       })
-    ).toEqual({
-      deletable: false,
-      reason: 'synthetic-path'
-    })
+    ).toBe(SYNTHETIC)
   })
 
-  it('allows a directory-shaped agent (claude), whose subagents dir goes with it', () => {
+  it('names the agent without explaining why it is unsupported', () => {
     expect(
-      resolveAiVaultSessionDeletability({
-        agent: 'claude',
-        executionHostId: 'local',
-        filePath: '/home/user/.claude/projects/-proj/sess-1.jsonl'
-      })
-    ).toEqual({ deletable: true })
-  })
-
-  it('blocks a multi-cause agent (antigravity) with the same single reason', () => {
-    expect(
-      resolveAiVaultSessionDeletability({
-        agent: 'antigravity',
-        executionHostId: 'local',
-        filePath: '/home/user/.antigravity/brain/conv-1/.system_generated/logs/transcript.jsonl'
-      })
-    ).toEqual({
-      deletable: false,
-      reason: 'unsupported-agent'
-    })
-  })
-
-  it('blocks a registry/hardlink-backed agent (codex)', () => {
-    expect(
-      resolveAiVaultSessionDeletability({
-        agent: 'codex',
-        executionHostId: 'local',
-        filePath: '/home/user/.codex/sessions/log.jsonl'
-      })
-    ).toEqual({
-      deletable: false,
-      reason: 'unsupported-agent'
-    })
-  })
-
-  it('blocks opencode on a non-synthetic path as an unsupported agent', () => {
-    expect(
-      resolveAiVaultSessionDeletability({
+      aiVaultSessionDeleteBlockedReason({
         agent: 'opencode',
         executionHostId: 'local',
         filePath: '/home/user/.opencode/sessions/log.jsonl'
       })
-    ).toEqual({
-      deletable: false,
-      reason: 'unsupported-agent'
-    })
+    ).toBe("OpenCode sessions can't be deleted from Orca.")
+  })
+
+  it('gives a multi-cause agent (antigravity) the same single sentence', () => {
+    expect(
+      aiVaultSessionDeleteBlockedReason({
+        agent: 'antigravity',
+        executionHostId: 'local',
+        filePath: '/home/user/.antigravity/brain/conv-1/.system_generated/logs/transcript.jsonl'
+      })
+    ).toBe("Antigravity sessions can't be deleted from Orca.")
   })
 
   it('prioritizes the host gate over the unsupported-agent reason', () => {
     expect(
-      resolveAiVaultSessionDeletability({
+      aiVaultSessionDeleteBlockedReason({
         agent: 'claude',
         executionHostId: 'ssh:dev-box',
         filePath: '/home/user/.claude/sessions/sess-dir/log.jsonl'
       })
-    ).toEqual({ deletable: false, reason: 'non-local-host' })
+    ).toBe(NON_LOCAL)
   })
 })

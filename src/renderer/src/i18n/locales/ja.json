@@ -11314,7 +11314,6 @@
           "AiVaultSessionDeleteDialog": {
             "title": "このセッションを削除しますか?",
             "description": "「{{value0}}」を削除します。削除すると、{{value1}} 自体のコマンドラインからも再開できなくなります。",
-            "cancel": "キャンセル",
             "confirm": "削除"
           },
           "FileExplorerNameFilter": {

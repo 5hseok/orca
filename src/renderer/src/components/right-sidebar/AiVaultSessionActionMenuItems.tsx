@@ -12,9 +12,6 @@ import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdow
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
-import type { AiVaultAgent } from '../../../../shared/ai-vault-types'
-import type { AiVaultSessionDeletabilityResult } from './ai-vault-session-deletability'
-import { aiVaultSessionDeleteReasonText } from './ai-vault-session-delete-reason'
 
 export function SessionActionMenuItems({
   menuKind = 'dropdown',
@@ -31,8 +28,7 @@ export function SessionActionMenuItems({
   onOpenLog,
   onRevealLog,
   onOpenCwd,
-  agent,
-  deletability,
+  deleteBlockedReason,
   onDelete
 }: {
   menuKind?: 'dropdown' | 'context'
@@ -51,25 +47,22 @@ export function SessionActionMenuItems({
   onOpenLog?: () => void
   onRevealLog?: () => void
   onOpenCwd?: () => void
-  agent: AiVaultAgent
-  deletability: AiVaultSessionDeletabilityResult
+  // Null when Delete is offered; otherwise the tooltip explaining why it isn't.
+  deleteBlockedReason: string | null
   onDelete: () => void
 }) {
   const Item = menuKind === 'context' ? ContextMenuItem : DropdownMenuItem
   const Separator = menuKind === 'context' ? ContextMenuSeparator : DropdownMenuSeparator
   const hasLocalPathActions = Boolean(onOpenLog || onRevealLog || onOpenCwd)
   const deleteLabel = translate('auto.components.right.sidebar.AiVaultSessionRow.delete', 'Delete')
-  // Also on aria-label, so a screen-reader user hears why Delete is disabled
-  // rather than only that it is.
-  const deleteReasonText = deletability.deletable
-    ? undefined
-    : aiVaultSessionDeleteReasonText(deletability, agent)
   const deleteItem = (
     <Item
       variant="destructive"
-      disabled={!deletability.deletable}
-      onSelect={deletability.deletable ? onDelete : undefined}
-      aria-label={deleteReasonText ? `${deleteLabel}. ${deleteReasonText}` : undefined}
+      disabled={Boolean(deleteBlockedReason)}
+      onSelect={deleteBlockedReason ? undefined : onDelete}
+      // Also on aria-label, so a screen-reader user hears why Delete is
+      // disabled rather than only that it is.
+      aria-label={deleteBlockedReason ? `${deleteLabel}. ${deleteBlockedReason}` : undefined}
     >
       <Trash2 className="size-3.5" />
       {deleteLabel}
@@ -155,9 +148,7 @@ export function SessionActionMenuItems({
         {translate('auto.components.right.sidebar.AiVaultSessionRow.copyLogPath', 'Copy Log Path')}
       </Item>
       <Separator />
-      {deletability.deletable ? (
-        deleteItem
-      ) : (
+      {deleteBlockedReason ? (
         <Tooltip>
           <TooltipTrigger asChild>
             {/* A disabled item is pointer-events:none, so the trigger needs this
@@ -169,9 +160,11 @@ export function SessionActionMenuItems({
             sideOffset={8}
             className="max-w-72"
           >
-            {deleteReasonText}
+            {deleteBlockedReason}
           </TooltipContent>
         </Tooltip>
+      ) : (
+        deleteItem
       )}
     </>
   )

@@ -14,7 +14,7 @@ import { SessionInlineDetails } from './AiVaultSessionDetails'
 import { latestSessionConversationTurn } from './ai-vault-session-display'
 import { SessionActionMenuItems } from './AiVaultSessionActionMenuItems'
 import { SessionRowTrailingActions } from './SessionRowTrailingActions'
-import { resolveAiVaultSessionDeletability } from './ai-vault-session-deletability'
+import { aiVaultSessionDeleteBlockedReason } from './ai-vault-session-deletability'
 import type { AiVaultSessionResumeActions } from './ai-vault-session-resume'
 import {
   shouldShowAiVaultSessionWorktreeLine,
@@ -85,7 +85,7 @@ export function VaultSessionRow({
   const detailsId = getSessionDetailsId(session.id)
   const latestTurn = latestSessionConversationTurn(session)
   // Computed once so the dropdown menu and the context menu never disagree.
-  const deletability = resolveAiVaultSessionDeletability(session, liveState)
+  const deleteBlockedReason = aiVaultSessionDeleteBlockedReason(session, liveState)
   const requestDelete = (): void => onRequestDelete(session)
   const detailsTooltip = detailsExpanded
     ? translate('auto.components.right.sidebar.AiVaultSessionRow.hideDetails', 'Hide Details')
@@ -182,7 +182,7 @@ export function VaultSessionRow({
               onOpenLog={onOpenLog}
               onRevealLog={onRevealLog}
               onOpenCwd={onOpenCwd}
-              deletability={deletability}
+              deleteBlockedReason={deleteBlockedReason}
               onRequestDelete={requestDelete}
             />
           </div>
@@ -248,8 +248,7 @@ export function VaultSessionRow({
           onOpenLog={onOpenLog}
           onRevealLog={onRevealLog}
           onOpenCwd={onOpenCwd}
-          agent={session.agent}
-          deletability={deletability}
+          deleteBlockedReason={deleteBlockedReason}
           onDelete={requestDelete}
         />
       </ContextMenuContent>

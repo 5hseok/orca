@@ -11605,7 +11605,6 @@
           "AiVaultSessionDeleteDialog": {
             "title": "Delete this session?",
             "description": "\"{{value0}}\" will be deleted. Once deleted, it will no longer be resumable from {{value1}}'s own command line either.",
-            "cancel": "Cancel",
             "confirm": "Delete"
           },
           "FileExplorerNameFilter": {

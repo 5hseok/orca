@@ -11314,7 +11314,6 @@
           "AiVaultSessionDeleteDialog": {
             "title": "¿Eliminar esta sesión?",
             "description": "\"{{value0}}\" se eliminará. Una vez eliminada, tampoco podrá reanudarse desde la línea de comandos propia de {{value1}}.",
-            "cancel": "Cancelar",
             "confirm": "Eliminar"
           },
           "FileExplorerNameFilter": {

@@ -19,7 +19,6 @@ import type { AiVaultSession } from '../../../../shared/ai-vault-types'
 import { agentLabel } from './ai-vault-session-filters'
 import { translate } from '@/i18n/i18n'
 import { SessionActionMenuItems } from './AiVaultSessionActionMenuItems'
-import type { AiVaultSessionDeletabilityResult } from './ai-vault-session-deletability'
 import {
   aiVaultWorktreeJumpTooltip,
   type AiVaultSessionWorktreeInfo
@@ -60,7 +59,7 @@ export function SessionRowTrailingActions({
   onOpenLog,
   onRevealLog,
   onOpenCwd,
-  deletability,
+  deleteBlockedReason,
   onRequestDelete
 }: {
   session: AiVaultSession
@@ -82,7 +81,8 @@ export function SessionRowTrailingActions({
   onOpenLog?: () => void
   onRevealLog?: () => void
   onOpenCwd?: () => void
-  deletability: AiVaultSessionDeletabilityResult
+  // Null when Delete is offered; otherwise the tooltip explaining why it isn't.
+  deleteBlockedReason: string | null
   onRequestDelete: () => void
 }) {
   const jumpToWorktreeTooltip = aiVaultWorktreeJumpTooltip(worktreeInfo)
@@ -265,8 +265,7 @@ export function SessionRowTrailingActions({
             onOpenLog={onOpenLog}
             onRevealLog={onRevealLog}
             onOpenCwd={onOpenCwd}
-            agent={session.agent}
-            deletability={deletability}
+            deleteBlockedReason={deleteBlockedReason}
             onDelete={onRequestDelete}
           />
         </DropdownMenuContent>

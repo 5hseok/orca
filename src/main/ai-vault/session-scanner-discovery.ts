@@ -1,5 +1,5 @@
 import { readdir, stat } from 'node:fs/promises'
-import { basename, delimiter, extname, join } from 'node:path'
+import { extname, join } from 'node:path'
 import type { AiVaultAgent, AiVaultScanIssue } from '../../shared/ai-vault-types'
 import type { FileWithMtime, SessionFileDiscovery } from './session-scanner-types'
 import { errorMessage } from './session-scanner-values'
@@ -40,42 +40,6 @@ export async function discoverFiles(args: {
     rootDir: args.rootDir,
     files: files.sort((left, right) => right.mtimeMs - left.mtimeMs).slice(0, args.limit)
   }
-}
-
-// OpenClaw sessions live under <stateDir>/agents; a stateDir already ending in
-// `agents` is used as-is. Shared with the deletion validator.
-export function openClawAgentsRootDir(stateDir: string): string {
-  return basename(stateDir) === 'agents' ? stateDir : join(stateDir, 'agents')
-}
-
-// Every discovered OpenClaw session file carries a `sessions` path segment.
-// Shared so the deletion validator accepts exactly what this scanner surfaces.
-export function isOpenClawSessionFilePath(filePath: string): boolean {
-  return filePath.split(/[\\/]/).includes('sessions')
-}
-
-export async function discoverOpenClawFiles(args: {
-  rootDirs: string[]
-  limit: number
-  issues: AiVaultScanIssue[]
-}): Promise<SessionFileDiscovery> {
-  const discoveries = await Promise.all(
-    args.rootDirs.map((rootDir) =>
-      discoverFiles({
-        rootDir: openClawAgentsRootDir(rootDir),
-        limit: args.limit,
-        agent: 'openclaw',
-        issues: args.issues,
-        extensions: ['.jsonl'],
-        filePredicate: isOpenClawSessionFilePath
-      })
-    )
-  )
-  const files = discoveries
-    .flatMap((discovery) => discovery.files)
-    .sort((left, right) => right.mtimeMs - left.mtimeMs)
-    .slice(0, args.limit)
-  return { agent: 'openclaw', rootDir: args.rootDirs.join(delimiter), files }
 }
 
 export async function walkSessionFiles(

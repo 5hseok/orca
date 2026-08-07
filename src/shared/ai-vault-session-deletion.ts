@@ -60,8 +60,9 @@ export type AiVaultSessionDeleteRejectionCode =
   | 'non-local-host'
   | 'synthetic-path'
   | 'path-outside-known-roots'
-  | 'invalid-extension'
-  | 'file-predicate-mismatch'
+  // The scanner would never have surfaced this path as a session row, so it is
+  // not a session to delete (wrong extension, or a pruned subagent transcript).
+  | 'undiscoverable-path'
   // A directory-shaped agent's file sits directly in the sessions root, so it
   // names no session dir of its own — removing it would trash every session.
   | 'no-session-directory'

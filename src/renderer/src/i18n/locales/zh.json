@@ -11334,7 +11334,6 @@
           "AiVaultSessionDeleteDialog": {
             "title": "要删除此会话吗？",
             "description": "“{{value0}}”将被删除。删除后，也将无法通过 {{value1}} 自身的命令行恢复。",
-            "cancel": "取消",
             "confirm": "删除"
           },
           "FileExplorerNameFilter": {
