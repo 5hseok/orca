@@ -8,6 +8,8 @@ export const SUGGESTED_FORMAT_ON_SAVE_COMMAND = 'npx prettier --write ${file}'
 
 export const FORMAT_ON_SAVE_FILE_TOKEN = '${file}'
 export const FORMAT_ON_SAVE_RELATIVE_FILE_TOKEN = '${relativeFile}'
+// Why: relativeFile first so the shared `${file}` prefix cannot win the match.
+const FORMAT_ON_SAVE_TOKEN_PATTERN = /\$\{relativeFile\}|\$\{file\}/g
 
 export type FormatOnSaveSkipReason =
   | 'not-configured'
@@ -164,11 +166,13 @@ export function expandFormatOnSaveCommand({
   const quotedAbsolute = quoteForShell(absolutePath, platform)
   const quotedRelative = quoteForShell(relativePath, platform)
 
-  return command
-    .split(FORMAT_ON_SAVE_RELATIVE_FILE_TOKEN)
-    .join(quotedRelative)
-    .split(FORMAT_ON_SAVE_FILE_TOKEN)
-    .join(quotedAbsolute)
+  // Why: one pass. Substituting sequentially lets the second pass rescan a path
+  // the first pass inserted, so a filename containing the literal text `${file}`
+  // would splice a second quoted path inside the first one and break the quoting
+  // this function exists to guarantee. Filenames come from cloned repositories.
+  return command.replace(FORMAT_ON_SAVE_TOKEN_PATTERN, (token) =>
+    token === FORMAT_ON_SAVE_RELATIVE_FILE_TOKEN ? quotedRelative : quotedAbsolute
+  )
 }
 
 export function quoteForShell(value: string, platform: NodeJS.Platform): string {

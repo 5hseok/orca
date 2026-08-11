@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const execMock = vi.fn()
+import { EventEmitter } from 'node:events'
+
+const spawnMock = vi.fn()
 const execFileMock = vi.fn()
 
 vi.mock('node:child_process', () => ({
-  exec: (...args: unknown[]) => execMock(...args),
+  spawn: (...args: unknown[]) => spawnMock(...args),
   execFile: (...args: unknown[]) => execFileMock(...args)
 }))
 
@@ -13,7 +15,11 @@ vi.mock('./wsl', () => ({
   toLinuxPath: vi.fn((value: string) => value)
 }))
 
-import { _resetFormatOnSaveInFlightForTests, runFormatOnSave } from './format-on-save-runner'
+import {
+  _resetFormatOnSaveInFlightForTests,
+  FORMAT_ON_SAVE_TIMEOUT_MS,
+  runFormatOnSave
+} from './format-on-save-runner'
 import { parseWslPath } from './wsl'
 import type { RepoFormatOnSaveSettings } from '../shared/types'
 
@@ -25,19 +31,68 @@ const enabledSettings: RepoFormatOnSaveSettings = {
 
 type ExecCallback = (error: Error | null, stdout: string, stderr: string) => void
 
-function resolveExecWith(error: Error | null, stdout = '', stderr = ''): void {
-  execMock.mockImplementation((_command: string, _options: unknown, callback: ExecCallback) => {
-    callback(error, stdout, stderr)
-    return {}
+const IS_WINDOWS_HOST = process.platform === 'win32'
+
+/** Quotes a path the way the runner does on whichever host the suite runs on. */
+function hostQuoted(value: string): string {
+  return IS_WINDOWS_HOST ? `"${value}"` : `'${value}'`
+}
+
+class FakeChildProcess extends EventEmitter {
+  stdout = new EventEmitter()
+  stderr = new EventEmitter()
+  pid: number | undefined = 4242
+  kill = vi.fn()
+}
+
+let lastChild: FakeChildProcess | null = null
+
+/** Drives the spawned child to a close, mirroring the real event order. */
+function spawnResolvesWith(code: number | null, stdout = '', stderr = ''): void {
+  spawnMock.mockImplementation(() => {
+    const child = new FakeChildProcess()
+    lastChild = child
+    queueMicrotask(() => {
+      if (stdout) {
+        child.stdout.emit('data', stdout)
+      }
+      if (stderr) {
+        child.stderr.emit('data', stderr)
+      }
+      child.emit('close', code)
+    })
+    return child
   })
 }
 
+/** Spawns a child that never closes until the returned callback runs. */
+function spawnPending(): () => void {
+  let release: (() => void) | undefined
+  spawnMock.mockImplementation(() => {
+    const child = new FakeChildProcess()
+    lastChild = child
+    release = () => child.emit('close', 0)
+    return child
+  })
+  return () => release?.()
+}
+
+function spawnedCommand(callIndex = 0): string {
+  const args = spawnMock.mock.calls[callIndex][1] as string[]
+  return args.at(-1) ?? ''
+}
+
+function resolveExecWith(error: Error | null, stdout = '', stderr = ''): void {
+  spawnResolvesWith(error ? 1 : 0, stdout, error && !stderr && !stdout ? error.message : stderr)
+}
+
 beforeEach(() => {
-  execMock.mockReset()
+  spawnMock.mockReset()
   execFileMock.mockReset()
+  lastChild = null
   _resetFormatOnSaveInFlightForTests()
   vi.mocked(parseWslPath).mockReturnValue(null)
-  resolveExecWith(null)
+  spawnResolvesWith(0)
 })
 
 afterEach(() => {
@@ -53,7 +108,7 @@ describe('runFormatOnSave', () => {
         absoluteFilePath: '/repo/src/a.ts'
       })
     ).resolves.toEqual({ status: 'skipped', reason: 'not-configured' })
-    expect(execMock).not.toHaveBeenCalled()
+    expect(spawnMock).not.toHaveBeenCalled()
   })
 
   it('skips files the include globs do not cover', async () => {
@@ -64,7 +119,7 @@ describe('runFormatOnSave', () => {
         absoluteFilePath: '/repo/src/a.css'
       })
     ).resolves.toEqual({ status: 'skipped', reason: 'not-included' })
-    expect(execMock).not.toHaveBeenCalled()
+    expect(spawnMock).not.toHaveBeenCalled()
   })
 
   it('refuses to format a file outside the worktree', async () => {
@@ -75,7 +130,7 @@ describe('runFormatOnSave', () => {
         absoluteFilePath: '/elsewhere/src/a.ts'
       })
     ).resolves.toEqual({ status: 'skipped', reason: 'outside-worktree' })
-    expect(execMock).not.toHaveBeenCalled()
+    expect(spawnMock).not.toHaveBeenCalled()
   })
 
   it('runs the command in the worktree root with the saved path substituted', async () => {
@@ -85,9 +140,10 @@ describe('runFormatOnSave', () => {
       absoluteFilePath: '/repo/src/a.ts'
     })
 
-    const [command, options] = execMock.mock.calls[0]
-    expect(command).toBe("prettier --write '/repo/src/a.ts'")
-    expect((options as { cwd: string }).cwd).toBe('/repo')
+    // Why: quoting follows the host shell, so derive the expectation instead of
+    // hardcoding POSIX quotes — this suite also runs on Windows CI.
+    expect(spawnedCommand()).toBe(`prettier --write ${hostQuoted('/repo/src/a.ts')}`)
+    expect((spawnMock.mock.calls[0][2] as { cwd: string }).cwd).toBe('/repo')
   })
 
   it('reports the formatter stderr when the command exits non-zero', async () => {
@@ -118,11 +174,7 @@ describe('runFormatOnSave', () => {
   })
 
   it('skips a second run while the same file is still being formatted', async () => {
-    let release: (() => void) | undefined
-    execMock.mockImplementation((_command: string, _options: unknown, callback: ExecCallback) => {
-      release = () => callback(null, '', '')
-      return {}
-    })
+    const release = spawnPending()
 
     const first = runFormatOnSave({
       settings: enabledSettings,
@@ -138,9 +190,9 @@ describe('runFormatOnSave', () => {
       })
     ).resolves.toEqual({ status: 'skipped', reason: 'already-running' })
 
-    release?.()
+    release()
     await expect(first).resolves.toEqual({ status: 'completed' })
-    expect(execMock).toHaveBeenCalledTimes(1)
+    expect(spawnMock).toHaveBeenCalledTimes(1)
   })
 
   it('frees the in-flight slot after a failed run so the next save can format', async () => {
@@ -162,10 +214,7 @@ describe('runFormatOnSave', () => {
   })
 
   it('keeps posix paths case-sensitive so two real files never share a slot', async () => {
-    execMock.mockImplementation((_command: string, _options: unknown, callback: ExecCallback) => {
-      callback(null, '', '')
-      return {}
-    })
+    spawnResolvesWith(0)
     const anyFile = { ...enabledSettings, include: [] }
 
     await runFormatOnSave({
@@ -179,44 +228,63 @@ describe('runFormatOnSave', () => {
       absoluteFilePath: '/repo/src/A.TS'
     })
 
-    expect(execMock).toHaveBeenCalledTimes(2)
+    expect(spawnMock).toHaveBeenCalledTimes(2)
   })
 
   it('does not report a chatty but successful formatter as failed', async () => {
-    // Why: node's 1 MB default maxBuffer would kill `black --verbose` mid-run and
-    // surface it as a failure even though the file was rewritten.
-    await runFormatOnSave({
-      settings: enabledSettings,
-      worktreePath: '/repo',
-      absoluteFilePath: '/repo/src/a.ts'
-    })
+    // Why: `black --verbose` and `prettier --loglevel debug` succeed while
+    // printing megabytes; output volume must not turn into an error.
+    spawnResolvesWith(0, 'x'.repeat(4 * 1024 * 1024), 'y'.repeat(4 * 1024 * 1024))
 
-    const options = execMock.mock.calls[0][1] as { maxBuffer?: number }
-    expect(options.maxBuffer).toBeGreaterThanOrEqual(8 * 1024 * 1024)
+    await expect(
+      runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: '/repo',
+        absoluteFilePath: '/repo/src/a.ts'
+      })
+    ).resolves.toEqual({ status: 'completed' })
   })
 
-  it('names the timeout instead of surfacing a bare "Command failed"', async () => {
-    const timedOut = Object.assign(new Error('Command failed'), { killed: true })
-    resolveExecWith(timedOut, '', '')
+  it('kills the whole process group when the formatter times out', async () => {
+    vi.useFakeTimers()
+    try {
+      spawnPending()
+      const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true)
 
-    const result = await runFormatOnSave({
-      settings: enabledSettings,
-      worktreePath: '/repo',
-      absoluteFilePath: '/repo/src/a.ts'
-    })
+      const pending = runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: '/repo',
+        absoluteFilePath: '/repo/src/a.ts'
+      })
+      await vi.advanceTimersByTimeAsync(FORMAT_ON_SAVE_TIMEOUT_MS + 10)
 
-    expect(result.status).toBe('failed')
-    expect(result).toMatchObject({ message: expect.stringContaining('timed out') })
+      if (process.platform === 'win32') {
+        expect(execFileMock).toHaveBeenCalledWith(
+          'taskkill',
+          expect.arrayContaining(['/t', '/f']),
+          expect.any(Function)
+        )
+      } else {
+        // Why: the negative pid reaches the formatter the shell spawned, which a
+        // plain child.kill() would leave running to overwrite a later save.
+        expect(killSpy).toHaveBeenCalledWith(-4242, 'SIGKILL')
+      }
+
+      lastChild?.emit('close', null)
+      await expect(pending).resolves.toMatchObject({
+        status: 'failed',
+        message: expect.stringContaining('timed out')
+      })
+      killSpy.mockRestore()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shares one in-flight slot across differently-cased windows paths', async () => {
     // Why: Windows resolves paths case-insensitively, so two tabs on the same
     // file would otherwise run the formatter over each other's output.
-    let release: (() => void) | undefined
-    execMock.mockImplementation((_command: string, _options: unknown, callback: ExecCallback) => {
-      release = () => callback(null, '', '')
-      return {}
-    })
+    const release = spawnPending()
 
     // Why: include globs stay case-sensitive like every other glob matcher, so
     // this case tests the in-flight key alone.
@@ -237,7 +305,7 @@ describe('runFormatOnSave', () => {
 
     release?.()
     await expect(first).resolves.toEqual({ status: 'completed' })
-    expect(execMock).toHaveBeenCalledTimes(1)
+    expect(spawnMock).toHaveBeenCalledTimes(1)
   })
 
   it('runs the formatter on the remote host for an SSH worktree', async () => {
@@ -265,7 +333,7 @@ describe('runFormatOnSave', () => {
       timeoutMs: expect.any(Number)
     })
     // Why: the local shell must not be touched for a file that lives elsewhere.
-    expect(execMock).not.toHaveBeenCalled()
+    expect(spawnMock).not.toHaveBeenCalled()
   })
 
   it('uses cmd.exe when the SSH host is Windows', async () => {
@@ -421,6 +489,6 @@ describe('runFormatOnSave', () => {
       '-c',
       expect.stringContaining("cd '/home/dev/repo' && prettier --write")
     ])
-    expect(execMock).not.toHaveBeenCalled()
+    expect(spawnMock).not.toHaveBeenCalled()
   })
 })

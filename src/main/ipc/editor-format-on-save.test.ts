@@ -5,14 +5,14 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   removeHandler: vi.fn(),
   runFormatOnSave: vi.fn(),
-  resolveRegisteredWorktreePath: vi.fn(),
+  resolveRepoOwnedWorktreePath: vi.fn(),
   getSshGitProvider: vi.fn()
 }))
 
 const handleMock = mocks.handle
 const removeHandlerMock = mocks.removeHandler
 const runFormatOnSaveMock = mocks.runFormatOnSave
-const resolveRegisteredWorktreePathMock = mocks.resolveRegisteredWorktreePath
+const resolveRepoOwnedWorktreePathMock = mocks.resolveRepoOwnedWorktreePath
 const getSshGitProviderMock = mocks.getSshGitProvider
 
 vi.mock('electron', () => ({
@@ -26,8 +26,8 @@ vi.mock('../format-on-save-runner', () => ({
   runFormatOnSave: mocks.runFormatOnSave
 }))
 
-vi.mock('./filesystem-auth', () => ({
-  resolveRegisteredWorktreePath: mocks.resolveRegisteredWorktreePath
+vi.mock('./repo-owned-worktree-path', () => ({
+  resolveRepoOwnedWorktreePath: mocks.resolveRepoOwnedWorktreePath
 }))
 
 vi.mock('../providers/ssh-git-dispatch', () => ({
@@ -76,8 +76,10 @@ beforeEach(() => {
   removeHandlerMock.mockReset()
   runFormatOnSaveMock.mockReset()
   runFormatOnSaveMock.mockResolvedValue({ status: 'completed' })
-  resolveRegisteredWorktreePathMock.mockReset()
-  resolveRegisteredWorktreePathMock.mockImplementation(async (value: string) => value)
+  resolveRepoOwnedWorktreePathMock.mockReset()
+  resolveRepoOwnedWorktreePathMock.mockImplementation(
+    async (_repo: unknown, _store: unknown, value: string) => value
+  )
   getSshGitProviderMock.mockReset()
   getSshGitProviderMock.mockReturnValue(undefined)
 })
@@ -97,9 +99,9 @@ describe('editor:formatOnSave handler', () => {
     expect(JSON.stringify(passed)).not.toContain('rm -rf')
   })
 
-  it('authorizes the worktree path before running anything', async () => {
-    resolveRegisteredWorktreePathMock.mockRejectedValue(
-      new Error('Access denied: unknown repository or worktree path')
+  it('refuses a worktree that belongs to a different repo', async () => {
+    resolveRepoOwnedWorktreePathMock.mockRejectedValue(
+      new Error('Access denied: worktree does not belong to repository')
     )
     const invoke = registerWith(localRepo())
 
@@ -122,9 +124,13 @@ describe('editor:formatOnSave handler', () => {
     const passed = runFormatOnSaveMock.mock.calls[0][0]
     expect(passed.remoteExec).toBeTypeOf('function')
     expect(passed.hostScope).toBe('ssh-target-1')
-    // Why: remote paths belong to the remote host; the local registered-root
-    // check would reject or rewrite them.
-    expect(resolveRegisteredWorktreePathMock).not.toHaveBeenCalled()
+    // Why: the remote path is authorized against the repo too — the helper
+    // handles the remote path shape rather than resolving it locally.
+    expect(resolveRepoOwnedWorktreePathMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'repo-1' }),
+      expect.anything(),
+      VALID_ARGS.worktreePath
+    )
 
     await passed.remoteExec({
       binary: '/bin/bash',
@@ -163,7 +169,7 @@ describe('editor:formatOnSave handler', () => {
       status: 'skipped',
       reason: 'not-configured'
     })
-    expect(resolveRegisteredWorktreePathMock).not.toHaveBeenCalled()
+    expect(resolveRepoOwnedWorktreePathMock).not.toHaveBeenCalled()
     expect(runFormatOnSaveMock).not.toHaveBeenCalled()
   })
 
@@ -186,12 +192,12 @@ describe('editor:formatOnSave handler', () => {
     await expect(invoke({ ...VALID_ARGS, filePath: '/repo/a\0.ts' })).rejects.toThrow(
       'Access denied'
     )
-    expect(resolveRegisteredWorktreePathMock).not.toHaveBeenCalled()
+    expect(resolveRepoOwnedWorktreePathMock).not.toHaveBeenCalled()
     expect(runFormatOnSaveMock).not.toHaveBeenCalled()
   })
 
   it('passes the authorized path to the runner, not the caller-supplied one', async () => {
-    resolveRegisteredWorktreePathMock.mockResolvedValue('/resolved/repo')
+    resolveRepoOwnedWorktreePathMock.mockResolvedValue('/resolved/repo')
     const invoke = registerWith(localRepo())
 
     await invoke({ ...VALID_ARGS, worktreePath: '/repo/../repo' })

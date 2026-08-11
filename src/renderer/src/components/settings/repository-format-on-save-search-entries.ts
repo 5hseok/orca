@@ -3,11 +3,18 @@ import type { SettingsSearchEntry } from './settings-search'
 import { translate } from '@/i18n/i18n'
 import { translateSearchKeyword } from './settings-search-keywords'
 
-export const FORMAT_ON_SAVE_SEARCH_TITLES = [
-  'Format on Save',
-  'Formatter Command',
-  'Included Files'
-]
+/**
+ * Why: the pane filters entries by comparing titles, and titles go through
+ * `translate()`. Hardcoding English here hid the section from settings search in
+ * every other locale, so resolve the same translated strings the entries use.
+ */
+export function getFormatOnSaveSearchTitles(): string[] {
+  return [
+    translate('auto.components.settings.repository.search.formatOnSave', 'Format on Save'),
+    translate('auto.components.settings.repository.search.formatterCommand', 'Formatter Command'),
+    translate('auto.components.settings.repository.search.formatIncludedFiles', 'Included Files')
+  ]
+}
 
 export function getRepositoryFormatOnSaveSearchEntries(repo: Repo): SettingsSearchEntry[] {
   return [

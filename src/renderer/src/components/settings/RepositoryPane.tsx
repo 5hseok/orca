@@ -17,7 +17,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { RepositoryHooksSection } from './RepositoryHooksSection'
 import { RepositoryFormatOnSaveSection } from './RepositoryFormatOnSaveSection'
-import { FORMAT_ON_SAVE_SEARCH_TITLES } from './repository-format-on-save-search-entries'
+import { getFormatOnSaveSearchTitles } from './repository-format-on-save-search-entries'
 import { McpConfigSection } from './McpConfigSection'
 import { WorktreeSymlinksSection } from './WorktreeSymlinksSection'
 import { SparsePresetSettingsSection } from './SparsePresetSettingsSection'
@@ -195,9 +195,8 @@ export function RepositoryPane({
       'Custom GitHub Issue Command'
     ].includes(entry.title)
   )
-  const formatOnSaveEntries = allEntries.filter((entry) =>
-    FORMAT_ON_SAVE_SEARCH_TITLES.includes(entry.title)
-  )
+  const formatOnSaveTitles = new Set(getFormatOnSaveSearchTitles())
+  const formatOnSaveEntries = allEntries.filter((entry) => formatOnSaveTitles.has(entry.title))
   const mcpEntries = allEntries.filter((entry) => entry.title === 'MCP Configs')
   const symlinkEntries = allEntries.filter((entry) => entry.title === 'Worktree Shared Paths')
   const sourceControlAiEntries = allEntries.filter((entry) => entry.title === 'Git AI Author')

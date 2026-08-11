@@ -109,6 +109,44 @@ describe('format-on-save command expansion', () => {
     ).toBe(`prettier --write '/repo/a b/it'\\''s; rm -rf ~.ts'`)
   })
 
+  it('does not rescan a substituted path, so a token in a filename stays quoted', () => {
+    // Why: `${file}` is a legal POSIX filename. Substituting sequentially spliced
+    // the absolute path inside the already-quoted relative path and broke quoting.
+    const relativePath = 'src/a${file}b.ts'
+    expect(
+      expandFormatOnSaveCommand({
+        command: 'prettier --write ${relativeFile}',
+        absolutePath: `/repo/${relativePath}`,
+        relativePath,
+        platform: 'darwin'
+      })
+    ).toBe("prettier --write 'src/a${file}b.ts'")
+  })
+
+  it('substitutes both tokens independently in one pass', () => {
+    expect(
+      expandFormatOnSaveCommand({
+        command: '${file} ${relativeFile} ${file}',
+        absolutePath: '/repo/a.ts',
+        relativePath: 'a.ts',
+        platform: 'darwin'
+      })
+    ).toBe("'/repo/a.ts' 'a.ts' '/repo/a.ts'")
+  })
+
+  it('treats a dollar-brace sequence in the replacement as literal text', () => {
+    // Why: String.replace expands `$&`-style patterns in a string replacement;
+    // the callback form must not.
+    expect(
+      expandFormatOnSaveCommand({
+        command: 'fmt ${file}',
+        absolutePath: '/repo/$&$`.ts',
+        relativePath: '$&$`.ts',
+        platform: 'darwin'
+      })
+    ).toBe("fmt '/repo/$&$`.ts'")
+  })
+
   it('wraps windows paths in double quotes', () => {
     expect(quoteForShell('C:\\repo\\a b.ts', 'win32')).toBe('"C:\\repo\\a b.ts"')
   })

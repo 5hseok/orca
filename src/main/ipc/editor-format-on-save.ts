@@ -8,7 +8,7 @@ import {
 } from '../../shared/format-on-save-command'
 import { getRepoExecutionHostId, parseExecutionHostId } from '../../shared/execution-host'
 import { getSshGitProvider } from '../providers/ssh-git-dispatch'
-import { resolveRegisteredWorktreePath } from './filesystem-auth'
+import { resolveRepoOwnedWorktreePath } from './repo-owned-worktree-path'
 import type { RemoteFormatExecutor } from '../format-on-save-runner'
 
 type FormatOnSaveArgs = {
@@ -43,6 +43,11 @@ export function registerEditorFormatOnSaveHandlers(store: Store): void {
         return { status: 'skipped', reason: 'unsupported-host' }
       }
 
+      // Why: proves the worktree is registered AND owned by this repo, so a
+      // caller cannot pair one repo's configured command with another repo's
+      // worktree. Handles the remote path shape for SSH repos too.
+      const worktreePath = await resolveRepoOwnedWorktreePath(repo, store, args.worktreePath)
+
       if (repo.connectionId) {
         const remoteExec = createRemoteFormatExecutor(repo.connectionId)
         if (!remoteExec) {
@@ -52,16 +57,13 @@ export function registerEditorFormatOnSaveHandlers(store: Store): void {
         }
         return runFormatOnSave({
           settings,
-          // Why: remote paths are the remote host's to validate; the local
-          // registered-root check would reject or rewrite them.
-          worktreePath: args.worktreePath,
+          worktreePath,
           absoluteFilePath: args.filePath,
           remoteExec,
           hostScope: repo.connectionId
         })
       }
 
-      const worktreePath = await resolveRegisteredWorktreePath(args.worktreePath, store)
       return runFormatOnSave({
         settings,
         worktreePath,

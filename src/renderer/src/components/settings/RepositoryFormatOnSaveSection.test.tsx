@@ -161,6 +161,13 @@ describe('RepositoryFormatOnSaveSection', () => {
     expect(container.textContent).not.toContain('runtime host')
   })
 
+  it('says nothing for a WSL worktree, which is a local execution host', () => {
+    // Why: WSL repos keep executionHostId 'local' — the formatter runs inside the
+    // distro, so the runtime-host notice must not appear for them.
+    render({ ...baseRepo, path: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo' })
+    expect(container.textContent).not.toContain('runtime host')
+  })
+
   it('warns that a runtime-hosted project is saved unformatted', () => {
     render({ ...baseRepo, executionHostId: 'runtime:env-1' })
     expect(container.textContent).toContain('runtime host')
