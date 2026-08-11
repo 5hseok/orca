@@ -106,7 +106,9 @@ describe('format on save through the editor save queue', () => {
     releaseFormat?.({ status: 'completed' })
     await save
 
-    expect(savedContents()).toEqual([UNFORMATTED])
+    // Why: the event reports what landed on disk, which is the formatted text.
+    // The user's newer keystrokes stay in the draft and still win in the editor.
+    expect(savedContents()).toEqual([FORMATTED])
     expect(store.getState().editorDrafts[FILE_ID]).toBe(`${UNFORMATTED}\nconst b=2`)
     expect(store.getState().openFiles.find((file) => file.id === FILE_ID)?.isDirty).toBe(true)
   })

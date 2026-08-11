@@ -148,9 +148,6 @@ export function attachEditorAutosaveController(store: AppStoreApi): () => void {
               : undefined
           )
         }
-        // Why: adopting the formatted text into a buffer the user has typed into
-        // since the save would silently discard those keystrokes.
-        const bufferContent = stillDirty ? contentToSave : diskContent
         nextState.markFileDirty(file.id, stillDirty)
         if (!stillDirty) {
           nextState.clearEditorDraft(file.id)
@@ -167,7 +164,11 @@ export function attachEditorAutosaveController(store: AppStoreApi): () => void {
 
         window.dispatchEvent(
           new CustomEvent<EditorFileSavedDetail>(ORCA_EDITOR_FILE_SAVED_EVENT, {
-            detail: { fileId: file.id, content: bufferContent }
+            // Why: this event states what is on disk, so it carries the
+            // formatted bytes even when the user has typed since the save. It
+            // updates the disk-side content only — the unsaved draft is kept by
+            // markFileDirty/clearEditorDraft above and still wins in the editor.
+            detail: { fileId: file.id, content: diskContent }
           })
         )
       })
