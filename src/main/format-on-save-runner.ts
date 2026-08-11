@@ -6,6 +6,7 @@ import {
   type FormatOnSaveResult
 } from '../shared/format-on-save-command'
 import {
+  normalizeRuntimePathForComparison,
   normalizeRuntimePathSeparators,
   relativePathInsideRoot
 } from '../shared/cross-platform-path'
@@ -14,6 +15,12 @@ import type { RepoFormatOnSaveSettings } from '../shared/types'
 
 /** Long enough for a cold `npx prettier`, short enough that a hung formatter frees the file quickly. */
 export const FORMAT_ON_SAVE_TIMEOUT_MS = 20_000
+
+// Why: node's 1 MB default turns a chatty-but-successful formatter (`black
+// --verbose`, `prettier --loglevel debug`) into a reported failure even though
+// the file was rewritten correctly. The output is discarded on success, so the
+// only thing a larger cap costs is a transient buffer.
+const FORMAT_ON_SAVE_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 
 export type FormatOnSaveRequest = {
   settings: RepoFormatOnSaveSettings | undefined | null
@@ -44,7 +51,10 @@ export async function runFormatOnSave({
     return { status: 'skipped', reason: 'not-included' }
   }
 
-  const inFlightKey = normalizeRuntimePathSeparators(absoluteFilePath)
+  // Why: use the comparison form so Windows' case-insensitive paths share one
+  // in-flight slot. POSIX paths are left case-sensitive on purpose — folding them
+  // would treat two genuinely different files as one.
+  const inFlightKey = normalizeRuntimePathForComparison(absoluteFilePath)
   if (inFlightPaths.has(inFlightKey)) {
     return { status: 'skipped', reason: 'already-running' }
   }
@@ -118,6 +128,7 @@ async function executeFormatCommand({
       {
         cwd: worktreePath,
         timeout: FORMAT_ON_SAVE_TIMEOUT_MS,
+        maxBuffer: FORMAT_ON_SAVE_MAX_BUFFER_BYTES,
         shell: getFormatShell(),
         encoding: 'utf-8'
       },
@@ -161,7 +172,11 @@ function runWslFormatCommand(
       child = execFile(
         'wsl.exe',
         [...distroArgs, '--', 'bash', '-c', bashCommand],
-        { timeout: FORMAT_ON_SAVE_TIMEOUT_MS, encoding: 'utf-8' },
+        {
+          timeout: FORMAT_ON_SAVE_TIMEOUT_MS,
+          maxBuffer: FORMAT_ON_SAVE_MAX_BUFFER_BYTES,
+          encoding: 'utf-8'
+        },
         (error, stdout, stderr) => {
           finish(error ?? null, stdout, stderr)
         }
@@ -179,6 +194,16 @@ function toFormatResult(
 ): FormatOnSaveResult {
   if (!error) {
     return { status: 'completed' }
+  }
+
+  // Why: a killed process reports the same "Command failed" as a parse error,
+  // and its stderr is usually empty — name the timeout so the user knows to look
+  // at the command rather than at their file.
+  if ((error as { killed?: boolean }).killed) {
+    return {
+      status: 'failed',
+      message: `Formatter timed out after ${FORMAT_ON_SAVE_TIMEOUT_MS}ms.`
+    }
   }
 
   // Why: formatters put the actionable parse error on stderr and exit non-zero;

@@ -161,6 +161,85 @@ describe('runFormatOnSave', () => {
     ).resolves.toEqual({ status: 'completed' })
   })
 
+  it('keeps posix paths case-sensitive so two real files never share a slot', async () => {
+    execMock.mockImplementation((_command: string, _options: unknown, callback: ExecCallback) => {
+      callback(null, '', '')
+      return {}
+    })
+    const anyFile = { ...enabledSettings, include: [] }
+
+    await runFormatOnSave({
+      settings: anyFile,
+      worktreePath: '/repo',
+      absoluteFilePath: '/repo/src/a.ts'
+    })
+    await runFormatOnSave({
+      settings: anyFile,
+      worktreePath: '/repo',
+      absoluteFilePath: '/repo/src/A.TS'
+    })
+
+    expect(execMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not report a chatty but successful formatter as failed', async () => {
+    // Why: node's 1 MB default maxBuffer would kill `black --verbose` mid-run and
+    // surface it as a failure even though the file was rewritten.
+    await runFormatOnSave({
+      settings: enabledSettings,
+      worktreePath: '/repo',
+      absoluteFilePath: '/repo/src/a.ts'
+    })
+
+    const options = execMock.mock.calls[0][1] as { maxBuffer?: number }
+    expect(options.maxBuffer).toBeGreaterThanOrEqual(8 * 1024 * 1024)
+  })
+
+  it('names the timeout instead of surfacing a bare "Command failed"', async () => {
+    const timedOut = Object.assign(new Error('Command failed'), { killed: true })
+    resolveExecWith(timedOut, '', '')
+
+    const result = await runFormatOnSave({
+      settings: enabledSettings,
+      worktreePath: '/repo',
+      absoluteFilePath: '/repo/src/a.ts'
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result).toMatchObject({ message: expect.stringContaining('timed out') })
+  })
+
+  it('shares one in-flight slot across differently-cased windows paths', async () => {
+    // Why: Windows resolves paths case-insensitively, so two tabs on the same
+    // file would otherwise run the formatter over each other's output.
+    let release: (() => void) | undefined
+    execMock.mockImplementation((_command: string, _options: unknown, callback: ExecCallback) => {
+      release = () => callback(null, '', '')
+      return {}
+    })
+
+    // Why: include globs stay case-sensitive like every other glob matcher, so
+    // this case tests the in-flight key alone.
+    const anyFile = { ...enabledSettings, include: [] }
+    const first = runFormatOnSave({
+      settings: anyFile,
+      worktreePath: 'C:\\repo',
+      absoluteFilePath: 'C:\\repo\\src\\a.ts'
+    })
+
+    await expect(
+      runFormatOnSave({
+        settings: anyFile,
+        worktreePath: 'C:\\repo',
+        absoluteFilePath: 'C:\\repo\\src\\A.TS'
+      })
+    ).resolves.toEqual({ status: 'skipped', reason: 'already-running' })
+
+    release?.()
+    await expect(first).resolves.toEqual({ status: 'completed' })
+    expect(execMock).toHaveBeenCalledTimes(1)
+  })
+
   it('routes a WSL worktree through wsl.exe with linux paths', async () => {
     vi.mocked(parseWslPath).mockReturnValue({ distro: 'Ubuntu', linuxPath: '/home/dev/repo' })
     execFileMock.mockImplementation(

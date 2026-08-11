@@ -62,8 +62,10 @@ export async function formatSavedFile({
   }
 }
 
+// Why: mirrors the fields getEditorFileOperationContext returns that this path
+// needs; typing `settings` off the file client keeps the read call cast-free.
 type EditorFileOperationContext = {
-  settings: unknown
+  settings: Parameters<typeof readRuntimeFileContent>[0]['settings']
   worktreeId: string
   worktreePath: string | null
   connectionId?: string
@@ -106,7 +108,7 @@ export async function maybeFormatSavedFile({
     runFormat: (args) => window.api.editor.formatOnSave(args),
     readSavedContent: async () => {
       const result = await readRuntimeFileContent({
-        settings: fileContext.settings as Parameters<typeof readRuntimeFileContent>[0]['settings'],
+        settings: fileContext.settings,
         filePath: file.filePath,
         relativePath: file.relativePath,
         worktreeId: file.worktreeId
