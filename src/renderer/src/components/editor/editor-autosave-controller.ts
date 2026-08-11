@@ -23,6 +23,7 @@ import {
   type EditorSaveQuiesceDetail
 } from './editor-autosave'
 import { markFileChangedOnDisk } from './editor-changed-on-disk-mark'
+import { maybeFormatSavedFile } from './editor-format-on-save'
 import { flushPendingEditorChange } from './editor-pending-flush'
 import {
   clearSelfWrite,
@@ -120,6 +121,13 @@ export function attachEditorAutosaveController(store: AppStoreApi): () => void {
           throw error
         }
 
+        const formattedContent = await maybeFormatSavedFile({
+          file: liveFile,
+          worktree,
+          fileContext,
+          savedContent: contentToSave
+        })
+
         if ((saveGeneration.get(file.id) ?? 0) !== queuedGeneration) {
           return
         }
@@ -127,12 +135,28 @@ export function attachEditorAutosaveController(store: AppStoreApi): () => void {
         const nextState = store.getState()
         const currentDraft = nextState.editorDrafts[file.id]
         const stillDirty = currentDraft !== undefined && currentDraft !== contentToSave
+        const diskContent = formattedContent ?? contentToSave
+        // Why: the formatter rewrote the file after our stamp, so re-stamp the new
+        // bytes or the watcher reports Orca's own formatting as an external edit.
+        if (formattedContent !== null) {
+          recordSelfWrite(
+            liveFile.filePath,
+            formattedContent,
+            liveFile.runtimeEnvironmentId,
+            connectionId || liveFile.runtimeEnvironmentId?.trim()
+              ? SELF_WRITE_REMOTE_TTL_MS
+              : undefined
+          )
+        }
+        // Why: adopting the formatted text into a buffer the user has typed into
+        // since the save would silently discard those keystrokes.
+        const bufferContent = stillDirty ? contentToSave : diskContent
         nextState.markFileDirty(file.id, stillDirty)
         if (!stillDirty) {
           nextState.clearEditorDraft(file.id)
         }
-        // Why: disk now holds contentToSave — rebaseline so our own save isn't flagged external; drop pending verification.
-        nextState.setLastKnownDiskSignature(file.id, getDiskBaselineSignature(contentToSave))
+        // Why: disk now holds diskContent — rebaseline so our own save isn't flagged external; drop pending verification.
+        nextState.setLastKnownDiskSignature(file.id, getDiskBaselineSignature(diskContent))
         nextState.clearPendingDiskBaselineVerification(file.id)
         // Why: the write made disk match the buffer, so clear any now-stale changed-on-disk conflict.
         const savedFile = nextState.openFiles.find((openFile) => openFile.id === file.id)
@@ -143,7 +167,7 @@ export function attachEditorAutosaveController(store: AppStoreApi): () => void {
 
         window.dispatchEvent(
           new CustomEvent<EditorFileSavedDetail>(ORCA_EDITOR_FILE_SAVED_EVENT, {
-            detail: { fileId: file.id, content: contentToSave }
+            detail: { fileId: file.id, content: bufferContent }
           })
         )
       })

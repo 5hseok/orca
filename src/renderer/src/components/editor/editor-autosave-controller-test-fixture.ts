@@ -15,14 +15,26 @@ export type EditorWindowStub = {
   api: {
     fs: {
       writeFile: ReturnType<typeof vi.fn>
+      readFile: ReturnType<typeof vi.fn>
+    }
+    editor: {
+      formatOnSave: ReturnType<typeof vi.fn>
     }
   }
 }
 
 /** Stubs the global window with an isolated event target and fs bridge;
- *  returns the writeFile mock for assertions. */
-export function stubEditorWindow(): ReturnType<typeof vi.fn> {
+ *  returns the writeFile mock for assertions. Format-on-save is stubbed as
+ *  "nothing configured" so suites that don't care about it stay unaffected. */
+export function stubEditorWindow(overrides?: {
+  readFile?: ReturnType<typeof vi.fn>
+  formatOnSave?: ReturnType<typeof vi.fn>
+}): ReturnType<typeof vi.fn> {
   const writeFile = vi.fn().mockResolvedValue(undefined)
+  const readFile = overrides?.readFile ?? vi.fn().mockResolvedValue({ content: '' })
+  const formatOnSave =
+    overrides?.formatOnSave ??
+    vi.fn().mockResolvedValue({ status: 'skipped', reason: 'not-configured' })
   const eventTarget = new EventTarget()
   vi.stubGlobal('window', {
     addEventListener: eventTarget.addEventListener.bind(eventTarget),
@@ -32,7 +44,11 @@ export function stubEditorWindow(): ReturnType<typeof vi.fn> {
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
     api: {
       fs: {
-        writeFile
+        writeFile,
+        readFile
+      },
+      editor: {
+        formatOnSave
       }
     }
   } satisfies EditorWindowStub)
@@ -45,7 +61,7 @@ export function createEditorStore(): StoreApi<AppState> {
     activeWorktreeId: 'wt-1',
     repos: [],
     worktreesByRepo: {
-      'repo-1': [{ id: 'wt-1', repoId: 'repo-1', hostId: 'local' }]
+      'repo-1': [{ id: 'wt-1', repoId: 'repo-1', hostId: 'local', path: '/repo' }]
     },
     detectedWorktreesByRepo: {},
     runtimeEnvironments: [],
