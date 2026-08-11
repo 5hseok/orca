@@ -4,6 +4,7 @@ import type {
   Project,
   ProjectUpdateArgs,
   Repo,
+  RepoFormatOnSaveSettings,
   RepoHookSettings
 } from '../../../../shared/types'
 import { getRepoKindLabel, isFolderRepo } from '../../../../shared/repo-kind'
@@ -15,6 +16,8 @@ import { Trash2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { RepositoryHooksSection } from './RepositoryHooksSection'
+import { RepositoryFormatOnSaveSection } from './RepositoryFormatOnSaveSection'
+import { FORMAT_ON_SAVE_SEARCH_TITLES } from './repository-format-on-save-search-entries'
 import { McpConfigSection } from './McpConfigSection'
 import { WorktreeSymlinksSection } from './WorktreeSymlinksSection'
 import { SparsePresetSettingsSection } from './SparsePresetSettingsSection'
@@ -141,6 +144,12 @@ export function RepositoryPane({
     })
   }
 
+  const updateSelectedRepoFormatOnSave = (nextSettings: RepoFormatOnSaveSettings) => {
+    updateSelectedRepo(repo.id, {
+      formatOnSave: nextSettings
+    })
+  }
+
   const handleCopyTemplate = async () => {
     // Why: the missing-`orca.yaml` state is a migration aid, so copying the shared-template
     // snippet should be one click rather than forcing users to reconstruct the expected shape.
@@ -185,6 +194,9 @@ export function RepositoryPane({
       'When to Run Setup',
       'Custom GitHub Issue Command'
     ].includes(entry.title)
+  )
+  const formatOnSaveEntries = allEntries.filter((entry) =>
+    FORMAT_ON_SAVE_SEARCH_TITLES.includes(entry.title)
   )
   const mcpEntries = allEntries.filter((entry) => entry.title === 'MCP Configs')
   const symlinkEntries = allEntries.filter((entry) => entry.title === 'Worktree Shared Paths')
@@ -360,6 +372,14 @@ export function RepositoryPane({
       </section>
     ) : null,
     hooksSection,
+    forceFullPaneForRepoMatch || matchesSettingsSearch(searchQuery, formatOnSaveEntries) ? (
+      <RepositoryFormatOnSaveSection
+        key="format-on-save"
+        repo={repo}
+        forceVisible={forceFullPaneForRepoMatch}
+        onUpdateFormatOnSave={updateSelectedRepoFormatOnSave}
+      />
+    ) : null,
     !isFolder &&
     (forceFullPaneForRepoMatch || matchesSettingsSearch(searchQuery, sourceControlAiEntries)) ? (
       <RepositorySourceControlAiSection

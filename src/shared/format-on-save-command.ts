@@ -1,8 +1,9 @@
 import type { RepoFormatOnSaveSettings } from './types'
 import { normalizeRuntimePathSeparators } from './cross-platform-path'
 
-/** Offered in Settings as a starting point; not applied unless the user saves it. */
+/** Shown in Settings as placeholders; these are command/glob syntax, not UI copy. */
 export const SUGGESTED_FORMAT_ON_SAVE_INCLUDE = '**/*.{ts,tsx,js,jsx,json,css,md}'
+export const SUGGESTED_FORMAT_ON_SAVE_COMMAND = 'npx prettier --write ${file}'
 
 export const FORMAT_ON_SAVE_FILE_TOKEN = '${file}'
 export const FORMAT_ON_SAVE_RELATIVE_FILE_TOKEN = '${relativeFile}'
@@ -40,6 +41,18 @@ export function normalizeRepoFormatOnSaveSettings(value: unknown): RepoFormatOnS
     command,
     include
   }
+}
+
+/** Settings shows the globs as one comma-separated line; newlines are accepted for pasted lists. */
+export function parseFormatOnSaveIncludeInput(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+}
+
+export function formatOnSaveIncludeToInput(include: string[]): string {
+  return include.join(', ')
 }
 
 export function isFormatOnSaveConfigured(

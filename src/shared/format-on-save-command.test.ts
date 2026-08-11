@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   expandFormatOnSaveCommand,
+  formatOnSaveIncludeToInput,
+  parseFormatOnSaveIncludeInput,
   isFormatOnSaveConfigured,
   matchesFormatOnSaveInclude,
   normalizeRepoFormatOnSaveSettings,
@@ -109,5 +111,24 @@ describe('format-on-save command expansion', () => {
 
   it('wraps windows paths in double quotes', () => {
     expect(quoteForShell('C:\\repo\\a b.ts', 'win32')).toBe('"C:\\repo\\a b.ts"')
+  })
+})
+
+describe('format-on-save include input', () => {
+  it('splits on commas and newlines and drops empty entries', () => {
+    expect(parseFormatOnSaveIncludeInput('**/*.ts, **/*.md,\n\n  **/*.css  ,')).toEqual([
+      '**/*.ts',
+      '**/*.md',
+      '**/*.css'
+    ])
+  })
+
+  it('round-trips through the settings input', () => {
+    const include = ['**/*.ts', '**/*.md']
+    expect(parseFormatOnSaveIncludeInput(formatOnSaveIncludeToInput(include))).toEqual(include)
+  })
+
+  it('reads an empty field as no restriction', () => {
+    expect(parseFormatOnSaveIncludeInput('   ')).toEqual([])
   })
 })
