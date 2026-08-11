@@ -89,14 +89,10 @@ export async function maybeFormatSavedFile({
   fileContext,
   savedContent
 }: MaybeFormatSavedFileArgs): Promise<string | null> {
-  // Why: SSH and runtime hosts expose no generic command channel, so there is
-  // nothing to run there — skip before paying for an IPC round trip per save.
-  if (
-    !worktree?.path ||
-    fileContext.connectionId ||
-    file.runtimeEnvironmentId ||
-    fileContext.expectedExecutionHostId !== 'local'
-  ) {
+  // Why: runtime environments have no non-interactive exec channel, so skip them
+  // before paying for an IPC round trip per save. SSH-backed repos do have one
+  // and are handled in the main process.
+  if (!worktree?.path || file.runtimeEnvironmentId) {
     return null
   }
 

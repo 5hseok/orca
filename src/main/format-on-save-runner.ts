@@ -6,10 +6,13 @@ import {
   type FormatOnSaveResult
 } from '../shared/format-on-save-command'
 import {
+  isWindowsAbsolutePathLike,
   normalizeRuntimePathForComparison,
   normalizeRuntimePathSeparators,
   relativePathInsideRoot
 } from '../shared/cross-platform-path'
+import { stableInFlightKey } from '../shared/in-flight-promise-dedupe'
+import { getCmdExePath } from '../shared/windows-batch-spawn'
 import { parseWslPath, toLinuxPath } from './wsl'
 import type { RepoFormatOnSaveSettings } from '../shared/types'
 
@@ -22,10 +25,33 @@ export const FORMAT_ON_SAVE_TIMEOUT_MS = 20_000
 // only thing a larger cap costs is a transient buffer.
 const FORMAT_ON_SAVE_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 
+export type RemoteFormatExecResult = {
+  stdout: string
+  stderr: string
+  exitCode: number | null
+  timedOut: boolean
+  spawnError?: string
+}
+
+/**
+ * Runs the formatter on the host that owns the file. Injected rather than
+ * imported so the runner keeps no SSH provider dependency.
+ */
+export type RemoteFormatExecutor = (request: {
+  binary: string
+  args: string[]
+  cwd: string
+  timeoutMs: number
+}) => Promise<RemoteFormatExecResult>
+
 export type FormatOnSaveRequest = {
   settings: RepoFormatOnSaveSettings | undefined | null
   worktreePath: string
   absoluteFilePath: string
+  /** Present for SSH-backed repos; absent means the file lives on this machine. */
+  remoteExec?: RemoteFormatExecutor
+  /** Scopes the in-flight slot so an identical path on two hosts doesn't collide. */
+  hostScope?: string
 }
 
 // Why: autosave fires on a short debounce and a formatter rewrites the file it
@@ -35,7 +61,9 @@ const inFlightPaths = new Set<string>()
 export async function runFormatOnSave({
   settings,
   worktreePath,
-  absoluteFilePath
+  absoluteFilePath,
+  remoteExec,
+  hostScope
 }: FormatOnSaveRequest): Promise<FormatOnSaveResult> {
   if (!isFormatOnSaveConfigured(settings) || !settings) {
     return { status: 'skipped', reason: 'not-configured' }
@@ -54,13 +82,25 @@ export async function runFormatOnSave({
   // Why: use the comparison form so Windows' case-insensitive paths share one
   // in-flight slot. POSIX paths are left case-sensitive on purpose — folding them
   // would treat two genuinely different files as one.
-  const inFlightKey = normalizeRuntimePathForComparison(absoluteFilePath)
+  const inFlightKey = stableInFlightKey([
+    hostScope ?? 'local',
+    normalizeRuntimePathForComparison(absoluteFilePath)
+  ])
   if (inFlightPaths.has(inFlightKey)) {
     return { status: 'skipped', reason: 'already-running' }
   }
 
   inFlightPaths.add(inFlightKey)
   try {
+    if (remoteExec) {
+      return await executeRemoteFormatCommand({
+        command: settings.command,
+        worktreePath,
+        absoluteFilePath,
+        relativePath,
+        remoteExec
+      })
+    }
     return await executeFormatCommand({
       command: settings.command,
       worktreePath,
@@ -70,6 +110,62 @@ export async function runFormatOnSave({
   } finally {
     inFlightPaths.delete(inFlightKey)
   }
+}
+
+type RemoteFormatCommandExecution = FormatCommandExecution & {
+  remoteExec: RemoteFormatExecutor
+}
+
+async function executeRemoteFormatCommand({
+  command,
+  worktreePath,
+  absoluteFilePath,
+  relativePath,
+  remoteExec
+}: RemoteFormatCommandExecution): Promise<FormatOnSaveResult> {
+  // Why: the remote host's shell decides the quoting, not this machine's. A
+  // Windows SSH host is detected the same way the worktree hooks detect it —
+  // from the shape of the remote path.
+  const isWindowsRemote = isWindowsAbsolutePathLike(worktreePath)
+  const expanded = expandFormatOnSaveCommand({
+    command,
+    absolutePath: absoluteFilePath,
+    relativePath,
+    platform: isWindowsRemote ? 'win32' : 'linux'
+  })
+
+  let result: RemoteFormatExecResult
+  try {
+    result = await remoteExec({
+      binary: isWindowsRemote ? 'cmd.exe' : '/bin/bash',
+      args: isWindowsRemote ? ['/d', '/s', '/c', expanded] : ['-lc', expanded],
+      cwd: worktreePath,
+      timeoutMs: FORMAT_ON_SAVE_TIMEOUT_MS
+    })
+  } catch (error) {
+    // Why: a dropped relay must not be reported as the formatter rejecting the
+    // file — the save already succeeded, so this is a skip, not a failure.
+    console.warn('[format-on-save] remote exec unavailable', error)
+    return { status: 'skipped', reason: 'unsupported-host' }
+  }
+
+  if (result.spawnError) {
+    return { status: 'failed', message: result.spawnError }
+  }
+  if (result.timedOut) {
+    return {
+      status: 'failed',
+      message: `Formatter timed out after ${FORMAT_ON_SAVE_TIMEOUT_MS}ms.`
+    }
+  }
+  if (result.exitCode === 0) {
+    return { status: 'completed' }
+  }
+
+  const message = [result.stderr?.trim(), result.stdout?.trim()].find(
+    (candidate) => candidate && candidate.length > 0
+  )
+  return { status: 'failed', message: message ?? 'Formatter failed.' }
 }
 
 export function getWorktreeRelativePath(
@@ -216,11 +312,7 @@ function toFormatResult(
 }
 
 function getFormatShell(): string | undefined {
-  if (process.platform === 'win32') {
-    return process.env.ComSpec || 'cmd.exe'
-  }
-
-  return '/bin/bash'
+  return process.platform === 'win32' ? getCmdExePath() : '/bin/bash'
 }
 
 export function _resetFormatOnSaveInFlightForTests(): void {

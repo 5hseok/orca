@@ -156,13 +156,18 @@ describe('RepositoryFormatOnSaveSection', () => {
     expect(onUpdateFormatOnSave).not.toHaveBeenCalled()
   })
 
-  it('warns that a remote project is saved unformatted', () => {
+  it('says nothing extra for an SSH project, which formats through the relay', () => {
     render({ ...baseRepo, connectionId: 'ssh-target-1' })
-    expect(container.textContent).toContain('This project runs on a remote host')
+    expect(container.textContent).not.toContain('runtime host')
   })
 
-  it('says nothing about remote hosts for a local project', () => {
+  it('warns that a runtime-hosted project is saved unformatted', () => {
+    render({ ...baseRepo, executionHostId: 'runtime:env-1' })
+    expect(container.textContent).toContain('runtime host')
+  })
+
+  it('says nothing about hosts for a local project', () => {
     render()
-    expect(container.textContent).not.toContain('This project runs on a remote host')
+    expect(container.textContent).not.toContain('runtime host')
   })
 })

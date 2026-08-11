@@ -7,7 +7,9 @@ import {
   type FormatOnSaveResult
 } from '../../shared/format-on-save-command'
 import { getRepoExecutionHostId, parseExecutionHostId } from '../../shared/execution-host'
+import { getSshGitProvider } from '../providers/ssh-git-dispatch'
 import { resolveRegisteredWorktreePath } from './filesystem-auth'
+import type { RemoteFormatExecutor } from '../format-on-save-runner'
 
 type FormatOnSaveArgs = {
   repoId: string
@@ -35,8 +37,28 @@ export function registerEditorFormatOnSaveHandlers(store: Store): void {
       }
 
       const host = parseExecutionHostId(getRepoExecutionHostId(repo))
-      if (repo.connectionId || (host && host.kind !== 'local')) {
+      // Why: runtime hosts have no non-interactive exec channel of their own, so
+      // the formatter can't reach the file. SSH does, via agent.execNonInteractive.
+      if (!repo.connectionId && host && host.kind !== 'local') {
         return { status: 'skipped', reason: 'unsupported-host' }
+      }
+
+      if (repo.connectionId) {
+        const remoteExec = createRemoteFormatExecutor(repo.connectionId)
+        if (!remoteExec) {
+          // Why: a disconnected SSH host isn't a formatter failure — the save
+          // already landed, so stay quiet and let the next save format.
+          return { status: 'skipped', reason: 'unsupported-host' }
+        }
+        return runFormatOnSave({
+          settings,
+          // Why: remote paths are the remote host's to validate; the local
+          // registered-root check would reject or rewrite them.
+          worktreePath: args.worktreePath,
+          absoluteFilePath: args.filePath,
+          remoteExec,
+          hostScope: repo.connectionId
+        })
       }
 
       const worktreePath = await resolveRegisteredWorktreePath(args.worktreePath, store)
@@ -47,6 +69,16 @@ export function registerEditorFormatOnSaveHandlers(store: Store): void {
       })
     }
   )
+}
+
+function createRemoteFormatExecutor(connectionId: string): RemoteFormatExecutor | null {
+  const provider = getSshGitProvider(connectionId)
+  if (!provider) {
+    return null
+  }
+
+  return ({ binary, args, cwd, timeoutMs }) =>
+    provider.execNonInteractive(binary, args, cwd, timeoutMs)
 }
 
 function parseFormatOnSaveArgs(rawArgs: unknown): FormatOnSaveArgs {

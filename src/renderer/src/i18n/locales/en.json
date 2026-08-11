@@ -10089,7 +10089,8 @@
           "commandHint": "A non-zero exit leaves the saved file untouched and shows the formatter’s error.",
           "includeTitle": "Included Files",
           "includeDescription": "Comma-separated globs limiting which saved files run the command. Leave empty to format every saved file.",
-          "remoteNotice": "This project runs on a remote host. Saves there are written unformatted — Orca only runs the formatter for local and WSL worktrees."
+          "remoteNotice": "This project runs on a remote host. Saves there are written unformatted — Orca only runs the formatter for local and WSL worktrees.",
+          "runtimeHostNotice": "This project runs on a runtime host, which has no channel for running the command. Saves there are written unformatted; local, WSL, and SSH worktrees are formatted."
         }
       },
       "right": {

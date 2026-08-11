@@ -9,7 +9,7 @@ import {
   SUGGESTED_FORMAT_ON_SAVE_COMMAND,
   SUGGESTED_FORMAT_ON_SAVE_INCLUDE
 } from '../../../../shared/format-on-save-command'
-import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
+import { getRepoExecutionHostId, parseExecutionHostId } from '../../../../shared/execution-host'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { SearchableSetting } from './SearchableSetting'
@@ -31,8 +31,10 @@ export function RepositoryFormatOnSaveSection({
   const settings = normalizeRepoFormatOnSaveSettings(
     repo.formatOnSave ?? getDefaultRepoFormatOnSaveSettings()
   )
-  const isRemote =
-    Boolean(repo.connectionId) || getRepoExecutionHostId(repo) !== LOCAL_EXECUTION_HOST_ID
+  // Why: SSH hosts format through the relay's non-interactive exec channel;
+  // runtime environments have no equivalent, so only those are called out.
+  const executionHost = parseExecutionHostId(getRepoExecutionHostId(repo))
+  const isRuntimeHost = !repo.connectionId && executionHost?.kind === 'runtime'
 
   const [commandDraft, setCommandDraft] = useState(settings.command)
   const [includeDraft, setIncludeDraft] = useState(formatOnSaveIncludeToInput(settings.include))
@@ -217,11 +219,11 @@ export function RepositoryFormatOnSaveSection({
         />
       </SearchableSetting>
 
-      {isRemote ? (
+      {isRuntimeHost ? (
         <p className="max-w-3xl text-xs text-muted-foreground">
           {translate(
-            'auto.components.settings.RepositoryFormatOnSaveSection.remoteNotice',
-            'This project runs on a remote host. Saves there are written unformatted — Orca only runs the formatter for local and WSL worktrees.'
+            'auto.components.settings.RepositoryFormatOnSaveSection.runtimeHostNotice',
+            'This project runs on a runtime host, which has no channel for running the command. Saves there are written unformatted; local, WSL, and SSH worktrees are formatted.'
           )}
         </p>
       ) : null}

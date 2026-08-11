@@ -5,13 +5,15 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   removeHandler: vi.fn(),
   runFormatOnSave: vi.fn(),
-  resolveRegisteredWorktreePath: vi.fn()
+  resolveRegisteredWorktreePath: vi.fn(),
+  getSshGitProvider: vi.fn()
 }))
 
 const handleMock = mocks.handle
 const removeHandlerMock = mocks.removeHandler
 const runFormatOnSaveMock = mocks.runFormatOnSave
 const resolveRegisteredWorktreePathMock = mocks.resolveRegisteredWorktreePath
+const getSshGitProviderMock = mocks.getSshGitProvider
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -26,6 +28,10 @@ vi.mock('../format-on-save-runner', () => ({
 
 vi.mock('./filesystem-auth', () => ({
   resolveRegisteredWorktreePath: mocks.resolveRegisteredWorktreePath
+}))
+
+vi.mock('../providers/ssh-git-dispatch', () => ({
+  getSshGitProvider: mocks.getSshGitProvider
 }))
 
 import { registerEditorFormatOnSaveHandlers } from './editor-format-on-save'
@@ -72,6 +78,8 @@ beforeEach(() => {
   runFormatOnSaveMock.mockResolvedValue({ status: 'completed' })
   resolveRegisteredWorktreePathMock.mockReset()
   resolveRegisteredWorktreePathMock.mockImplementation(async (value: string) => value)
+  getSshGitProviderMock.mockReset()
+  getSshGitProviderMock.mockReturnValue(undefined)
 })
 
 describe('editor:formatOnSave handler', () => {
@@ -99,7 +107,36 @@ describe('editor:formatOnSave handler', () => {
     expect(runFormatOnSaveMock).not.toHaveBeenCalled()
   })
 
-  it('skips SSH-backed repos instead of running a local command for a remote file', async () => {
+  it('formats an SSH repo through its relay rather than running the command locally', async () => {
+    const execNonInteractive = vi.fn().mockResolvedValue({
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+      timedOut: false
+    })
+    getSshGitProviderMock.mockReturnValue({ execNonInteractive })
+    const invoke = registerWith(localRepo({ connectionId: 'ssh-target-1' }))
+
+    await invoke(VALID_ARGS)
+
+    const passed = runFormatOnSaveMock.mock.calls[0][0]
+    expect(passed.remoteExec).toBeTypeOf('function')
+    expect(passed.hostScope).toBe('ssh-target-1')
+    // Why: remote paths belong to the remote host; the local registered-root
+    // check would reject or rewrite them.
+    expect(resolveRegisteredWorktreePathMock).not.toHaveBeenCalled()
+
+    await passed.remoteExec({
+      binary: '/bin/bash',
+      args: ['-lc', 'fmt'],
+      cwd: '/srv',
+      timeoutMs: 1
+    })
+    expect(execNonInteractive).toHaveBeenCalledWith('/bin/bash', ['-lc', 'fmt'], '/srv', 1)
+  })
+
+  it('skips an SSH repo whose relay is not connected', async () => {
+    getSshGitProviderMock.mockReturnValue(undefined)
     const invoke = registerWith(localRepo({ connectionId: 'ssh-target-1' }))
 
     await expect(invoke(VALID_ARGS)).resolves.toEqual({

@@ -1,5 +1,6 @@
 import type { RepoFormatOnSaveSettings } from './types'
 import { normalizeRuntimePathSeparators } from './cross-platform-path'
+import { escapeRegex } from './string-utils'
 
 /** Shown in Settings as placeholders; these are command/glob syntax, not UI copy. */
 export const SUGGESTED_FORMAT_ON_SAVE_INCLUDE = '**/*.{ts,tsx,js,jsx,json,css,md}'
@@ -13,7 +14,7 @@ export type FormatOnSaveSkipReason =
   | 'not-included'
   | 'outside-worktree'
   | 'already-running'
-  /** SSH and runtime hosts expose no generic command channel, so the file is saved unformatted. */
+  /** Runtime hosts, and SSH hosts whose relay is down, have no exec channel to reach the file. */
   | 'unsupported-host'
 
 export type FormatOnSaveResult =
@@ -136,14 +137,11 @@ function compileGlobBody(pattern: string): string {
       }
     }
 
-    source += escapeRegExpChar(char)
+    // Why: `*` and `?` are consumed above, so whatever reaches here is a literal.
+    source += escapeRegex(char)
   }
 
   return source
-}
-
-function escapeRegExpChar(char: string): string {
-  return /[.+^${}()|[\]\\]/.test(char) ? `\\${char}` : char
 }
 
 type FormatOnSaveCommandExpansion = {
@@ -175,9 +173,9 @@ export function expandFormatOnSaveCommand({
 
 export function quoteForShell(value: string, platform: NodeJS.Platform): string {
   if (platform === 'win32') {
-    // Why: `"` and `<>|&` are already illegal in Windows paths, so wrapping is
-    // enough; a lone `%` only expands as part of a defined `%VAR%` pair.
-    return `"${value}"`
+    // Why: doubling `"` matches how cmd.exe unquotes, and a lone `%` only
+    // expands as part of a defined `%VAR%` pair.
+    return `"${value.split('"').join('""')}"`
   }
 
   return `'${value.split("'").join(`'\\''`)}'`
