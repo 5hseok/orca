@@ -70,6 +70,49 @@ describe('RepositoryFormatOnSaveSection', () => {
     expect(container.textContent).toContain('Set a formatter command below to turn this on.')
   })
 
+  it('points at the command field when the switch is clicked without one', () => {
+    render()
+    act(() => container.querySelector<HTMLButtonElement>('[role="switch"]')?.click())
+
+    const command = input('format-on-save-command')
+    expect(command.getAttribute('aria-invalid')).toBe('true')
+    expect(command.parentElement?.className).toContain('animate-format-on-save-command-nudge')
+    expect(document.activeElement).toBe(command)
+    // Why: nothing may be written — a command-less enabled config reads back as off.
+    expect(onUpdateFormatOnSave).not.toHaveBeenCalled()
+  })
+
+  it('clears the invalid state as soon as the user types a command', () => {
+    render()
+    act(() => container.querySelector<HTMLButtonElement>('[role="switch"]')?.click())
+    expect(input('format-on-save-command').getAttribute('aria-invalid')).toBe('true')
+
+    typeAndBlur('format-on-save-command', 'prettier --write ${file}')
+    expect(input('format-on-save-command').getAttribute('aria-invalid')).toBeNull()
+  })
+
+  it('turns the feature on when a command is already configured', () => {
+    render({
+      ...baseRepo,
+      formatOnSave: { enabled: false, command: 'prettier --write ${file}', include: [] }
+    })
+    act(() => container.querySelector<HTMLButtonElement>('[role="switch"]')?.click())
+
+    expect(onUpdateFormatOnSave).toHaveBeenCalledWith(expect.objectContaining({ enabled: true }))
+    expect(input('format-on-save-command').getAttribute('aria-invalid')).toBeNull()
+  })
+
+  it('stops nudging once the animation finishes', () => {
+    render()
+    act(() => container.querySelector<HTMLButtonElement>('[role="switch"]')?.click())
+
+    const wrapper = input('format-on-save-command').parentElement
+    act(() => {
+      wrapper?.dispatchEvent(new Event('animationend', { bubbles: true }))
+    })
+    expect(wrapper?.className).not.toContain('animate-format-on-save-command-nudge')
+  })
+
   it('commits a typed command on blur', () => {
     render()
     typeAndBlur('format-on-save-command', '  npx prettier --write ${file}  ')

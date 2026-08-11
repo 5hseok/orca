@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Repo, RepoFormatOnSaveSettings } from '../../../../shared/types'
 import {
   formatOnSaveIncludeToInput,
@@ -15,6 +15,7 @@ import { Label } from '../ui/label'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsSubsectionHeader, SettingsSwitchRow } from './SettingsFormControls'
 import { translate } from '@/i18n/i18n'
+import { cn } from '@/lib/utils'
 
 type RepositoryFormatOnSaveSectionProps = {
   repo: Repo
@@ -49,12 +50,34 @@ export function RepositoryFormatOnSaveSection({
     setIncludeDraft(formatOnSaveIncludeToInput(settings.include))
   }
 
+  const hasCommand = settings.command.trim().length > 0
+  const commandInputRef = useRef<HTMLInputElement>(null)
+  const [needsCommand, setNeedsCommand] = useState(false)
+  const [nudging, setNudging] = useState(false)
+
+  // Why: the switch cannot turn on without a command, so a click points at the
+  // field that is missing instead of springing back with no explanation.
+  const handleToggle = (): void => {
+    if (!hasCommand) {
+      setNeedsCommand(true)
+      setNudging(true)
+      commandInputRef.current?.focus()
+      return
+    }
+    setNeedsCommand(false)
+    onUpdateFormatOnSave(
+      normalizeRepoFormatOnSaveSettings({ ...settings, enabled: !settings.enabled })
+    )
+  }
+
   const commitCommand = (): void => {
     const command = commandDraft.trim()
     if (command === settings.command) {
       return
     }
-    onUpdateFormatOnSave({ ...settings, command, enabled: settings.enabled && command.length > 0 })
+    // Why: normalize on write too, so a command-less config never persists
+    // `enabled: true` — a state the reader would silently correct anyway.
+    onUpdateFormatOnSave(normalizeRepoFormatOnSaveSettings({ ...settings, command }))
   }
 
   const commitInclude = (): void => {
@@ -94,12 +117,10 @@ export function RepositoryFormatOnSaveSection({
           label={enableLabel}
           description={enableDescription}
           checked={settings.enabled}
-          onChange={() => onUpdateFormatOnSave({ ...settings, enabled: !settings.enabled })}
+          onChange={handleToggle}
         />
-        {settings.command.trim().length === 0 ? (
-          // Why: an enabled toggle with no command would run nothing on every save,
-          // so the switch stays off until one is set — say so instead of silently ignoring the click.
-          <p className="text-xs text-muted-foreground">
+        {!hasCommand ? (
+          <p className={cn('text-xs', needsCommand ? 'text-destructive' : 'text-muted-foreground')}>
             {translate(
               'auto.components.settings.RepositoryFormatOnSaveSection.needsCommand',
               'Set a formatter command below to turn this on.'
@@ -127,20 +148,32 @@ export function RepositoryFormatOnSaveSection({
             'Formatter Command'
           )}
         </Label>
-        <Input
-          id="format-on-save-command"
-          value={commandDraft}
-          spellCheck={false}
-          placeholder={SUGGESTED_FORMAT_ON_SAVE_COMMAND}
-          onChange={(event) => setCommandDraft(event.target.value)}
-          onBlur={commitCommand}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              commitCommand()
-            }
-          }}
-          className="font-mono text-xs"
-        />
+        <div
+          className={cn(nudging && 'animate-format-on-save-command-nudge')}
+          onAnimationEnd={() => setNudging(false)}
+        >
+          <Input
+            id="format-on-save-command"
+            ref={commandInputRef}
+            value={commandDraft}
+            spellCheck={false}
+            aria-invalid={needsCommand || undefined}
+            placeholder={SUGGESTED_FORMAT_ON_SAVE_COMMAND}
+            onChange={(event) => {
+              setCommandDraft(event.target.value)
+              if (event.target.value.trim().length > 0) {
+                setNeedsCommand(false)
+              }
+            }}
+            onBlur={commitCommand}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                commitCommand()
+              }
+            }}
+            className="font-mono text-xs"
+          />
+        </div>
         <p className="text-xs text-muted-foreground">
           {translate(
             'auto.components.settings.RepositoryFormatOnSaveSection.commandHint',
