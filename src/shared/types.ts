@@ -254,6 +254,8 @@ export type Repo = {
   /** Optional repo-scoped workspace root override. Relative paths resolve from `path`. */
   worktreeBasePath?: string
   hookSettings?: RepoHookSettings
+  /** Formatter run after editor saves. Absent = never formatted. */
+  formatOnSave?: RepoFormatOnSaveSettings
   /** SSH target ID for remote repos. null/undefined = local. */
   connectionId?: string | null
   /**
@@ -2151,6 +2153,15 @@ export type RepoHookSettings = {
     setup: string
     archive: string
   }
+}
+
+/** Per-repo format-on-save command, run after the editor writes a file to disk. */
+export type RepoFormatOnSaveSettings = {
+  enabled: boolean
+  /** Shell command run in the worktree root. `${file}` / `${relativeFile}` expand to the saved path. */
+  command: string
+  /** Globs limiting which saved files run the command. Empty = every saved file. */
+  include: string[]
 }
 
 export type WorktreeSetupLaunch = {

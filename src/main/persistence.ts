@@ -4547,6 +4547,7 @@ export class Store {
         | 'upstream'
         | 'gitRemoteIdentity'
         | 'hookSettings'
+        | 'formatOnSave'
         | 'worktreeBaseRef'
         | 'worktreeBasePath'
         | 'kind'

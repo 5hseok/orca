@@ -9,6 +9,7 @@ import type {
   HostedReviewProvider
 } from '../shared/hosted-review'
 import type { NativeFileDropPayload } from '../shared/native-file-drop'
+import type { FormatOnSaveResult } from '../shared/format-on-save-command'
 import type { BrowserFindSource } from '../shared/browser-find-source'
 import type { DashboardSnapshot, DashboardRevealAgentArgs } from '../shared/dashboard-snapshot'
 import type {
@@ -1203,6 +1204,7 @@ export type PreloadApi = {
           | 'repoIcon'
           | 'upstream'
           | 'hookSettings'
+          | 'formatOnSave'
           | 'worktreeBaseRef'
           | 'worktreeBasePath'
           | 'kind'
@@ -2565,6 +2567,13 @@ export type PreloadApi = {
       content: string
       hostId?: ExecutionHostId
     }) => Promise<void>
+  }
+  editor: {
+    formatOnSave: (args: {
+      repoId: string
+      worktreePath: string
+      filePath: string
+    }) => Promise<FormatOnSaveResult>
   }
   ephemeralVm: {
     listRecipes: (args: { repoId: string }) => Promise<{

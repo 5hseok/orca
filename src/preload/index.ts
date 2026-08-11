@@ -10,6 +10,7 @@ import type {
   TerminalPreviewDataPayload
 } from '../shared/terminal-preview'
 import type { CliInstallStatus } from '../shared/cli-install-types'
+import type { FormatOnSaveResult } from '../shared/format-on-save-command'
 import type { AgentHookInstallStatus } from '../shared/agent-hook-types'
 import type { CodexConfigSyncStatus } from '../shared/codex-config-sync-types'
 import type { TerminalPaneSplitSource } from '../shared/feature-education-telemetry'
@@ -2885,6 +2886,14 @@ const api = {
       content: string
       hostId?: ExecutionHostId
     }): Promise<void> => ipcRenderer.invoke('hooks:writeIssueCommand', args)
+  },
+
+  editor: {
+    formatOnSave: (args: {
+      repoId: string
+      worktreePath: string
+      filePath: string
+    }): Promise<FormatOnSaveResult> => ipcRenderer.invoke('editor:formatOnSave', args)
   },
 
   ephemeralVm: {

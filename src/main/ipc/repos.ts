@@ -2082,6 +2082,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
             | 'repoIcon'
             | 'upstream'
             | 'hookSettings'
+            | 'formatOnSave'
             | 'worktreeBaseRef'
             | 'worktreeBasePath'
             | 'kind'

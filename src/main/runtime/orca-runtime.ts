@@ -17941,6 +17941,7 @@ export class OrcaRuntimeService {
         | 'repoIcon'
         | 'upstream'
         | 'hookSettings'
+        | 'formatOnSave'
         | 'worktreeBaseRef'
         | 'worktreeBasePath'
         | 'kind'
