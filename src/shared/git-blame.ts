@@ -20,6 +20,21 @@ export const GIT_BLAME_INDEX_CONTENTS = 'index' as const
 
 export type GitBlameContentsSource = typeof GIT_BLAME_INDEX_CONTENTS
 
+const FULL_GIT_OBJECT_ID_RE = /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/
+
+export function parseGitBlameRevision(revision: unknown): string | undefined {
+  if (revision == null || revision === '') {
+    return undefined
+  }
+  if (revision === GIT_BLAME_HEAD_REVISION) {
+    return GIT_BLAME_HEAD_REVISION
+  }
+  if (typeof revision !== 'string' || !FULL_GIT_OBJECT_ID_RE.test(revision)) {
+    throw new Error('revision must be a full git object id')
+  }
+  return revision
+}
+
 export function isUncommittedBlameOid(oid: string): boolean {
   return oid.length > 0 && GIT_BLAME_ZERO_OID_RE.test(oid)
 }

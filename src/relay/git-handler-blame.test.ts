@@ -33,6 +33,18 @@ describe('GitHandler blame', () => {
     ).rejects.toThrow('outside the worktree')
   })
 
+  it('rejects a flag-like blame revision before git runs', async () => {
+    gitInit(tmpDir)
+
+    await expect(
+      dispatcher.callRequest('git.blame', {
+        worktreePath: tmpDir,
+        filePath: 'note.txt',
+        revision: '--output=/tmp/pwned'
+      })
+    ).rejects.toThrow('revision must be a full git object id')
+  })
+
   it('blames staged index contents when they differ from the working tree', async () => {
     gitInit(tmpDir)
     writeFileSync(`${tmpDir}/note.txt`, 'hello\n')

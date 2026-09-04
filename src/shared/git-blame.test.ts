@@ -8,7 +8,8 @@ import {
   GIT_BLAME_HEAD_REVISION,
   GIT_BLAME_INDEX_CONTENTS,
   isUncommittedBlameOid,
-  parseBlamePorcelain
+  parseBlamePorcelain,
+  parseGitBlameRevision
 } from './git-blame'
 
 const SAMPLE = [
@@ -138,5 +139,20 @@ describe('buildGitBlameArgv', () => {
       '--',
       'src/a.ts'
     ])
+  })
+})
+
+describe('parseGitBlameRevision', () => {
+  it('allows HEAD and a full object id', () => {
+    expect(parseGitBlameRevision(undefined)).toBeUndefined()
+    expect(parseGitBlameRevision(GIT_BLAME_HEAD_REVISION)).toBe(GIT_BLAME_HEAD_REVISION)
+    expect(parseGitBlameRevision('a'.repeat(40))).toBe('a'.repeat(40))
+  })
+
+  it('rejects a flag-like revision that would sit before end-of-options', () => {
+    expect(() => parseGitBlameRevision('--output=/tmp/pwned')).toThrow(
+      'revision must be a full git object id'
+    )
+    expect(() => parseGitBlameRevision('HEAD~1')).toThrow('revision must be a full git object id')
   })
 })
