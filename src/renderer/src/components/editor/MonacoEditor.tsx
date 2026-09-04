@@ -87,11 +87,15 @@ export default function MonacoEditor({
 
   const settings = useAppStore((s) => s.settings)
   const editorFontZoomLevel = useAppStore((s) => s.editorFontZoomLevel)
+  const fileIsDirty = useAppStore(
+    (s) => s.openFiles.find((file) => file.id === fileId)?.isDirty === true
+  )
   useGitLineBlame({
     editor: mountedEditor,
     enabled:
       !autoHeight &&
       !liveTail &&
+      !fileIsDirty &&
       Boolean(worktreeId) &&
       settings?.editorGitLineBlameEnabled !== false,
     worktreeId,

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { editor } from 'monaco-editor'
+import type { GitBlameContentsSource } from '../../../../shared/git-blame'
 import { useAppStore } from '@/store'
 import { useGitLineBlame } from './useGitLineBlame'
 
@@ -8,7 +9,10 @@ export function useDiffPaneGitLineBlame(args: {
   relativePath: string
   originalBlamePath?: string
   originalBlameRevision?: string
+  originalContentsSource?: GitBlameContentsSource
   modifiedBlameRevision?: string
+  modifiedContentsSource?: GitBlameContentsSource
+  modifiedBufferDirty?: boolean
   widgetKeyPrefix: string
   extraEnabled?: boolean
 }): {
@@ -34,14 +38,16 @@ export function useDiffPaneGitLineBlame(args: {
     worktreeId: args.worktreeId,
     relativePath: originalPath,
     revision: args.originalBlameRevision,
+    contentsSource: args.originalContentsSource,
     widgetKey: `${args.widgetKeyPrefix}-original`
   })
   useGitLineBlame({
     editor: modifiedEditor,
-    enabled,
+    enabled: enabled && args.modifiedBufferDirty !== true,
     worktreeId: args.worktreeId,
     relativePath: args.relativePath,
     revision: args.modifiedBlameRevision,
+    contentsSource: args.modifiedContentsSource,
     widgetKey: `${args.widgetKeyPrefix}-modified`
   })
 

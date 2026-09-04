@@ -1,5 +1,10 @@
-import type { GitBlameResult } from '../../shared/git-blame'
-import { buildGitBlameArgv, parseBlamePorcelain } from '../../shared/git-blame'
+import type { GitBlameContentsSource, GitBlameResult } from '../../shared/git-blame'
+import {
+  buildGitBlameArgv,
+  buildGitShowIndexArgv,
+  GIT_BLAME_INDEX_CONTENTS,
+  parseBlamePorcelain
+} from '../../shared/git-blame'
 import { gitReadOptionsForWorktree, type GitRuntimeOptions } from './git-runtime-options'
 import { gitExecFileAsync } from './runner'
 
@@ -10,17 +15,28 @@ export async function getFileBlame(
   worktreePath: string,
   filePath: string,
   options: GitRuntimeOptions = {},
-  revision?: string
+  revision?: string,
+  contentsSource?: GitBlameContentsSource
 ): Promise<GitBlameResult> {
   try {
-    const { stdout } = await gitExecFileAsync(buildGitBlameArgv(filePath, revision), {
-      ...gitReadOptionsForWorktree(worktreePath, {
-        ...options,
-        admissionTier: options.admissionTier ?? 'interactive'
-      }),
+    const readOptions = gitReadOptionsForWorktree(worktreePath, {
+      ...options,
+      admissionTier: options.admissionTier ?? 'interactive'
+    })
+    const execOptions = {
+      ...readOptions,
       maxBuffer: BLAME_MAX_BUFFER_BYTES,
       timeout: BLAME_TIMEOUT_MS
-    })
+    }
+    let stdin: string | undefined
+    if (contentsSource === GIT_BLAME_INDEX_CONTENTS) {
+      const shown = await gitExecFileAsync(buildGitShowIndexArgv(filePath), execOptions)
+      stdin = shown.stdout
+    }
+    const { stdout } = await gitExecFileAsync(
+      buildGitBlameArgv(filePath, revision, contentsSource),
+      stdin === undefined ? execOptions : { ...execOptions, stdin }
+    )
     return { status: 'ready', lines: parseBlamePorcelain(stdout) }
   } catch {
     return { status: 'unavailable', lines: [] }

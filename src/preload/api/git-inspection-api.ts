@@ -11,7 +11,7 @@ import type {
 } from '../../shared/git-status-types'
 import type { GitPushTarget } from '../../shared/worktree/types'
 import type { GitHistoryOptions, GitHistoryResult } from '../../shared/git-history'
-import type { GitBlameResult } from '../../shared/git-blame'
+import type { GitBlameContentsSource, GitBlameResult } from '../../shared/git-blame'
 import type {
   CommitMessageAgentCapability,
   CommitMessageModelCapability
@@ -80,6 +80,7 @@ export type GitInspectionApi = {
     worktreePath: string
     filePath: string
     revision?: string
+    contentsSource?: GitBlameContentsSource
     connectionId?: string
   }) => Promise<GitBlameResult>
   upstreamStatus: (args: {

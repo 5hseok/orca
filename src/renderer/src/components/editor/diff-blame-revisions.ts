@@ -1,9 +1,31 @@
-import { GIT_BLAME_HEAD_REVISION } from '../../../../shared/git-blame'
+import {
+  GIT_BLAME_HEAD_REVISION,
+  GIT_BLAME_INDEX_CONTENTS,
+  type GitBlameContentsSource
+} from '../../../../shared/git-blame'
 import type { DiffSource } from '@/store/slices/editor/types/open-file'
 
 export type DiffBlameRevisionPair = {
   originalRevision?: string
   modifiedRevision?: string
+  originalContentsSource?: GitBlameContentsSource
+  modifiedContentsSource?: GitBlameContentsSource
+}
+
+function getStagedBlameRevisions(): DiffBlameRevisionPair {
+  return {
+    originalRevision: GIT_BLAME_HEAD_REVISION,
+    modifiedRevision: GIT_BLAME_HEAD_REVISION,
+    modifiedContentsSource: GIT_BLAME_INDEX_CONTENTS
+  }
+}
+
+function getUnstagedBlameRevisions(): DiffBlameRevisionPair {
+  return {
+    originalRevision: GIT_BLAME_HEAD_REVISION,
+    originalContentsSource: GIT_BLAME_INDEX_CONTENTS,
+    modifiedRevision: undefined
+  }
 }
 
 export function getFileDiffBlameRevisions(file: {
@@ -27,7 +49,10 @@ export function getFileDiffBlameRevisions(file: {
       modifiedRevision: file.branchCompare?.headOid ?? undefined
     }
   }
-  return { originalRevision: GIT_BLAME_HEAD_REVISION, modifiedRevision: undefined }
+  if (file.diffSource === 'staged') {
+    return getStagedBlameRevisions()
+  }
+  return getUnstagedBlameRevisions()
 }
 
 export function getCombinedSectionBlameRevisions(args: {
@@ -45,6 +70,12 @@ export function getCombinedSectionBlameRevisions(args: {
       diffSource: 'combined-branch',
       branchCompare: args.branchCompare
     })
+  }
+  if (args.sectionArea === 'staged') {
+    return getStagedBlameRevisions()
+  }
+  if (args.sectionArea === 'unstaged') {
+    return getUnstagedBlameRevisions()
   }
   return getFileDiffBlameRevisions({
     diffSource: args.diffSource,

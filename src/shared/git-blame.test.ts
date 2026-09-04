@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   blameLineByNumber,
   buildGitBlameArgv,
+  buildGitShowIndexArgv,
   formatBlameAnnotation,
   formatBlameRelativeTime,
   GIT_BLAME_HEAD_REVISION,
+  GIT_BLAME_INDEX_CONTENTS,
   isUncommittedBlameOid,
   parseBlamePorcelain
 } from './git-blame'
@@ -120,5 +122,21 @@ describe('buildGitBlameArgv', () => {
     ).toBeLessThan(
       buildGitBlameArgv('src/a.ts', GIT_BLAME_HEAD_REVISION).indexOf('--end-of-options')
     )
+  })
+
+  it('blames stdin contents against HEAD for the index', () => {
+    expect(buildGitShowIndexArgv('src\\a.ts')).toEqual(['show', '--end-of-options', ':src/a.ts'])
+    expect(buildGitBlameArgv('src/a.ts', undefined, GIT_BLAME_INDEX_CONTENTS)).toEqual([
+      'blame',
+      '--encoding=UTF-8',
+      '--line-porcelain',
+      '-w',
+      '--contents',
+      '-',
+      GIT_BLAME_HEAD_REVISION,
+      '--end-of-options',
+      '--',
+      'src/a.ts'
+    ])
   })
 })

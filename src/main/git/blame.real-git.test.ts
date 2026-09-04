@@ -85,4 +85,32 @@ describe('getFileBlame real git', () => {
       summary: 'Add note'
     })
   })
+
+  it('blames staged index contents when they differ from the working tree', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'orca-blame-index-'))
+    tempRoots.push(root)
+    git(root, ['init', '-q'])
+    git(root, ['config', 'user.email', 'ada@example.com'])
+    git(root, ['config', 'user.name', 'Ada Lovelace'])
+    git(root, ['config', 'commit.gpgSign', 'false'])
+    await writeFile(path.join(root, 'note.txt'), 'hello\n', 'utf8')
+    git(root, ['add', 'note.txt'])
+    git(root, ['commit', '-q', '-m', 'Add note'])
+    const committedOid = git(root, ['rev-parse', 'HEAD'])
+
+    await writeFile(path.join(root, 'note.txt'), 'hello\nstaged\n', 'utf8')
+    git(root, ['add', 'note.txt'])
+    await writeFile(path.join(root, 'note.txt'), 'hello\nstaged\nworktree\n', 'utf8')
+
+    const workingTree = await getFileBlame(root, 'note.txt')
+    expect(workingTree.status).toBe('ready')
+    expect(workingTree.lines).toHaveLength(3)
+    expect(isUncommittedBlameOid(workingTree.lines[2]?.commitOid ?? '')).toBe(true)
+
+    const index = await getFileBlame(root, 'note.txt', {}, undefined, 'index')
+    expect(index.status).toBe('ready')
+    expect(index.lines).toHaveLength(2)
+    expect(index.lines[0]?.commitOid).toBe(committedOid)
+    expect(isUncommittedBlameOid(index.lines[1]?.commitOid ?? '')).toBe(true)
+  })
 })

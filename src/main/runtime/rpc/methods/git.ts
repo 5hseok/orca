@@ -122,7 +122,12 @@ export const GIT_METHODS: RpcMethod[] = [
     name: 'git.blame',
     params: GitBlame,
     handler: async (params, { runtime }) =>
-      runtime.getRuntimeGitBlame(params.worktree, params.filePath, params.revision)
+      runtime.getRuntimeGitBlame(
+        params.worktree,
+        params.filePath,
+        params.revision,
+        params.contentsSource
+      )
   }),
   defineMethod({
     name: 'git.upstreamStatus',

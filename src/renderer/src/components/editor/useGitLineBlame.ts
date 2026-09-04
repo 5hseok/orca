@@ -12,7 +12,11 @@ import {
   getRepoIdFromWorktreeId,
   splitWorktreeIdForFilesystem
 } from '../../../../shared/worktree/id'
-import { blameLineByNumber, type GitBlameResult } from '../../../../shared/git-blame'
+import {
+  blameLineByNumber,
+  type GitBlameContentsSource,
+  type GitBlameResult
+} from '../../../../shared/git-blame'
 import {
   buildGitLineBlameWidgetModel,
   GIT_LINE_BLAME_INLINE_CLASS
@@ -26,6 +30,7 @@ export function useGitLineBlame(args: {
   worktreeId?: string
   relativePath: string
   revision?: string
+  contentsSource?: GitBlameContentsSource
   widgetKey?: string
 }): void {
   const {
@@ -34,6 +39,7 @@ export function useGitLineBlame(args: {
     worktreeId,
     relativePath,
     revision,
+    contentsSource,
     widgetKey = 'file'
   } = args
   const head = useAppStore((state) =>
@@ -112,6 +118,7 @@ export function useGitLineBlame(args: {
     }
 
     let cancelled = false
+    let fetchGeneration = 0
     let debounce: ReturnType<typeof setTimeout> | null = null
     const load = (): void => {
       if (debounce) {
@@ -127,6 +134,8 @@ export function useGitLineBlame(args: {
         }
         const repoId = worktree?.repoId ?? getRepoIdFromWorktreeId(worktreeId)
         const repo = state.repos.find((entry) => entry.id === repoId) ?? null
+        const generation = ++fetchGeneration
+        const modelVersion = editorInstance.getModel()?.getAlternativeVersionId()
         void getRuntimeGitBlame(
           {
             settings: getRepoOwnerRoutedSettings(state.settings, repo),
@@ -135,17 +144,22 @@ export function useGitLineBlame(args: {
             connectionId: getConnectionId(worktreeId) ?? undefined
           },
           relativePath,
-          revision
+          revision,
+          contentsSource
         )
           .then((result) => {
-            if (cancelled) {
+            if (
+              cancelled ||
+              generation !== fetchGeneration ||
+              editorInstance.getModel()?.getAlternativeVersionId() !== modelVersion
+            ) {
               return
             }
             blameRef.current = result
             renderLine(lineRef.current)
           })
           .catch(() => {
-            if (cancelled) {
+            if (cancelled || generation !== fetchGeneration) {
               return
             }
             blameRef.current = { status: 'unavailable', lines: [] }
@@ -170,6 +184,13 @@ export function useGitLineBlame(args: {
       renderLine(event.position.lineNumber)
     })
     const contentSub = editorInstance.onDidChangeModelContent(() => {
+      if (!editorInstance.getOption(monaco.editor.EditorOption.readOnly)) {
+        // Why: disk blame line numbers no longer match an unsaved buffer.
+        fetchGeneration += 1
+        blameRef.current = null
+        hide()
+        return
+      }
       renderLine(lineRef.current)
     })
     const configSub = editorInstance.onDidChangeConfiguration(() => {
@@ -187,5 +208,5 @@ export function useGitLineBlame(args: {
       configSub.dispose()
       editorInstance.removeContentWidget(widget)
     }
-  }, [editorInstance, enabled, head, relativePath, revision, widgetKey, worktreeId])
+  }, [contentsSource, editorInstance, enabled, head, relativePath, revision, widgetKey, worktreeId])
 }

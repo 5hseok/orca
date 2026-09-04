@@ -1,4 +1,4 @@
-import type { GitBlameResult } from '../../shared/git-blame'
+import type { GitBlameContentsSource, GitBlameResult } from '../../shared/git-blame'
 import type {
   GitBranchCompareResult,
   GitCommitCompareResult
@@ -130,12 +130,14 @@ export class SshGitWorkingTreeProvider extends SshGitNoninteractiveProvider {
   async getBlame(
     worktreePath: string,
     filePath: string,
-    revision?: string
+    revision?: string,
+    contentsSource?: GitBlameContentsSource
   ): Promise<GitBlameResult> {
     return (await this.mux.request('git.blame', {
       worktreePath,
       filePath,
-      ...(revision ? { revision } : {})
+      ...(revision ? { revision } : {}),
+      ...(contentsSource ? { contentsSource } : {})
     })) as GitBlameResult
   }
 }

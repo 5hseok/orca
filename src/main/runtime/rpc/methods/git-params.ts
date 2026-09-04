@@ -96,7 +96,8 @@ export const GitCommitDiff = GitFilePath.extend({
 })
 
 export const GitBlame = GitFilePath.extend({
-  revision: z.union([z.literal('HEAD'), FullGitObjectId]).optional()
+  revision: z.union([z.literal('HEAD'), FullGitObjectId]).optional(),
+  contentsSource: z.literal('index').optional()
 })
 
 export const GitCommit = WorktreeSelector.extend({

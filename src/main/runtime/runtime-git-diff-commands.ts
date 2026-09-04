@@ -1,4 +1,4 @@
-import type { GitBlameResult } from '../../shared/git-blame'
+import type { GitBlameContentsSource, GitBlameResult } from '../../shared/git-blame'
 import type {
   GitBranchCompareResult,
   GitCommitCompareResult,
@@ -87,19 +87,21 @@ export class RuntimeGitDiffCommands {
   async getRuntimeGitBlame(
     worktreeSelector: string,
     filePath: string,
-    revision?: string
+    revision?: string,
+    contentsSource?: GitBlameContentsSource
   ): Promise<GitBlameResult> {
     const target = await this.host.resolveRuntimeGitTarget(worktreeSelector)
     const relativePath = normalizeRuntimeGitRelativePath(filePath)
     const provider = requireRuntimeGitProvider(target)
     if (provider) {
-      return provider.getBlame(target.worktree.path, relativePath, revision)
+      return provider.getBlame(target.worktree.path, relativePath, revision, contentsSource)
     }
     return getFileBlame(
       target.worktree.path,
       relativePath,
       { ...localGitOptionsForTarget(target), admissionTier: 'interactive' },
-      revision
+      revision,
+      contentsSource
     )
   }
 

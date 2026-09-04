@@ -100,6 +100,7 @@ export function ChangesModeView({
           editable={true}
           worktreeId={activeFile.worktreeId}
           originalBlameRevision={GIT_BLAME_HEAD_REVISION}
+          modifiedBufferDirty={activeFile.isDirty}
           onContentChange={onContentChange}
           onSave={onSave}
         />

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isUnsupportedWorktreeListZError, parseWorktreeList } from './git-handler-utils'
+import {
+  assertGitPathInsideWorktree,
+  isUnsupportedWorktreeListZError,
+  parseWorktreeList
+} from './git-handler-utils'
 
 describe('parseWorktreeList', () => {
   it('preserves SSH worktree lock metadata from porcelain output', () => {
@@ -102,5 +106,17 @@ describe('isUnsupportedWorktreeListZError', () => {
       stderr: 'fatal: unable to read tree\n'
     })
     expect(isUnsupportedWorktreeListZError(error)).toBe(false)
+  })
+})
+
+describe('assertGitPathInsideWorktree', () => {
+  it('allows a relative file inside the worktree', () => {
+    expect(() => assertGitPathInsideWorktree('/repo', 'src/a.ts')).not.toThrow()
+  })
+
+  it('rejects a path that escapes the worktree', () => {
+    expect(() => assertGitPathInsideWorktree('/repo', '../outside.txt')).toThrow(
+      'outside the worktree'
+    )
   })
 })

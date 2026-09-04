@@ -3,7 +3,7 @@ import type {
   GitCommitCompareResult,
   GitDiffResult
 } from '../../../shared/git-diff-compare-types'
-import type { GitBlameResult } from '../../../shared/git-blame'
+import type { GitBlameContentsSource, GitBlameResult } from '../../../shared/git-blame'
 import { resolveLocalWorktreePath, type RuntimeGitContext } from './runtime-git-client-context'
 import { callRuntimeRpc, getActiveRuntimeTarget } from './runtime-rpc-client'
 import { toRuntimeWorktreeSelector } from './runtime-worktree-selector'
@@ -129,7 +129,8 @@ export async function getRuntimeGitCommitDiff(
 export async function getRuntimeGitBlame(
   context: RuntimeGitContext,
   filePath: string,
-  revision?: string
+  revision?: string,
+  contentsSource?: GitBlameContentsSource
 ): Promise<GitBlameResult> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
@@ -137,6 +138,7 @@ export async function getRuntimeGitBlame(
       worktreePath: resolveLocalWorktreePath(context),
       filePath,
       revision,
+      contentsSource,
       connectionId: context.connectionId
     })
   }
@@ -146,7 +148,8 @@ export async function getRuntimeGitBlame(
     {
       worktree: toRuntimeWorktreeSelector(context.worktreeId),
       filePath,
-      ...(revision ? { revision } : {})
+      ...(revision ? { revision } : {}),
+      ...(contentsSource ? { contentsSource } : {})
     },
     { timeoutMs: 15_000 }
   )

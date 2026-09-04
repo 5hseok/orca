@@ -16,18 +16,32 @@ export type GitBlameResult = {
 const HEADER_LINE_RE = /^([0-9a-fA-F]+)\s+\d+\s+(\d+)(?:\s+\d+)?$/
 
 export const GIT_BLAME_HEAD_REVISION = 'HEAD'
+export const GIT_BLAME_INDEX_CONTENTS = 'index' as const
+
+export type GitBlameContentsSource = typeof GIT_BLAME_INDEX_CONTENTS
 
 export function isUncommittedBlameOid(oid: string): boolean {
   return oid.length > 0 && GIT_BLAME_ZERO_OID_RE.test(oid)
 }
 
-export function buildGitBlameArgv(filePath: string, revision?: string): string[] {
+export function buildGitShowIndexArgv(filePath: string): string[] {
+  return ['show', '--end-of-options', `:${filePath.replace(/\\/g, '/')}`]
+}
+
+export function buildGitBlameArgv(
+  filePath: string,
+  revision?: string,
+  contentsSource?: GitBlameContentsSource
+): string[] {
+  const blameRevision =
+    revision ?? (contentsSource === GIT_BLAME_INDEX_CONTENTS ? GIT_BLAME_HEAD_REVISION : undefined)
   return [
     'blame',
     '--encoding=UTF-8',
     '--line-porcelain',
     '-w',
-    ...(revision ? [revision] : []),
+    ...(contentsSource === GIT_BLAME_INDEX_CONTENTS ? ['--contents', '-'] : []),
+    ...(blameRevision ? [blameRevision] : []),
     '--end-of-options',
     '--',
     filePath

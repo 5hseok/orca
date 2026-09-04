@@ -137,12 +137,13 @@ export function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
         commitId
       })
     },
-    blame: async ({ worktreePath, filePath, revision }) => {
+    blame: async ({ worktreePath, filePath, revision, contentsSource }) => {
       const file = await resolveRuntimeFilePath(filePath, worktreePath)
       return callRuntimeResult('git.blame', {
         worktree: toRuntimeWorktreeSelector(file.worktree.id),
         filePath: file.relativePath,
-        ...(revision ? { revision } : {})
+        ...(revision ? { revision } : {}),
+        ...(contentsSource ? { contentsSource } : {})
       })
     },
     upstreamStatus: async ({ worktreePath, pushTarget }) => {

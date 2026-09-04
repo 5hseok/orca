@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GIT_BLAME_HEAD_REVISION } from '../../../../shared/git-blame'
+import { GIT_BLAME_HEAD_REVISION, GIT_BLAME_INDEX_CONTENTS } from '../../../../shared/git-blame'
 import { getCombinedSectionBlameRevisions, getFileDiffBlameRevisions } from './diff-blame-revisions'
 
 const COMMIT = 'a'.repeat(40)
@@ -8,14 +8,19 @@ const HEAD = 'c'.repeat(40)
 const BASE = 'd'.repeat(40)
 
 describe('getFileDiffBlameRevisions', () => {
-  it('blames HEAD vs the working tree for uncommitted diffs', () => {
+  it('blames index contents on the unstaged original pane and the working tree on the right', () => {
     expect(getFileDiffBlameRevisions({ diffSource: 'unstaged' })).toEqual({
       originalRevision: GIT_BLAME_HEAD_REVISION,
+      originalContentsSource: GIT_BLAME_INDEX_CONTENTS,
       modifiedRevision: undefined
     })
+  })
+
+  it('blames HEAD on the staged original pane and index contents on the right', () => {
     expect(getFileDiffBlameRevisions({ diffSource: 'staged' })).toEqual({
       originalRevision: GIT_BLAME_HEAD_REVISION,
-      modifiedRevision: undefined
+      modifiedRevision: GIT_BLAME_HEAD_REVISION,
+      modifiedContentsSource: GIT_BLAME_INDEX_CONTENTS
     })
   })
 
@@ -57,13 +62,31 @@ describe('getCombinedSectionBlameRevisions', () => {
     ).toEqual({ originalRevision: BASE, modifiedRevision: HEAD })
   })
 
-  it('treats combined-all rows with an area as uncommitted', () => {
+  it('treats combined-all unstaged rows as index vs working tree', () => {
     expect(
       getCombinedSectionBlameRevisions({
         diffSource: 'combined-all',
         sectionArea: 'unstaged',
         branchCompare: { mergeBase: BASE, baseOid: BASE, headOid: HEAD }
       })
-    ).toEqual({ originalRevision: GIT_BLAME_HEAD_REVISION, modifiedRevision: undefined })
+    ).toEqual({
+      originalRevision: GIT_BLAME_HEAD_REVISION,
+      originalContentsSource: GIT_BLAME_INDEX_CONTENTS,
+      modifiedRevision: undefined
+    })
+  })
+
+  it('treats combined-all staged rows as HEAD vs index contents', () => {
+    expect(
+      getCombinedSectionBlameRevisions({
+        diffSource: 'combined-all',
+        sectionArea: 'staged',
+        branchCompare: { mergeBase: BASE, baseOid: BASE, headOid: HEAD }
+      })
+    ).toEqual({
+      originalRevision: GIT_BLAME_HEAD_REVISION,
+      modifiedRevision: GIT_BLAME_HEAD_REVISION,
+      modifiedContentsSource: GIT_BLAME_INDEX_CONTENTS
+    })
   })
 })

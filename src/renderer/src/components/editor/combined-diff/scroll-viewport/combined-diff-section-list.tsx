@@ -114,7 +114,10 @@ export function CombinedDiffSectionList({
                   worktreeId={file.worktreeId}
                   originalBlamePath={section.oldPath}
                   originalBlameRevision={blameRevisions.originalRevision}
+                  originalContentsSource={blameRevisions.originalContentsSource}
                   modifiedBlameRevision={blameRevisions.modifiedRevision}
+                  modifiedContentsSource={blameRevisions.modifiedContentsSource}
+                  modifiedBufferDirty={file.isDirty && section.area === 'unstaged'}
                   loadSection={loadSection}
                   loadDeferredSection={loadDeferredSection}
                   retrySection={retrySection}
