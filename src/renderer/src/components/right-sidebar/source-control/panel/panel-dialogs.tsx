@@ -1,4 +1,10 @@
+import { toast } from 'sonner'
+import { translate } from '@/i18n/i18n'
 import { readSourceControlLaunchRecipeAgentId } from '../../../../../../shared/source-control-launch-agent-selection'
+import {
+  planSourceControlCompareBaseRefWrite,
+  type SourceControlCompareBaseRefWrite
+} from './compare-base-ref-write'
 import { SourceControlDialogLayer } from './dialog-layer'
 import type { SourceControlPanelReadyProps } from './panel-props'
 
@@ -48,6 +54,25 @@ export function SourceControlPanelDialogs({
     updateWorktreeMeta
   } = model
 
+  const closeAndRefreshCompare = (): void => {
+    setBaseRefDialogOpen(false)
+    window.setTimeout(() => void refreshBranchCompare(), 0)
+  }
+
+  const applyCompareBaseRefWrite = (write: SourceControlCompareBaseRefWrite): boolean => {
+    if (write.worktreeUpdate) {
+      void updateWorktreeMeta(write.worktreeUpdate.worktreeId, {
+        baseRef: write.worktreeUpdate.baseRef
+      })
+    }
+    if (write.repoUpdate) {
+      void updateRepo(write.repoUpdate.repoId, {
+        worktreeBaseRef: write.repoUpdate.worktreeBaseRef
+      })
+    }
+    return Boolean(write.worktreeUpdate || write.repoUpdate)
+  }
+
   return (
     <SourceControlDialogLayer
       clearNotesOpen={resolvedPendingDiffCommentsClear !== null}
@@ -63,23 +88,53 @@ export function SourceControlPanelDialogs({
       onBaseRefDialogOpenChange={setBaseRefDialogOpen}
       baseRefRepoId={activeRepo.id}
       pickerBaseRef={pickerBaseRef}
+      baseRefOwnedByWorktree={baseRefOwnedByWorktree}
       onSelectBaseRef={(ref) => {
-        if (baseRefOwnedByWorktree && activeWorktreeId) {
-          void updateWorktreeMeta(activeWorktreeId, { baseRef: ref })
-        } else {
-          void updateRepo(activeRepo.id, { worktreeBaseRef: ref })
+        if (
+          !applyCompareBaseRefWrite(
+            planSourceControlCompareBaseRefWrite({
+              action: 'select',
+              worktreeId: activeWorktreeId,
+              ref
+            })
+          )
+        ) {
+          return
         }
-        setBaseRefDialogOpen(false)
-        window.setTimeout(() => void refreshBranchCompare(), 0)
+        closeAndRefreshCompare()
       }}
       onUsePrimaryBaseRef={() => {
-        if (baseRefOwnedByWorktree && activeWorktreeId) {
-          void updateWorktreeMeta(activeWorktreeId, { baseRef: undefined })
-        } else {
-          void updateRepo(activeRepo.id, { worktreeBaseRef: undefined })
+        if (
+          !applyCompareBaseRefWrite(
+            planSourceControlCompareBaseRefWrite({
+              action: 'use-project-default',
+              worktreeId: activeWorktreeId
+            })
+          )
+        ) {
+          return
         }
-        setBaseRefDialogOpen(false)
-        window.setTimeout(() => void refreshBranchCompare(), 0)
+        closeAndRefreshCompare()
+      }}
+      onSetAsProjectDefault={() => {
+        if (
+          !applyCompareBaseRefWrite(
+            planSourceControlCompareBaseRefWrite({
+              action: 'set-project-default',
+              repoId: activeRepo.id,
+              ref: pickerBaseRef
+            })
+          )
+        ) {
+          return
+        }
+        toast.success(
+          translate(
+            'auto.components.right.sidebar.SourceControl.4c8f1e2a90',
+            'Saved as project default'
+          )
+        )
+        closeAndRefreshCompare()
       }}
       sourceControlAiActionsVisible={sourceControlAiActionsVisible}
       resolveConflictsComposerOpen={resolveConflictsComposerOpen}

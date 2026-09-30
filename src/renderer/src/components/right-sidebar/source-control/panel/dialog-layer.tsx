@@ -35,8 +35,10 @@ export function SourceControlDialogLayer({
   onBaseRefDialogOpenChange,
   baseRefRepoId,
   pickerBaseRef,
+  baseRefOwnedByWorktree,
   onSelectBaseRef,
   onUsePrimaryBaseRef,
+  onSetAsProjectDefault,
   sourceControlAiActionsVisible,
   resolveConflictsComposerOpen,
   onResolveConflictsComposerOpenChange,
@@ -77,8 +79,10 @@ export function SourceControlDialogLayer({
   onBaseRefDialogOpenChange: (open: boolean) => void
   baseRefRepoId: string
   pickerBaseRef: BaseRefPickerProps['currentBaseRef']
+  baseRefOwnedByWorktree: boolean
   onSelectBaseRef: BaseRefPickerProps['onSelect']
   onUsePrimaryBaseRef: NonNullable<BaseRefPickerProps['onUsePrimary']>
+  onSetAsProjectDefault: () => void
   sourceControlAiActionsVisible: boolean
   resolveConflictsComposerOpen: boolean
   onResolveConflictsComposerOpenChange: AgentDialogProps['onOpenChange']
@@ -163,7 +167,7 @@ export function SourceControlDialogLayer({
             <DialogDescription className="text-xs">
               {translate(
                 'auto.components.right.sidebar.SourceControl.c9ad22888e',
-                'Pick the branch compare target for this repository.'
+                'Pick the branch compare target for this workspace. Other workspaces keep their own compare target.'
               )}
             </DialogDescription>
           </DialogHeader>
@@ -172,9 +176,23 @@ export function SourceControlDialogLayer({
               repoId={baseRefRepoId}
               currentBaseRef={pickerBaseRef}
               onSelect={onSelectBaseRef}
-              onUsePrimary={onUsePrimaryBaseRef}
+              onUsePrimary={baseRefOwnedByWorktree ? onUsePrimaryBaseRef : undefined}
             />
           </div>
+          <DialogFooter className="shrink-0 sm:justify-start">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onSetAsProjectDefault}
+              disabled={!pickerBaseRef}
+            >
+              {translate(
+                'auto.components.right.sidebar.SourceControl.a61a9860e5',
+                'Set as project default'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
