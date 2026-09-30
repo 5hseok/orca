@@ -1,19 +1,29 @@
 import type { AgentHookSource } from './agent-hook-relay'
 import type { AgentStatusState } from './agent-status-types'
-import type { TuiAgent } from './types'
+import type { AgentMainAgentStatus } from './main-agent-status'
+import type { TuiAgent } from './tui-agent'
 
 export const RESUMABLE_TUI_AGENTS = [
   'claude',
+  'codebuddy',
   'codex',
+  'qoder',
   'gemini',
   'antigravity',
   'opencode',
+  'opencode2',
   'pi',
   'mimo-code',
   'droid',
   'grok',
   'devin',
-  'omp'
+  'omp',
+  'prime-agent',
+  'copilot',
+  'kimi',
+  'muse',
+  'zcode',
+  'dsh'
 ] as const satisfies readonly TuiAgent[]
 
 export type ResumableTuiAgent = (typeof RESUMABLE_TUI_AGENTS)[number]
@@ -52,6 +62,9 @@ export type SleepingAgentSessionRecord = {
   terminalTitle?: string
   lastAssistantMessage?: string
   interrupted?: boolean
+  /** The main agent's own status when captured, copied with `interrupted` by `agentVerdictFields`;
+   *  read the verdict through `agentMainAgentVerdict`. */
+  mainAgent?: AgentMainAgentStatus
   connectionId?: string | null
   launchConfig?: SleepingAgentLaunchConfig
   /** How the record was captured. Worktree-sleep records (legacy records have
@@ -60,6 +73,11 @@ export type SleepingAgentSessionRecord = {
    *  so only the pane's own cold-restore path may consume them — activation
    *  launching a tab too would duplicate a warm-reattached session (#5232). */
   origin?: 'worktree-sleep' | 'quit' | 'live'
+  /** Set on a finished pane captured by an explicit workspace sleep. Its
+   *  `--resume` is issued by the pane's own cold restore when its tab is
+   *  opened, so a mobile wake must not background-mount every such tab and
+   *  respawn the whole workspace the user just slept (#11598). */
+  restoreOnTabOpenOnly?: boolean
 }
 
 const RESUMABLE_TUI_AGENT_SET: ReadonlySet<string> = new Set(RESUMABLE_TUI_AGENTS)
@@ -154,7 +172,7 @@ export function normalizeAgentProviderSession(raw: unknown): AgentProviderSessio
 }
 
 /** Compare the provider-owned values that identify the CLI resume target.
- *  Pi's file path is identity; other agents resume by their provider id. */
+ *  Pi-family transcript resumes use file identity; other agents use provider ids. */
 export function agentProviderSessionsEqual(
   agent: string | undefined,
   left: AgentProviderSessionMetadata | undefined,
@@ -166,7 +184,7 @@ export function agentProviderSessionsEqual(
   return (
     left.key === right.key &&
     left.id === right.id &&
-    (agent !== 'pi' || left.transcriptPath === right.transcriptPath)
+    ((agent !== 'pi' && agent !== 'prime-agent') || left.transcriptPath === right.transcriptPath)
   )
 }
 
@@ -178,6 +196,8 @@ export function extractAgentProviderSession(
     // Native-chat agents: also capture the hook's authoritative transcript_path,
     // since recent Claude Code names the transcript file with a UUID that differs
     // from the hook session_id (so the id-based glob no longer finds it).
+    case 'qoder':
+    case 'codebuddy':
     case 'claude':
     case 'codex': {
       const id = readSessionId(payload, ['session_id'])
@@ -186,7 +206,24 @@ export function extractAgentProviderSession(
     case 'gemini':
     case 'droid':
     // Why: Kimi Code posts a Claude-shaped `session_id` (e.g. session_<uuid>).
+    // falls through
     case 'kimi': {
+      const id = readSessionId(payload, ['session_id'])
+      return id ? { key: 'session_id', id } : null
+    }
+    case 'muse': {
+      const id = readSessionId(payload, ['session_id'])
+      return id ? withTranscriptPath({ key: 'session_id', id }, payload) : null
+    }
+    // Why: ZCode's `transcript_path` is a per-invocation temp file it deletes when the hook
+    // returns (`createCompatibleHookStdin` mkdtemp + cleanup), so only the id is durable.
+    case 'zcode': {
+      const id = readSessionId(payload, ['session_id'])
+      return id ? { key: 'session_id', id } : null
+    }
+    // Why: DSH's hook bridge always sends an empty `transcript_path` (its persistence seam
+    // exposes no artifact path), so the session id alone carries the resume target.
+    case 'dsh': {
       const id = readSessionId(payload, ['session_id'])
       return id ? { key: 'session_id', id } : null
     }
@@ -195,11 +232,13 @@ export function extractAgentProviderSession(
       return id ? { key: 'conversation_id', id } : null
     }
     case 'opencode':
+    case 'opencode2':
     case 'mimo-code': {
       const id = readSessionId(payload, ['sessionID'])
       return id ? { key: 'session_id', id } : null
     }
-    case 'pi': {
+    case 'pi':
+    case 'prime-agent': {
       const id = readSessionId(payload, ['session_id'])
       const providerSession = id
         ? withTranscriptPath({ key: 'session_id', id }, payload, ['session_file'])
@@ -214,15 +253,20 @@ export function extractAgentProviderSession(
       const id = readSessionId(payload, ['session_id', 'sessionId'])
       return id ? { key: 'session_id', id } : null
     }
-    // Why: OMP's managed extension reports the authoritative CLI resume id.
+    // OMP keeps id-based resume while optionally locating its native-chat transcript.
     case 'omp': {
       const id = readSessionId(payload, ['session_id'])
+      return id ? withTranscriptPath({ key: 'session_id', id }, payload, ['session_file']) : null
+    }
+    // Why: Copilot's hook `session_id` is also its `~/.copilot/session-state/<id>/`
+    // directory name, so the same id is the CLI's resume locator.
+    case 'copilot': {
+      const id = readSessionId(payload, ['session_id', 'sessionId'])
       return id ? { key: 'session_id', id } : null
     }
     case 'amp':
     case 'cursor':
     case 'command-code':
-    case 'copilot':
     case 'hermes':
       return null
   }
@@ -235,19 +279,31 @@ export function getAgentResumeArgv(
 ): string[] | null {
   const id = providerSession.id
   switch (agent) {
+    case 'codebuddy':
+      return providerSession.key === 'session_id' ? ['codebuddy', '--resume', id] : null
     case 'claude':
       return providerSession.key === 'session_id' ? ['claude', '--resume', id] : null
     case 'codex':
       return providerSession.key === 'session_id' ? ['codex', 'resume', id] : null
+    case 'qoder':
+      return providerSession.key === 'session_id' ? ['qodercli', '--resume', id] : null
     case 'gemini':
       return providerSession.key === 'session_id' ? ['gemini', '--resume', id] : null
     case 'antigravity':
       return providerSession.key === 'conversation_id' ? ['agy', '--conversation', id] : null
     case 'opencode':
       return providerSession.key === 'session_id' ? ['opencode', '--session', id] : null
+    case 'opencode2':
+      return providerSession.key === 'session_id'
+        ? ['opencode2', '--standalone', '--session', id]
+        : null
     case 'pi':
       return providerSession.key === 'session_id' && providerSession.transcriptPath
         ? ['pi', '--session', providerSession.transcriptPath]
+        : null
+    case 'prime-agent':
+      return providerSession.key === 'session_id' && providerSession.transcriptPath
+        ? ['prime-agent', '--resume', providerSession.transcriptPath]
         : null
     case 'mimo-code':
       return providerSession.key === 'session_id' ? ['mimo', '--session', id] : null
@@ -259,7 +315,27 @@ export function getAgentResumeArgv(
       return providerSession.key === 'session_id' ? ['devin', '--resume', id] : null
     case 'omp':
       return providerSession.key === 'session_id'
-        ? ['omp', '--resume', ompResumeFilePath?.trim() || id]
+        ? [
+            'omp',
+            '--resume',
+            ompResumeFilePath?.trim() || providerSession.transcriptPath?.trim() || id
+          ]
         : null
+    // Why: the joined form is the only one Copilot documents, and it matches the
+    // flag spelling buildAgentResumeInvocation bakes into persisted AI Vault
+    // resume commands, so local and remote resumes agree on one spelling.
+    case 'copilot':
+      return providerSession.key === 'session_id' ? ['copilot', `--resume=${id}`] : null
+    // Why: Kimi resumes by id with --session; sessions are work-dir-scoped (enforced by callers).
+    case 'kimi':
+      return providerSession.key === 'session_id' ? ['kimi', '--session', id] : null
+    case 'muse':
+      return providerSession.key === 'session_id' ? ['muse', 'resume', id] : null
+    case 'zcode':
+      return providerSession.key === 'session_id' ? ['zcode', '--resume', id] : null
+    // Why: `dsh-tui --resume <id>` re-enters the session the launcher recorded for this
+    // workspace. DSH keys sessions by workspace path, so callers must keep the cwd.
+    case 'dsh':
+      return providerSession.key === 'session_id' ? ['dsh-tui', '--resume', id] : null
   }
 }

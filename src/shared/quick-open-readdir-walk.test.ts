@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type * as NodeFsPromises from 'node:fs/promises'
 
 const { lstatMock, opendirMock } = vi.hoisted(() => ({
   lstatMock: vi.fn(),
@@ -6,7 +7,7 @@ const { lstatMock, opendirMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('fs/promises', async () => {
-  const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises') // eslint-disable-line @typescript-eslint/consistent-type-imports -- vi.importActual requires inline import()
+  const actual = await vi.importActual<typeof NodeFsPromises>('fs/promises')
   lstatMock.mockImplementation(actual.lstat)
   opendirMock.mockImplementation(actual.opendir)
   return {
@@ -392,7 +393,8 @@ describe('quick-open readdir walk', () => {
     ).rejects.toThrow('File listing exceeded')
   })
 
-  it('keeps the default safety cap for a very large collapsed directory', async () => {
+  it('supports more than 10,000 files while keeping the default safety cap', async () => {
+    expect(QUICK_OPEN_READDIR_MAX_FILES).toBeGreaterThan(10_000)
     const root = await makeTempRoot()
     await mkdirRel(root, 'dist')
     opendirMock.mockResolvedValueOnce({
@@ -416,7 +418,7 @@ describe('quick-open readdir walk', () => {
         gitPaths: [],
         directoryPaths: ['dist/']
       })
-    ).rejects.toThrow('File listing exceeded 10000 files')
+    ).rejects.toThrow(`File listing exceeded ${QUICK_OPEN_READDIR_MAX_FILES} files`)
   })
 
   it('identifies budget errors so callers can translate only those to install-rg guidance', () => {
@@ -533,18 +535,25 @@ describe('quick-open readdir walk', () => {
     ).rejects.toSatisfy(isFileListingCancellation)
   })
 
-  it('rejects when cancellation lands during an empty opendir batch', async () => {
+  it('closes the directory when cancellation lands after opendir', async () => {
     const root = await makeTempRoot()
     const controller = new AbortController()
-    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises') // eslint-disable-line @typescript-eslint/consistent-type-imports -- vi.importActual requires inline import()
+    const actual = await vi.importActual<typeof NodeFsPromises>('node:fs/promises')
+    let closeCalls = 0
     opendirMock.mockImplementationOnce(async (...args: Parameters<typeof actual.opendir>) => {
-      const entries = await actual.opendir(...args)
+      const directory = await actual.opendir(...args)
+      const close = directory.close.bind(directory)
+      directory.close = async () => {
+        closeCalls += 1
+        await close()
+      }
       controller.abort()
-      return entries
+      return directory
     })
 
     await expect(
       listQuickOpenFilesWithReaddir(root, { signal: controller.signal })
     ).rejects.toSatisfy(isFileListingCancellation)
+    expect(closeCalls).toBe(1)
   })
 })

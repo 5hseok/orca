@@ -3,6 +3,7 @@ import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
 import {
   getExplicitRuntimeEnvironmentIdForWorktree,
   getExecutionHostIdForWorktree,
+  getKnownExecutionHostIdForWorktree,
   getRuntimeEnvironmentIdForWorktree,
   getRuntimeSessionMirrorEnvironmentIds,
   getSettingsForWorktreeRuntimeOwner,
@@ -60,6 +61,27 @@ describe('getSettingsForWorktreeRuntimeOwner', () => {
       activeRuntimeEnvironmentId: 'folder-env'
     })
     expect(getExecutionHostIdForWorktree(state, 'folder:runtime-folder')).toBe('runtime:folder-env')
+  })
+
+  it('uses the folder host stamp when same-ID project groups exist on different hosts', () => {
+    const collisionState: WorktreeRuntimeOwnerState = {
+      settings: { activeRuntimeEnvironmentId: null },
+      folderWorkspaces: [
+        {
+          id: 'same-folder',
+          projectGroupId: 'same-group',
+          executionHostId: 'runtime:folder-env'
+        }
+      ],
+      projectGroups: [
+        { id: 'same-group', connectionId: null, executionHostId: 'local' },
+        { id: 'same-group', connectionId: null, executionHostId: 'runtime:folder-env' }
+      ]
+    }
+
+    expect(getExecutionHostIdForWorktree(collisionState, 'folder:same-folder')).toBe(
+      'runtime:folder-env'
+    )
   })
 
   it('routes restored runtime folder workspaces before their catalog loads', () => {
@@ -556,5 +578,72 @@ describe('getRuntimeSessionMirrorEnvironmentIds', () => {
     }
 
     expect(getRuntimeSessionMirrorEnvironmentIds(localOnlyState)).toEqual([])
+  })
+})
+
+describe('active workspace host selection', () => {
+  const PAIRED_HUB_WORKTREE_ID = 'hub-repo::wt-paired'
+  const pairedHubState: WorktreeRuntimeOwnerState = {
+    activeWorktreeId: PAIRED_HUB_WORKTREE_ID,
+    activeWorkspaceExecutionHostId: 'ssh:hub-private-target',
+    worktreesByRepo: {
+      'hub-repo': [
+        {
+          id: PAIRED_HUB_WORKTREE_ID,
+          repoId: 'hub-repo',
+          hostId: 'ssh:hub-private-target',
+          runtimeOwnerEnvironmentId: 'hub-a'
+        }
+      ]
+    }
+  }
+
+  it('keeps the HUB transport for the active paired SSH worktree', () => {
+    expect(getRuntimeEnvironmentIdForWorktree(pairedHubState, PAIRED_HUB_WORKTREE_ID)).toBe('hub-a')
+    expect(getExplicitRuntimeEnvironmentIdForWorktree(pairedHubState, PAIRED_HUB_WORKTREE_ID)).toBe(
+      'hub-a'
+    )
+  })
+
+  it('keeps the selected host authoritative for the active worktree', () => {
+    expect(getExecutionHostIdForWorktree(pairedHubState, PAIRED_HUB_WORKTREE_ID)).toBe(
+      'ssh:hub-private-target'
+    )
+  })
+})
+
+describe('getKnownExecutionHostIdForWorktree', () => {
+  const emptyCatalog: WorktreeRuntimeOwnerState = { repos: [], worktreesByRepo: {} }
+
+  it('reports silence, not local, for a git worktree with no repo row', () => {
+    expect(getKnownExecutionHostIdForWorktree(emptyCatalog, 'missing-repo::wt')).toBeNull()
+    // The routing form keeps substituting the default in the same state.
+    expect(getExecutionHostIdForWorktree(emptyCatalog, 'missing-repo::wt')).toBe('local')
+  })
+
+  it('reports silence for a folder workspace with no folder-workspace row', () => {
+    expect(getKnownExecutionHostIdForWorktree(emptyCatalog, 'folder:missing')).toBeNull()
+    expect(getExecutionHostIdForWorktree(emptyCatalog, 'folder:missing')).toBe('local')
+  })
+
+  it.each([
+    ['an ownerless repo row', { repos: [{ id: 'r' }] }, 'r::wt', 'local'],
+    ['an SSH repo row', { repos: [{ id: 'r', connectionId: 'box' }] }, 'r::wt', 'ssh:box'],
+    [
+      'a per-worktree host',
+      { worktreesByRepo: { r: [{ id: 'r::wt', repoId: 'r', hostId: 'ssh:box' }] } },
+      'r::wt',
+      'ssh:box'
+    ],
+    [
+      'a folder-workspace row',
+      { folderWorkspaces: [{ id: 'f', projectGroupId: 'g' }] },
+      'folder:f',
+      'local'
+    ],
+    ['the floating workspace', {}, FLOATING_TERMINAL_WORKTREE_ID, 'local']
+  ] as const)('answers positively for %s', (_label, catalog, worktreeId, expected) => {
+    expect(getKnownExecutionHostIdForWorktree(catalog, worktreeId)).toBe(expected)
+    expect(getExecutionHostIdForWorktree(catalog, worktreeId)).toBe(expected)
   })
 })

@@ -45,11 +45,15 @@ function paneColumnDirectionLabel(direction: TabSplitDirection): string {
 export function TabWorkspaceLayoutMenuSection({
   unifiedTabId,
   groupId,
-  trailingSeparator = false
+  leadingSeparator = false,
+  trailingSeparator = false,
+  shortcutLabels
 }: {
   unifiedTabId: string
   groupId: string
+  leadingSeparator?: boolean
   trailingSeparator?: boolean
+  shortcutLabels?: Partial<Record<TabSplitDirection, string>>
 }): React.JSX.Element | null {
   // Why: read without a hook to match the sibling guard below — BrowserTab renders this
   // section through a shallow function-call harness where hooks are not available.
@@ -57,6 +61,9 @@ export function TabWorkspaceLayoutMenuSection({
     'tab.moveToSplitRight',
     useAppStore.getState().keybindings
   )
+  // Why: caller-supplied labels (e.g. native chat) win; otherwise "right" advertises the global chord.
+  const directionShortcutLabel = (direction: TabSplitDirection): string | null | undefined =>
+    shortcutLabels?.[direction] ?? (direction === 'right' ? moveToSplitRightShortcut : null)
 
   if (!canMoveTabToNewPaneColumn(unifiedTabId, groupId)) {
     return null
@@ -64,6 +71,7 @@ export function TabWorkspaceLayoutMenuSection({
 
   return (
     <>
+      {leadingSeparator ? <DropdownMenuSeparator /> : null}
       <DropdownMenuSub>
         <DropdownMenuSubTrigger className="[&>svg:last-child]:size-3.5">
           <Columns2 className="size-3.5 shrink-0" />
@@ -82,8 +90,8 @@ export function TabWorkspaceLayoutMenuSection({
             >
               {paneColumnDirectionIcon(direction)}
               {paneColumnDirectionLabel(direction)}
-              {direction === 'right' && moveToSplitRightShortcut ? (
-                <DropdownMenuShortcut>{moveToSplitRightShortcut}</DropdownMenuShortcut>
+              {directionShortcutLabel(direction) ? (
+                <DropdownMenuShortcut>{directionShortcutLabel(direction)}</DropdownMenuShortcut>
               ) : null}
             </DropdownMenuItem>
           ))}

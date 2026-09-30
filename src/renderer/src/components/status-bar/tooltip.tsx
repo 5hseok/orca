@@ -17,6 +17,7 @@ import {
   type UsagePercentageDisplay
 } from '../../../../shared/usage-percentage-display'
 import { formatUsagePercentageLabel } from './usage-percentage-label'
+import { useResetCountdownClock } from '@/hooks/useResetCountdownClock'
 
 // Re-exported from its shared home so status-bar callers keep a single import.
 export { clampUsedPercent }
@@ -96,6 +97,12 @@ export function ProviderIcon({ provider }: { provider: string }): React.JSX.Elem
   if (provider === 'grok') {
     return <AgentIcon agent="grok" size={13} />
   }
+  if (provider === 'zcode') {
+    return <AgentIcon agent="zcode" size={13} />
+  }
+  if (provider === 'cursor') {
+    return <AgentIcon agent="cursor" size={13} />
+  }
   return <ClaudeIcon size={13} />
 }
 
@@ -145,6 +152,19 @@ export function getWindowSections(
     const bucketSections = p.buckets.map((b) => ({ label: b.name, window: b as RateLimitWindow }))
     return [
       ...bucketSections,
+      // Why: Cursor reports the plan total in `monthly` and its pools as buckets,
+      // so dropping it here would hide the number closest to the user's cap.
+      ...(p.monthly
+        ? [
+            {
+              label:
+                p.provider === 'cursor'
+                  ? translate('auto.components.status.bar.tooltip.cursor.plan', 'Plan')
+                  : translate('auto.components.status.bar.tooltip.7f7f208060', 'Monthly'),
+              window: p.monthly
+            }
+          ]
+        : []),
       {
         label: translate('auto.components.status.bar.tooltip.252c096536', 'Weekly'),
         window: p.weekly
@@ -169,7 +189,10 @@ export function getWindowSections(
   }
   if (p.monthly !== undefined && p.monthly !== null) {
     sections.push({
-      label: translate('auto.components.status.bar.tooltip.7f7f208060', 'Monthly'),
+      label:
+        p.provider === 'zcode'
+          ? translate('auto.components.status.bar.tooltip.zcode.mcp', 'MCP')
+          : translate('auto.components.status.bar.tooltip.7f7f208060', 'Monthly'),
       window: p.monthly
     })
   }
@@ -187,14 +210,59 @@ export function getWindowSections(
 
 // Why: urgency color tracks % used even when fill represents % remaining;
 // low usage stays neutral so persistent chrome stays quiet.
+export const USAGE_WARNING_PERCENT = 60
+export const USAGE_URGENT_PERCENT = 80
+
 export function barColor(usedPct: number): string {
-  if (usedPct < 60) {
+  if (usedPct < USAGE_WARNING_PERCENT) {
     return 'bg-muted-foreground/40'
   }
-  if (usedPct < 80) {
+  if (usedPct < USAGE_URGENT_PERCENT) {
     return 'bg-yellow-500'
   }
   return 'bg-red-500'
+}
+
+function ProviderRateLimitWindowSection({
+  window,
+  label,
+  textClass,
+  mutedClass,
+  emptyBarClass,
+  usagePercentageDisplay,
+  now
+}: {
+  window: RateLimitWindow | null
+  label: string
+  textClass: string
+  mutedClass: string
+  emptyBarClass: string
+  usagePercentageDisplay: UsagePercentageDisplay
+  now: number
+}): React.JSX.Element | null {
+  if (!window) {
+    return null
+  }
+  const usedPct = clampUsedPercent(window.usedPercent)
+  const displayedPct = getDisplayedUsagePercentage(usedPct, usagePercentageDisplay)
+  const resetLabel = window.resetsAt ? formatResetCountdown(window.resetsAt - now) : null
+
+  return (
+    <div className="space-y-1">
+      <div className={`font-medium ${textClass}`}>{label}</div>
+      <div className={`h-[6px] w-full overflow-hidden rounded-full ${emptyBarClass}`}>
+        {/* Why: fill follows the selected percentage; color still signals consumption urgency. */}
+        <div
+          className={`h-full rounded-full ${barColor(usedPct)} transition-all duration-300`}
+          style={{ width: `${displayedPct}%` }}
+        />
+      </div>
+      <div className={`flex justify-between ${mutedClass}`}>
+        <span>{formatUsagePercentageLabel(usedPct, usagePercentageDisplay)}</span>
+        {resetLabel && <span>{resetLabel}</span>}
+      </div>
+    </div>
+  )
 }
 
 export function ProviderPanel({
@@ -210,6 +278,8 @@ export function ProviderPanel({
   showResetCredits?: boolean
   usagePercentageDisplay?: UsagePercentageDisplay
 }): React.JSX.Element {
+  const windowSections = p ? getWindowSections(p) : []
+  const now = useResetCountdownClock(windowSections.map((section) => section.window?.resetsAt))
   const textClass = inverted ? 'text-background' : 'text-foreground'
   const mutedClass = inverted ? 'text-background/60' : 'text-muted-foreground'
   const faintClass = inverted ? 'text-background/50' : 'text-muted-foreground/80'
@@ -268,38 +338,6 @@ export function ProviderPanel({
       ? formatResetCreditExpiry(p.rateLimitResetCredits?.nextExpiresAt, resetCreditCount)
       : null
 
-  const PanelWindowSection = ({
-    w,
-    label
-  }: {
-    w: RateLimitWindow | null
-    label: string
-  }): React.JSX.Element | null => {
-    if (!w) {
-      return null
-    }
-    const usedPct = clampUsedPercent(w.usedPercent)
-    const displayedPct = getDisplayedUsagePercentage(usedPct, usagePercentageDisplay)
-    const resetLabel = w.resetsAt ? formatResetCountdown(w.resetsAt - Date.now()) : null
-
-    return (
-      <div className="space-y-1">
-        <div className={`font-medium ${textClass}`}>{label}</div>
-        <div className={`h-[6px] w-full overflow-hidden rounded-full ${emptyBarClass}`}>
-          {/* Why: fill follows the selected percentage; color still signals consumption urgency. */}
-          <div
-            className={`h-full rounded-full ${barColor(usedPct)} transition-all duration-300`}
-            style={{ width: `${displayedPct}%` }}
-          />
-        </div>
-        <div className={`flex justify-between ${mutedClass}`}>
-          <span>{formatUsagePercentageLabel(usedPct, usagePercentageDisplay)}</span>
-          {resetLabel && <span>{resetLabel}</span>}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className={`${className ?? 'w-full'} space-y-3 text-xs`}>
       <div>
@@ -327,8 +365,17 @@ export function ProviderPanel({
 
       <div className={`border-t ${dividerClass}`} />
 
-      {getWindowSections(p).map((s) => (
-        <PanelWindowSection key={s.label} w={s.window} label={s.label} />
+      {windowSections.map((s) => (
+        <ProviderRateLimitWindowSection
+          key={s.label}
+          window={s.window}
+          label={s.label}
+          textClass={textClass}
+          mutedClass={mutedClass}
+          emptyBarClass={emptyBarClass}
+          usagePercentageDisplay={usagePercentageDisplay}
+          now={now}
+        />
       ))}
 
       {p.error ? (

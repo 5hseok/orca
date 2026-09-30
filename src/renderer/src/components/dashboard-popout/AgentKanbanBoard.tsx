@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { XIcon } from 'lucide-react'
 import {
   DASHBOARD_BUCKET_ORDER,
@@ -6,10 +6,18 @@ import {
   type DashboardCard,
   type DashboardSnapshot
 } from '../../../../shared/dashboard-snapshot'
+import type { RepoIcon } from '../../../../shared/repo-icon'
 import { cn } from '@/lib/utils'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
 import { AgentKanbanCard } from './AgentKanbanCard'
+import { AgentDashboardToolbar } from './AgentDashboardToolbar'
 import { AgentTerminalDialog, type AgentRevealArgs } from './AgentTerminalDialog'
+import {
+  EMPTY_DASHBOARD_FILTERS,
+  filterDashboardCards,
+  type DashboardFilters
+} from './agent-board-filtering'
 import './agent-board-transitions.css'
 import { translate } from '@/i18n/i18n'
 
@@ -33,6 +41,8 @@ function bucketLabel(bucket: DashboardBucket): string {
       return translate('dashboardPopout.bucket.attention', 'Needs You')
     case 'working':
       return translate('dashboardPopout.bucket.working', 'Working')
+    case 'done':
+      return translate('dashboardPopout.bucket.done', 'Done')
     case 'idle':
       return translate('dashboardPopout.bucket.idle', 'Idle')
   }
@@ -42,6 +52,7 @@ function groupByBucket(cards: DashboardCard[]): Record<DashboardBucket, Dashboar
   const grouped: Record<DashboardBucket, DashboardCard[]> = {
     attention: [],
     working: [],
+    done: [],
     idle: []
   }
   for (const card of cards) {
@@ -58,22 +69,20 @@ function groupByBucket(cards: DashboardCard[]): Record<DashboardBucket, Dashboar
 function KanbanColumn({
   bucket,
   cards,
+  repoIconsByRepoId,
   now,
   onOpenTerminal
 }: {
   bucket: DashboardBucket
   cards: DashboardCard[]
+  repoIconsByRepoId: Record<string, RepoIcon | null> | undefined
   now: number
   onOpenTerminal: (card: DashboardCard) => void
 }): React.JSX.Element {
-  const highlight = bucket === 'attention' && cards.length > 0
   return (
-    <section
-      className={cn(
-        'flex min-w-[264px] flex-1 flex-col rounded-xl border bg-muted/30',
-        highlight ? 'border-amber-500/40' : 'border-border/60'
-      )}
-    >
+    // Why: attention no longer tints the whole column — the cards inside carry
+    // their own state color, so a column border would double-signal it.
+    <section className="flex min-w-[264px] flex-1 flex-col rounded-xl border border-border/60 bg-muted/30">
       <header className="flex items-center gap-2 px-3 py-2">
         <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
           {bucketLabel(bucket)}
@@ -92,6 +101,7 @@ function KanbanColumn({
             <AgentKanbanCard
               key={card.paneKey}
               card={card}
+              repoIcon={repoIconsByRepoId?.[card.repoId] ?? null}
               now={now}
               onOpenTerminal={onOpenTerminal}
             />
@@ -132,13 +142,28 @@ export function AgentKanbanBoard({
   onClose,
   headerActions
 }: AgentKanbanBoardProps): React.JSX.Element {
-  const grouped = useMemo(() => groupByBucket(snapshot.cards), [snapshot.cards])
+  const visibleBuckets = useMemo(
+    () =>
+      DASHBOARD_BUCKET_ORDER.filter((bucket) => bucket !== 'idle' || snapshot.showIdle === true),
+    [snapshot.showIdle]
+  )
+  const visibleCards = useMemo(
+    () => snapshot.cards.filter((card) => visibleBuckets.includes(card.bucket)),
+    [snapshot.cards, visibleBuckets]
+  )
+  const [query, setQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [filters, setFilters] = useState<DashboardFilters>(EMPTY_DASHBOARD_FILTERS)
+  const filteredCards = useMemo(
+    () => filterDashboardCards(visibleCards, query, filters),
+    [visibleCards, filters, query]
+  )
+  const grouped = useMemo(() => groupByBucket(filteredCards), [filteredCards])
   const hasRelativeTimestamps = useMemo(
     () => snapshot.cards.some((card) => (card.finishedAt ?? card.startedAt) > 0),
     [snapshot.cards]
   )
   const [now, setNow] = useState(() => Date.now())
-
   useEffect(() => {
     if (!hasRelativeTimestamps) {
       return
@@ -148,6 +173,27 @@ export function AgentKanbanBoard({
       intervalMs: 30_000
     })
   }, [hasRelativeTimestamps])
+
+  useEffect(() => {
+    const handleSearchShortcut = (event: KeyboardEvent): void => {
+      const usesPlatformModifier = navigator.userAgent.includes('Mac')
+        ? event.metaKey
+        : event.ctrlKey
+      if (!usesPlatformModifier || event.key.toLowerCase() !== 'k') {
+        return
+      }
+      if (
+        event.target instanceof Element &&
+        event.target.closest('input, textarea, [contenteditable="true"], .xterm')
+      ) {
+        return
+      }
+      event.preventDefault()
+      searchInputRef.current?.focus()
+    }
+    document.addEventListener('keydown', handleSearchShortcut)
+    return () => document.removeEventListener('keydown', handleSearchShortcut)
+  }, [])
 
   // The open terminal dialog survives bucket moves: only the paneKey is
   // remembered, and the card data is re-resolved from each fresh snapshot.
@@ -189,57 +235,72 @@ export function AgentKanbanBoard({
     if (dialogCard?.unseen) {
       onAckAgent(dialogCard.paneKey)
     }
-  }, [dialogCard?.unseen, dialogCard?.paneKey, onAckAgent])
+  }, [dialogCard?.paneKey, dialogCard?.unseen, onAckAgent])
 
   return (
-    <div className={cn('flex flex-col bg-background text-foreground', containerClassName)}>
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-        <h1 className="text-[13px] font-semibold">
-          {translate('dashboardPopout.title', 'Agents')}
-        </h1>
-        <span className="text-[11px] text-muted-foreground">
-          {translate('dashboardPopout.total', '{{count}} total', {
-            count: snapshot.cards.length
-          })}
-        </span>
-        {headerActions || onClose ? (
-          <div className="ml-auto flex items-center gap-1">
-            {headerActions}
-            {onClose ? (
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label={translate('dashboardPopout.close', 'Close dashboard')}
-                className="rounded-sm p-1 text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                <XIcon className="size-4" />
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-      <div className="scrollbar-sleek flex min-h-0 flex-1 overflow-x-auto p-3">
-        {/* Why: columns share the window width up to a readable cap; mx-auto
-            centers the capped board so leftover space splits evenly instead of
-            pooling on the right. In overflow the auto margins collapse to 0,
-            keeping the left edge reachable while scrolling. */}
-        <div className="mx-auto flex w-full max-w-[1280px] gap-3">
-          {DASHBOARD_BUCKET_ORDER.map((bucket) => (
-            <KanbanColumn
-              key={bucket}
-              bucket={bucket}
-              cards={grouped[bucket]}
-              now={now}
-              onOpenTerminal={handleOpenTerminal}
-            />
-          ))}
+    // Why: the pop-out is its own React root with no app-level provider, and the
+    // card's repo tooltip needs one in both hosts. Nesting inside the main
+    // window's provider is harmless.
+    <TooltipProvider delayDuration={300}>
+      <div
+        className={cn('relative flex flex-col bg-background text-foreground', containerClassName)}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+          <h1 className="text-[13px] font-semibold">
+            {translate('dashboardPopout.title', 'Agents')}
+          </h1>
+          <span className="text-[11px] text-muted-foreground">
+            {translate('dashboardPopout.total', '{{count}} total', {
+              count: visibleCards.length
+            })}
+          </span>
+          {headerActions || onClose ? (
+            <div className="ml-auto flex items-center gap-1">
+              {headerActions}
+              {onClose ? (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label={translate('dashboardPopout.close', 'Close dashboard')}
+                  className="rounded-sm p-1 text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  <XIcon className="size-4" />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
+        <AgentDashboardToolbar
+          cards={visibleCards}
+          filterOptions={snapshot.filterOptions}
+          filteredCount={filteredCards.length}
+          query={query}
+          onQueryChange={setQuery}
+          filters={filters}
+          onFiltersChange={setFilters}
+          searchInputRef={searchInputRef}
+        />
+        <div className="scrollbar-sleek flex min-h-0 flex-1 overflow-x-auto p-3">
+          {/* Auto margins center the capped board and collapse during horizontal overflow. */}
+          <div className="mx-auto flex w-full max-w-[1280px] gap-3">
+            {visibleBuckets.map((bucket) => (
+              <KanbanColumn
+                key={bucket}
+                bucket={bucket}
+                cards={grouped[bucket]}
+                repoIconsByRepoId={snapshot.repoIconsByRepoId}
+                now={now}
+                onOpenTerminal={handleOpenTerminal}
+              />
+            ))}
+          </div>
+        </div>
+        <AgentTerminalDialog
+          card={dialogCard}
+          onOpenChange={handleDialogOpenChange}
+          onReveal={onRevealAgent}
+        />
       </div>
-      <AgentTerminalDialog
-        card={dialogCard}
-        onOpenChange={handleDialogOpenChange}
-        onReveal={onRevealAgent}
-      />
-    </div>
+    </TooltipProvider>
   )
 }

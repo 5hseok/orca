@@ -1,4 +1,4 @@
-import type { UpdateStatus } from '../shared/types'
+import type { UpdateStatus } from '../shared/update-status-types'
 import {
   compareAppVersions,
   isPrereleaseAppVersion,
@@ -10,6 +10,9 @@ export const isPrereleaseVersion = isPrereleaseAppVersion
 export const isValidVersion = isValidAppVersion
 
 export function statusesEqual(left: UpdateStatus, right: UpdateStatus): boolean {
+  if (left.source !== right.source) {
+    return false
+  }
   switch (left.state) {
     case 'idle':
       return right.state === 'idle'
@@ -46,8 +49,12 @@ export function statusesEqual(left: UpdateStatus, right: UpdateStatus): boolean 
       return (
         right.state === 'error' &&
         left.message === right.message &&
+        left.version === right.version &&
+        left.retryable === right.retryable &&
         left.userInitiated === right.userInitiated &&
-        left.activeNudgeId === right.activeNudgeId
+        left.activeNudgeId === right.activeNudgeId &&
+        // Recovery identity fences async actions, so same-valued recaptures must reach the renderer.
+        left.recovery === right.recovery
       )
   }
 }

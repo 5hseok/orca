@@ -4,8 +4,8 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/h
 import { ExternalLink, MonitorUp, Pencil, StickyNote } from 'lucide-react'
 import { toast } from 'sonner'
 import { LinearIcon } from '@/components/icons/LinearIcon'
+import { JiraIcon } from '@/components/icons/JiraIcon'
 import { SelectedTextCopyMenu } from '@/components/SelectedTextCopyMenu'
-import CommentMarkdown from './CommentMarkdown'
 import { WORKTREE_NATIVE_CONTEXT_MENU_ATTR } from './WorktreeContextMenu'
 import {
   WorktreeCardDetailSection,
@@ -18,6 +18,7 @@ import { useWorktreeCardDetailsHoverControl } from './worktree-card-details-hove
 import { getReviewLabel } from './worktree-review-helpers'
 import type {
   WorktreeCardIssueDisplay,
+  WorktreeCardJiraIssueDisplay,
   WorktreeCardLinearIssueDisplay,
   WorktreeCardMetaBadgesProps,
   WorktreeCardMetaBadgesRootProps,
@@ -29,9 +30,14 @@ import { WorktreeCardAutomationDetailSection } from './WorktreeCardAutomationDet
 import { WorktreeCardCliDetailSection } from './WorktreeCardCliDetailSection'
 import { WorktreeCardIssueDetailSection } from './WorktreeCardIssueDetailSection'
 import { WorktreeCardHoverIdentityHeader } from './WorktreeCardHoverIdentityHeader'
+import { CommentMarkdownAsync, preloadCommentMarkdown } from './comment-markdown-lazy'
+
+const COMMENT_MARKDOWN_CLASS_NAME =
+  'text-[11.5px] text-foreground break-words leading-normal [&_.comment-md-p]:block [&_.comment-md-p+.comment-md-p]:mt-1'
 
 export type {
   WorktreeCardIssueDisplay,
+  WorktreeCardJiraIssueDisplay,
   WorktreeCardLinearIssueDisplay,
   WorktreeCardMetaBadgesProps,
   WorktreeCardMetaBadgesRootProps,
@@ -49,6 +55,7 @@ function hasComment(comment: string | null): boolean {
 export function WorktreeCardDetailsHover({
   issue,
   linearIssue,
+  jiraIssue,
   review,
   comment,
   automationProvenance,
@@ -58,7 +65,6 @@ export function WorktreeCardDetailsHover({
   workspaceTitle,
   identityOrder = 'workspace-first',
   workspaceTitleRenameDisabled = false,
-  automationHostId,
   detailsAfter,
   openDelay = 250,
   closeDelay = 120,
@@ -67,8 +73,10 @@ export function WorktreeCardDetailsHover({
   onEditIssue,
   onEditComment,
   onOpenGitHubIssueInOrca,
+  onOpenIssueInBrowser,
   onOpenLinearIssueInOrca,
   onOpenReviewInOrca,
+  onOpenReviewInBrowser,
   onUnlinkReview,
   onOpenAutomation,
   onOpenAutomationRun,
@@ -160,6 +168,7 @@ export function WorktreeCardDetailsHover({
     !hasWorktreeCardDetails({
       issue,
       linearIssue,
+      jiraIssue,
       review,
       comment,
       automationProvenance,
@@ -177,7 +186,12 @@ export function WorktreeCardDetailsHover({
       openDelay={openDelay}
       closeDelay={closeDelay}
     >
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+      <HoverCardTrigger
+        asChild
+        onPointerEnter={hasComment(comment) ? preloadCommentMarkdown : undefined}
+      >
+        {children}
+      </HoverCardTrigger>
       <HoverCardContent
         side="right"
         align="start"
@@ -207,6 +221,14 @@ export function WorktreeCardDetailsHover({
             onEditIssue={onEditIssue}
             onOpenGitHubIssueInOrca={
               onOpenGitHubIssueInOrca ? dismissAndRun(onOpenGitHubIssueInOrca) : undefined
+            }
+            onOpenIssueInBrowser={
+              onOpenIssueInBrowser && issue?.url
+                ? (url: string) => {
+                    closeHover()
+                    onOpenIssueInBrowser(url)
+                  }
+                : undefined
             }
           />
 
@@ -267,11 +289,43 @@ export function WorktreeCardDetailsHover({
             </WorktreeCardDetailSection>
           )}
 
+          {jiraIssue && (
+            <WorktreeCardDetailSection>
+              <DetailHeader
+                icon={<JiraIcon className="size-3 text-muted-foreground" />}
+                label={translate(
+                  'auto.components.sidebar.WorktreeCardMeta.jiraIssue',
+                  'Jira {{value0}}',
+                  { value0: jiraIssue.identifier }
+                )}
+                actions={
+                  <MetadataActionIcon
+                    label={translate(
+                      'auto.components.sidebar.WorktreeCardMeta.viewOnJira',
+                      'View on Jira'
+                    )}
+                    href={jiraIssue.url}
+                  >
+                    <ExternalLink className="size-3" />
+                  </MetadataActionIcon>
+                }
+              />
+              <WorktreeCardDetailSectionContent>
+                <div className="text-[13px] font-semibold leading-snug text-foreground break-words">
+                  {jiraIssue.title}
+                </div>
+              </WorktreeCardDetailSectionContent>
+            </WorktreeCardDetailSection>
+          )}
+
           <WorktreeCardReviewDetailSection
             review={review}
             reviewMenuOpen={reviewMenuOpen}
             onReviewMenuOpenChange={handleReviewMenuOpenChange}
             onOpenReviewInOrca={onOpenReviewInOrca}
+            onOpenReviewInBrowser={
+              onOpenReviewInBrowser && review?.url ? onOpenReviewInBrowser : undefined
+            }
             onCopyReviewLink={review?.url ? handleCopyReviewLink : undefined}
             onUnlinkReview={onUnlinkReview}
             closeHover={closeHover}
@@ -280,7 +334,6 @@ export function WorktreeCardDetailsHover({
           {automationProvenance && (
             <WorktreeCardAutomationDetailSection
               provenance={automationProvenance}
-              worktreeHostId={automationHostId}
               onOpenAutomation={onOpenAutomation ? dismissAndRun(onOpenAutomation) : undefined}
               onOpenAutomationRun={
                 onOpenAutomationRun ? dismissAndRun(onOpenAutomationRun) : undefined
@@ -310,9 +363,11 @@ export function WorktreeCardDetailsHover({
                 }
               />
               <WorktreeCardDetailSectionContent className="space-y-2">
-                <CommentMarkdown
+                <CommentMarkdownAsync
                   content={comment ?? ''}
-                  className="text-[11.5px] text-foreground break-words leading-normal [&_.comment-md-p]:block [&_.comment-md-p+.comment-md-p]:mt-1"
+                  className={COMMENT_MARKDOWN_CLASS_NAME}
+                  // Mirrors remark-breaks so the fallback keeps the note's line count.
+                  fallbackClassName="whitespace-pre-wrap"
                 />
               </WorktreeCardDetailSectionContent>
             </WorktreeCardDetailSection>

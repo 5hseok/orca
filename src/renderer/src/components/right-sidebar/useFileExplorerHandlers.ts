@@ -5,6 +5,7 @@ import { detectLanguage } from '@/lib/language-detect'
 import { toast } from 'sonner'
 import type { TreeNode } from './file-explorer-types'
 import { FILE_EXPLORER_DRAGGABLE_SELECTOR } from './file-explorer-drag-scroll-marker'
+import type { DirToggleTiming } from './file-explorer-dir-toggle-timing'
 import { translate } from '@/i18n/i18n'
 import {
   getFileExplorerOwnerUnresolvedMessage,
@@ -38,13 +39,14 @@ type UseFileExplorerHandlersParams = {
     options?: { force?: boolean; failOnError?: boolean }
   ) => Promise<boolean>
   statPath: (path: string) => Promise<{ isDirectory: boolean }>
+  authorizeExternalPath: (args: { targetPath: string }) => Promise<void>
   markPathAsDirectory: (path: string) => void
   setSelectedPath: (path: string) => void
   scrollRef: RefObject<HTMLDivElement | null>
 }
 
 type UseFileExplorerHandlersReturn = {
-  handleClick: (node: TreeNode) => void
+  handleClick: (node: TreeNode, dirToggle?: DirToggleTiming) => void
   handleDoubleClick: (node: TreeNode) => void
   handleWheelCapture: (e: React.WheelEvent<HTMLDivElement>) => void
 }
@@ -61,6 +63,7 @@ export async function activateFileExplorerNode(args: {
   canToggleDirectories?: boolean
   loadDir: UseFileExplorerHandlersParams['loadDir']
   statPath: UseFileExplorerHandlersParams['statPath']
+  authorizeExternalPath: UseFileExplorerHandlersParams['authorizeExternalPath']
   markPathAsDirectory: (path: string) => void
   setSelectedPath: (path: string) => void
 }): Promise<void> {
@@ -72,6 +75,7 @@ export async function activateFileExplorerNode(args: {
     canToggleDirectories = true,
     loadDir,
     statPath,
+    authorizeExternalPath,
     markPathAsDirectory,
     setSelectedPath
   } = args
@@ -91,15 +95,16 @@ export async function activateFileExplorerNode(args: {
     // them only after the user explicitly activates the row.
     let targetIsDirectory = false
     try {
+      // Why: activation is explicit intent to follow the link, so grant its target the
+      // access a terminal-link click already grants. Remote owners skip it — the
+      // relay/runtime is their security boundary.
+      if (node.operationOwner?.kind === 'local') {
+        await authorizeExternalPath({ targetPath: node.path })
+      }
       targetIsDirectory = (await statPath(node.path)).isDirectory
     } catch {
-      toast.error(
-        translate(
-          'auto.components.right.sidebar.useFileExplorerHandlers.32cd9fd991',
-          'Cannot open symlink target'
-        )
-      )
-      return
+      // Why: an unresolvable target can't be proven to be a directory; fall through so
+      // the editor reports the real error instead of the click dead-ending here.
     }
     if (targetIsDirectory) {
       const loadedAsDirectory = await loadDir(node.path, node.depth, {
@@ -160,12 +165,19 @@ export function useFileExplorerHandlers({
   canToggleDirectories = true,
   loadDir,
   statPath,
+  authorizeExternalPath,
   markPathAsDirectory,
   setSelectedPath,
   scrollRef
 }: UseFileExplorerHandlersParams): UseFileExplorerHandlersReturn {
   const handleClick = useCallback(
-    (node: TreeNode) => {
+    (node: TreeNode, dirToggle: DirToggleTiming = 'immediate') => {
+      if (dirToggle === 'skip' && (node.isDirectory || node.isSymlink)) {
+        // Why: rename owns this click. Symlink rows stay file-shaped until
+        // activation, so isDirectory alone would stat and toggle again.
+        setSelectedPath(node.path)
+        return
+      }
       void activateFileExplorerNode({
         node,
         activeWorktreeId,
@@ -175,6 +187,7 @@ export function useFileExplorerHandlers({
         canToggleDirectories,
         loadDir,
         statPath,
+        authorizeExternalPath,
         markPathAsDirectory,
         setSelectedPath
       })
@@ -187,6 +200,7 @@ export function useFileExplorerHandlers({
       markPathAsDirectory,
       openFile,
       statPath,
+      authorizeExternalPath,
       toggleDir,
       setSelectedPath
     ]

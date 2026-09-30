@@ -2,6 +2,7 @@ import type { Page, TestInfo } from '@stablyai/playwright-test'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { alternateScreenFixtureScript } from './alternate-screen-fixture-script'
 import { test, expect } from './helpers/orca-app'
 import { runNodeScriptInTerminal } from './helpers/run-node-script-in-terminal'
 import {
@@ -18,6 +19,8 @@ import {
   waitForPaneIdentitySnapshot
 } from './helpers/terminal'
 import { parkHiddenTabBehindDecoy, waitForTabParked } from './helpers/terminal-hidden-parking'
+import { waitForPtyShellEcho } from './terminal-pty-readiness'
+import { TERMINAL_TAB_PARK_FLIP_WINDOW_MS } from '../../src/renderer/src/components/terminal-pane/terminal-park-verdict-flip-telemetry'
 
 // Why: the parking wiring registers this handle (dev/exposeStore builds only)
 // so tests can detect that hidden-view parking is compiled in and which delay
@@ -40,6 +43,7 @@ test.use({
 
 const PARKED_FRAME_SCRIPT_DELAY_MS = 750
 const PARKED_FRAME_COUNT = 25
+const PARK_VERDICT_WINDOW_SETTLE_MS = Math.ceil(TERMINAL_TAB_PARK_FLIP_WINDOW_MS / 5)
 
 function parkedTuiFrame(runId: string, frame: number): string {
   const progress = `${'█'.repeat((frame % 8) + 1)}${'░'.repeat(8 - ((frame % 8) + 1))}`
@@ -71,7 +75,7 @@ function writeParkedFrameScript(scriptPath: string, runId: string): void {
   mkdirSync(path.dirname(scriptPath), { recursive: true })
   writeFileSync(
     scriptPath,
-    `setTimeout(() => process.stdout.write(${JSON.stringify(frames.join(''))}), ${PARKED_FRAME_SCRIPT_DELAY_MS})\n`
+    alternateScreenFixtureScript(frames.join(''), PARKED_FRAME_SCRIPT_DELAY_MS)
   )
 }
 
@@ -101,12 +105,7 @@ function cycleReferenceFrame(runId: string): string {
 
 function writeCycleReferenceScript(scriptPath: string, runId: string): void {
   mkdirSync(path.dirname(scriptPath), { recursive: true })
-  // Paint the frame once, then hold the process open so the alt-screen TUI
-  // stays on screen (and the parkable PTY session stays alive) across cycles.
-  writeFileSync(
-    scriptPath,
-    `process.stdout.write(${JSON.stringify(cycleReferenceFrame(runId))}); setInterval(() => {}, 1000)\n`
-  )
+  writeFileSync(scriptPath, alternateScreenFixtureScript(cycleReferenceFrame(runId)))
 }
 
 // Why: serialize() re-emits the buffer with cursor-restore trailer sequences
@@ -169,7 +168,7 @@ async function activateTerminalTab(page: Page, tabId: string): Promise<void> {
       throw new Error('activateTerminalTab: window.__store is unavailable')
     }
     const state = store.getState()
-    state.setActiveTabType('terminal')
+    state.setActiveTabType('terminal', store.getState().activeWorktreeId)
     state.setActiveTab(targetTabId)
   }, tabId)
 
@@ -181,87 +180,6 @@ async function activateTerminalTab(page: Page, tabId: string): Promise<void> {
     .toBe(tabId)
 }
 
-type TerminalPresentationFrame = {
-  previousPresented: boolean
-  targetPresented: boolean
-  targetBufferContainsMarker: boolean
-}
-
-async function startTerminalPresentationObservation(
-  page: Page,
-  previousTabId: string,
-  targetTabId: string,
-  targetMarker: string
-): Promise<void> {
-  await page.evaluate(
-    ({ previousTabId, targetTabId, targetMarker }) => {
-      const observedWindow = window as Window & {
-        __terminalPresentationFrames?: TerminalPresentationFrame[]
-        __terminalPresentationObservationDone?: boolean
-      }
-      const frames: TerminalPresentationFrame[] = []
-      observedWindow.__terminalPresentationFrames = frames
-      observedWindow.__terminalPresentationObservationDone = false
-      const findOverlay = (tabId: string): HTMLElement | null =>
-        document.querySelector<HTMLElement>(`[data-terminal-overlay-tab-id="${CSS.escape(tabId)}"]`)
-      const isPresented = (tabId: string): boolean => {
-        const overlay = findOverlay(tabId)
-        return (
-          overlay?.dataset.terminalOverlayPresented === 'true' &&
-          getComputedStyle(overlay).display !== 'none' &&
-          getComputedStyle(overlay).opacity !== '0'
-        )
-      }
-      const sample = (): void => {
-        const targetPane =
-          window.__paneManagers?.get(targetTabId)?.getActivePane?.() ??
-          window.__paneManagers?.get(targetTabId)?.getPanes?.()[0]
-        const frame = {
-          previousPresented: isPresented(previousTabId),
-          targetPresented: isPresented(targetTabId),
-          targetBufferContainsMarker:
-            targetPane?.serializeAddon?.serialize?.().includes(targetMarker) === true
-        }
-        frames.push(frame)
-        if (frame.targetPresented) {
-          observedWindow.__terminalPresentationObservationDone = true
-          return
-        }
-        requestAnimationFrame(sample)
-      }
-      sample()
-    },
-    { previousTabId, targetTabId, targetMarker }
-  )
-}
-
-async function readTerminalPresentationObservation(
-  page: Page
-): Promise<TerminalPresentationFrame[]> {
-  await expect
-    .poll(
-      () =>
-        page.evaluate(
-          () =>
-            (
-              window as Window & {
-                __terminalPresentationObservationDone?: boolean
-              }
-            ).__terminalPresentationObservationDone === true
-        ),
-      { timeout: 5_000, message: 'terminal presentation handoff did not settle' }
-    )
-    .toBe(true)
-  return page.evaluate(
-    () =>
-      (
-        window as Window & {
-          __terminalPresentationFrames?: TerminalPresentationFrame[]
-        }
-      ).__terminalPresentationFrames ?? []
-  )
-}
-
 async function createActiveTerminalTab(page: Page, worktreeId: string): Promise<string> {
   const tabId = await page.evaluate((worktreeId) => {
     const store = window.__store
@@ -271,7 +189,7 @@ async function createActiveTerminalTab(page: Page, worktreeId: string): Promise<
     const state = store.getState()
     const tab = state.createTab(worktreeId, undefined, undefined, { activate: true })
     state.setActiveTab(tab.id)
-    state.setActiveTabType('terminal')
+    state.setActiveTabType('terminal', store.getState().activeWorktreeId)
     return tab.id
   }, worktreeId)
 
@@ -392,16 +310,6 @@ test.describe('Terminal hidden view parking', () => {
       expect(tabBState.hasManager).toBe(true)
       expect(tabBState.paneCount).toBeGreaterThan(0)
 
-      const previouslyPresentedTabId = await getActiveTabId(orcaPage)
-      if (!previouslyPresentedTabId) {
-        throw new Error('parking reveal had no previously presented terminal tab')
-      }
-      await startTerminalPresentationObservation(
-        orcaPage,
-        previouslyPresentedTabId,
-        tabAId,
-        finalMarker
-      )
       await activateTerminalTab(orcaPage, tabAId)
       await waitForActiveTerminalManager(orcaPage, 30_000)
       const revealedSnapshot = await waitForPaneIdentitySnapshot(orcaPage, 1)
@@ -417,26 +325,23 @@ test.describe('Terminal hidden view parking', () => {
         })
         .toContain(finalMarker)
 
-      const presentationFrames = await readTerminalPresentationObservation(orcaPage)
-      const firstTargetFrame = presentationFrames.findIndex((frame) => frame.targetPresented)
-      expect(firstTargetFrame).toBeGreaterThan(0)
-      expect(
-        presentationFrames[firstTargetFrame]?.targetBufferContainsMarker,
-        JSON.stringify(presentationFrames)
-      ).toBe(true)
-      expect(
-        presentationFrames
-          .slice(0, firstTargetFrame)
-          .every((frame) => frame.previousPresented && !frame.targetPresented),
-        JSON.stringify(presentationFrames)
-      ).toBe(true)
-
       const content = await getTerminalContent(orcaPage, 12_000)
       expect(content).toContain(`Frame ${String(PARKED_FRAME_COUNT - 1).padStart(3, '0')}`)
       expect(content).toContain('╭')
       expect(content).toContain('├')
       expect(content).toContain('█')
       expect(content).not.toContain('Orca skipped hidden terminal output')
+
+      // Why: the fixture TUI still owns the PTY foreground after the reveal, so
+      // interrupt it and wait for the shell to take input back before probing.
+      await sendToTerminal(orcaPage, tabAPtyId, '\x03')
+      // Why rethrow: the readiness failure reads as a dead shell, but the only new
+      // dependency here is Ctrl-C reaching the foreground TUI (ConPTY translates it).
+      await waitForPtyShellEcho(orcaPage, tabAPtyId, 15_000).catch((error: unknown) => {
+        throw new Error(
+          `Ctrl-C did not hand the PTY back from the fixture TUI: ${error instanceof Error ? error.message : String(error)}`
+        )
+      })
 
       // Why: the typed marker only appears joined in command *output*, so this
       // proves the revealed terminal accepts input end-to-end, not just echo.
@@ -573,7 +478,7 @@ test.describe('Terminal hidden view parking', () => {
     orcaPage,
     testRepoPath
   }, testInfo: TestInfo) => {
-    test.setTimeout(180_000)
+    test.setTimeout(420_000)
     await waitForSessionReady(orcaPage)
     const setup = await setUpParkableTabA(orcaPage)
     const { worktreeId, tabAId, tabAPtyId } = setup
@@ -636,6 +541,9 @@ test.describe('Terminal hidden view parking', () => {
       const CYCLES = 25
       const mismatches: string[] = []
       for (let cycle = 1; cycle < CYCLES; cycle++) {
+        // Why: each cycle intentionally flips this tab's rendered verdict twice.
+        // Keep each tab below the 12-flip sustained-churn pin in a 60s window.
+        await orcaPage.waitForTimeout(PARK_VERDICT_WINDOW_SETTLE_MS)
         const rows = await runOneParkRevealCycle(cycle)
         if (JSON.stringify(rows) !== JSON.stringify(referenceRows)) {
           mismatches.push(

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeClearFilterActions,
-  isDefaultBranchWorkspace,
+  isSleepingSweepExemptionNarrowingList,
   sidebarHasActiveFilters
 } from './visible-worktrees'
-import type { Worktree } from '../../../../shared/types'
+import { isDefaultBranchWorkspace } from './default-branch-workspace'
+import type { Worktree } from '../../../../shared/worktree/types'
+
+const gitRepo = { kind: 'git' } as const
 
 function makeWorktree(id: string, repoId = 'repo1'): Worktree {
   return {
@@ -38,6 +41,8 @@ function filterState(overrides: Partial<FilterState> = {}): FilterState {
     hideAutomationGeneratedWorkspaces: false,
     hideCliCreatedWorkspaces: false,
     hideDetachedHeadWorkspaces: false,
+    hideWorkspacesFromOtherDevices: false,
+    alwaysShowDefaultBranchWorkspace: true,
     workspaceHostScope: 'all',
     ...overrides
   }
@@ -47,19 +52,34 @@ describe('isDefaultBranchWorkspace', () => {
   it('returns true for a branch-backed main worktree', () => {
     const main = makeWorktree('main')
     main.isMainWorktree = true
-    expect(isDefaultBranchWorkspace(main)).toBe(true)
+    expect(isDefaultBranchWorkspace(main, gitRepo)).toBe(true)
   })
 
-  it('returns false for folder-mode main worktrees (empty branch)', () => {
+  it('returns false for an empty-branch git main (detached HEAD or offline SSH row)', () => {
+    const detached = makeWorktree('detached')
+    detached.isMainWorktree = true
+    detached.branch = ''
+    expect(isDefaultBranchWorkspace(detached, gitRepo)).toBe(false)
+  })
+
+  it('returns true for a folder project root, which has no branch', () => {
     const folder = makeWorktree('folder')
     folder.isMainWorktree = true
     folder.branch = ''
-    expect(isDefaultBranchWorkspace(folder)).toBe(false)
+    folder.head = ''
+    expect(isDefaultBranchWorkspace(folder, { kind: 'folder' })).toBe(true)
   })
 
   it('returns false for non-main worktrees even on the default branch', () => {
     const feature = makeWorktree('feature')
-    expect(isDefaultBranchWorkspace(feature)).toBe(false)
+    expect(isDefaultBranchWorkspace(feature, gitRepo)).toBe(false)
+  })
+
+  it('keeps a provisioned root visible as the recipe-created workspace', () => {
+    const provisionedRoot = makeWorktree('provisioned-root')
+    provisionedRoot.isMainWorktree = true
+    provisionedRoot.ephemeralVmCheckoutMode = 'provisioned-root'
+    expect(isDefaultBranchWorkspace(provisionedRoot, gitRepo)).toBe(false)
   })
 })
 
@@ -89,6 +109,12 @@ describe('sidebarHasActiveFilters', () => {
     expect(sidebarHasActiveFilters(filterState({ hideDetachedHeadWorkspaces: true }))).toBe(true)
   })
 
+  it('returns true when workspaces from other devices are hidden', () => {
+    expect(sidebarHasActiveFilters(filterState({ hideWorkspacesFromOtherDevices: true }))).toBe(
+      true
+    )
+  })
+
   it('returns true when sleeping workspaces are hidden', () => {
     expect(sidebarHasActiveFilters(filterState({ showSleepingWorkspaces: false }))).toBe(true)
   })
@@ -97,8 +123,34 @@ describe('sidebarHasActiveFilters', () => {
     expect(sidebarHasActiveFilters(filterState({ filterRepoIds: ['repo1'] }))).toBe(true)
   })
 
+  it('counts an opted-out default-branch exemption as an active filter', () => {
+    expect(sidebarHasActiveFilters(filterState({ alwaysShowDefaultBranchWorkspace: false }))).toBe(
+      true
+    )
+  })
+
+  it('treats a missing default-branch exemption as the default, not a filter', () => {
+    const { alwaysShowDefaultBranchWorkspace: _omitted, ...withoutFlag } = filterState()
+    expect(sidebarHasActiveFilters(withoutFlag)).toBe(false)
+  })
+
   it('returns true when only host visibility is narrowed', () => {
     expect(sidebarHasActiveFilters(filterState({ visibleWorkspaceHostIds: ['local'] }))).toBe(true)
+  })
+})
+
+describe('isSleepingSweepExemptionNarrowingList', () => {
+  it('is false while sleeping workspaces are shown, even when opted out', () => {
+    expect(isSleepingSweepExemptionNarrowingList(true, false)).toBe(false)
+  })
+
+  it('is true only when the sweep is on and the exemption is opted out', () => {
+    expect(isSleepingSweepExemptionNarrowingList(false, false)).toBe(true)
+    expect(isSleepingSweepExemptionNarrowingList(false, true)).toBe(false)
+  })
+
+  it('treats a missing flag as the on default', () => {
+    expect(isSleepingSweepExemptionNarrowingList(false, undefined)).toBe(false)
   })
 })
 
@@ -111,6 +163,8 @@ describe('computeClearFilterActions', () => {
       resetHideAutomationGeneratedWorkspaces: false,
       resetHideCliCreatedWorkspaces: false,
       resetHideDetachedHeadWorkspaces: false,
+      resetHideWorkspacesFromOtherDevices: false,
+      resetAlwaysShowDefaultBranchWorkspace: false,
       resetVisibleWorkspaceHostIds: false
     })
   })
@@ -126,6 +180,8 @@ describe('computeClearFilterActions', () => {
       resetHideAutomationGeneratedWorkspaces: false,
       resetHideCliCreatedWorkspaces: false,
       resetHideDetachedHeadWorkspaces: false,
+      resetHideWorkspacesFromOtherDevices: false,
+      resetAlwaysShowDefaultBranchWorkspace: false,
       resetVisibleWorkspaceHostIds: false
     })
   })
@@ -140,6 +196,8 @@ describe('computeClearFilterActions', () => {
       resetHideAutomationGeneratedWorkspaces: true,
       resetHideCliCreatedWorkspaces: false,
       resetHideDetachedHeadWorkspaces: false,
+      resetHideWorkspacesFromOtherDevices: false,
+      resetAlwaysShowDefaultBranchWorkspace: false,
       resetVisibleWorkspaceHostIds: false
     })
   })
@@ -152,6 +210,8 @@ describe('computeClearFilterActions', () => {
       resetHideAutomationGeneratedWorkspaces: false,
       resetHideCliCreatedWorkspaces: true,
       resetHideDetachedHeadWorkspaces: false,
+      resetHideWorkspacesFromOtherDevices: false,
+      resetAlwaysShowDefaultBranchWorkspace: false,
       resetVisibleWorkspaceHostIds: false
     })
   })
@@ -164,6 +224,8 @@ describe('computeClearFilterActions', () => {
       resetHideAutomationGeneratedWorkspaces: false,
       resetHideCliCreatedWorkspaces: false,
       resetHideDetachedHeadWorkspaces: true,
+      resetHideWorkspacesFromOtherDevices: false,
+      resetAlwaysShowDefaultBranchWorkspace: false,
       resetVisibleWorkspaceHostIds: false
     })
   })
@@ -189,7 +251,25 @@ describe('computeClearFilterActions', () => {
       resetHideAutomationGeneratedWorkspaces: false,
       resetHideCliCreatedWorkspaces: false,
       resetHideDetachedHeadWorkspaces: false,
+      resetHideWorkspacesFromOtherDevices: false,
+      resetAlwaysShowDefaultBranchWorkspace: false,
       resetVisibleWorkspaceHostIds: true
+    })
+  })
+
+  it('flags only the default-branch exemption for reset when it is the sole filter', () => {
+    expect(
+      computeClearFilterActions(filterState({ alwaysShowDefaultBranchWorkspace: false }))
+    ).toEqual({
+      resetShowSleepingWorkspaces: false,
+      resetFilterRepoIds: false,
+      resetHideDefaultBranchWorkspace: false,
+      resetHideAutomationGeneratedWorkspaces: false,
+      resetHideCliCreatedWorkspaces: false,
+      resetHideDetachedHeadWorkspaces: false,
+      resetHideWorkspacesFromOtherDevices: false,
+      resetAlwaysShowDefaultBranchWorkspace: true,
+      resetVisibleWorkspaceHostIds: false
     })
   })
 
@@ -211,6 +291,8 @@ describe('computeClearFilterActions', () => {
       resetHideAutomationGeneratedWorkspaces: true,
       resetHideCliCreatedWorkspaces: false,
       resetHideDetachedHeadWorkspaces: false,
+      resetHideWorkspacesFromOtherDevices: false,
+      resetAlwaysShowDefaultBranchWorkspace: false,
       resetVisibleWorkspaceHostIds: true
     })
   })

@@ -6,7 +6,7 @@ import {
   resetMobileRelayPairingRecoveryForTests
 } from './mobile-relay-pairing-recovery'
 import type { PairingCandidateClient } from './mobile-relay-physical-client'
-import type { PairingOffer, RpcResponse } from './types'
+import type { HostProfile, PairingOffer, RpcResponse } from './types'
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
 vi.mock('expo-crypto', () => ({ getRandomBytes: vi.fn() }))
@@ -92,6 +92,7 @@ function dependencies(args: {
   journal: ReturnType<typeof journal>
   connectRelay: ReturnType<typeof vi.fn>
   bundle?: MobileRelayCredentialBundle | null
+  hosts?: HostProfile[]
 }) {
   return {
     loadJournal: vi.fn(async () => args.journal),
@@ -101,8 +102,8 @@ function dependencies(args: {
     clearJournal: vi.fn(async () => {}),
     readCredentialBundle: vi.fn(async () => args.bundle ?? null),
     writeCredentialBundle: vi.fn(async () => {}),
-    loadHosts: vi.fn(async () => []),
-    saveHost: vi.fn(async () => {}),
+    loadHosts: vi.fn(async (): Promise<HostProfile[]> => args.hosts ?? []),
+    savePairedHost: vi.fn(async () => {}),
     connectRelay: args.connectRelay,
     resolveInviteDirector: vi.fn(async () => {
       throw new Error('director not needed')
@@ -139,7 +140,26 @@ describe('mobile relay pairing recovery', () => {
       })
     )
     expect(deps.writeCredentialBundle).toHaveBeenCalledOnce()
-    expect(deps.saveHost).toHaveBeenCalledOnce()
+    expect(deps.savePairedHost).toHaveBeenCalledOnce()
+    expect(deps.clearJournal).toHaveBeenCalledOnce()
+  })
+
+  it('clears a journal whose relay routing the host already carries, without dialing', async () => {
+    const saved = journal()
+    const connectRelay = vi.fn()
+    const bundle: MobileRelayCredentialBundle = {
+      v: 1,
+      hostId: 'host-1',
+      deviceToken: offer.deviceToken,
+      current: { token: 'C'.repeat(43), hash: 'D'.repeat(43), version: 1, expiresAt: now + 60_000 }
+    }
+    const { relay } = endpoints(saved, { state: 'not-found' })
+    const hosts = [{ ...saved.metadata.host, deviceToken: offer.deviceToken, relay }]
+    const deps = dependencies({ journal: saved, connectRelay, bundle, hosts })
+
+    await expect(recoverMobileRelayPairing(deps)).resolves.toBe('recovered')
+    expect(connectRelay).not.toHaveBeenCalled()
+    expect(deps.savePairedHost).not.toHaveBeenCalled()
     expect(deps.clearJournal).toHaveBeenCalledOnce()
   })
 
@@ -219,5 +239,54 @@ describe('mobile relay pairing recovery', () => {
     expect(written.current.token).toBe(saved.secrets.pendingResumeToken)
     expect(saved.metadata.authorizationMode).toBe('authenticated-direct')
     expect(deps.updateJournal).toHaveBeenCalledTimes(2)
+  })
+  // Why: a journal stranded by a relay outage used to block every later pairing
+  // with "recovery pending" forever, because recovery only ever deferred.
+  it('abandons a journal once its invite expired and no credential can reconcile', async () => {
+    const saved = journal()
+    const unreachable = client(async () => {
+      throw new Error('relay unreachable')
+    })
+    const deps = {
+      ...dependencies({ journal: saved, connectRelay: vi.fn(() => unreachable) }),
+      now: () => saved.metadata.relay.inviteExpiresAt + 10 * 60 * 1000 + 1
+    }
+
+    await expect(recoverMobileRelayPairing(deps)).resolves.toBe('abandoned')
+    expect(deps.clearJournal).toHaveBeenCalledWith(saved.metadata.journalId)
+  })
+
+  it('keeps a just-expired journal so a brief outage cannot discard it', async () => {
+    const saved = journal()
+    const unreachable = client(async () => {
+      throw new Error('relay unreachable')
+    })
+    const deps = {
+      ...dependencies({ journal: saved, connectRelay: vi.fn(() => unreachable) }),
+      now: () => saved.metadata.relay.inviteExpiresAt + 1
+    }
+
+    await expect(recoverMobileRelayPairing(deps)).resolves.toBe('deferred')
+    expect(deps.clearJournal).not.toHaveBeenCalled()
+  })
+
+  // Why: a committed install whose local persistence failed is the one case the
+  // journal must survive — it is the only record left to retry the write from.
+  it('keeps a journal when the server committed but the local write failed', async () => {
+    const saved = journal()
+    const directInstalled = installed(saved, 'authenticated-direct')
+    const committed = client(async () =>
+      response(endpoints(saved, { state: 'committed', result: directInstalled }))
+    )
+    const deps = {
+      ...dependencies({ journal: saved, connectRelay: vi.fn(() => committed) }),
+      now: () => saved.metadata.relay.inviteExpiresAt + 10 * 60 * 1000 + 1,
+      writeCredentialBundle: vi.fn(async () => {
+        throw new Error('keychain unavailable')
+      })
+    }
+
+    await expect(recoverMobileRelayPairing(deps)).resolves.toBe('deferred')
+    expect(deps.clearJournal).not.toHaveBeenCalled()
   })
 })

@@ -1,21 +1,31 @@
 import type { useAppStore } from '@/store'
 import type { SleepingAgentSessionRecord } from '../../../shared/agent-session-resume'
+import { agentTurnEndedUncleanly } from '../../../shared/agent-main-agent-verdict'
 import type {
   TerminalLayoutSnapshot,
   TerminalPaneLayoutNode,
   TerminalTab
-} from '../../../shared/types'
+} from '../../../shared/terminal-tab-types'
 import { parseLegacyNumericPaneKey, parsePaneKey } from '../../../shared/stable-pane-id'
+import { isWebTerminalSurfaceTabId } from '../../../shared/terminal-surface-id'
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>
 
 export function getProviderSessionClaimKey(record: SleepingAgentSessionRecord): string {
   const base = `${record.worktreeId}\0${record.agent}\0${record.providerSession.key}\0${record.providerSession.id}`
-  return record.agent === 'pi' ? `${base}\0${record.providerSession.transcriptPath ?? ''}` : base
+  return record.agent === 'pi' || record.agent === 'prime-agent'
+    ? `${base}\0${record.providerSession.transcriptPath ?? ''}`
+    : base
 }
 
-export function isPassiveCompletedHibernationEvidence(record: SleepingAgentSessionRecord): boolean {
-  return record.origin !== 'quit' && record.origin !== 'live' && record.state === 'done'
+// Why live+done counts (#16308): workspace activation must not resume a finished turn's idle anchor.
+// Quit asks to keep work resumable and a live stopped or failed turn is unfinished.
+export function activationTreatsNoteAsFinished(record: SleepingAgentSessionRecord): boolean {
+  return (
+    record.origin !== 'quit' &&
+    !(record.origin === 'live' && agentTurnEndedUncleanly(record)) &&
+    record.state === 'done'
+  )
 }
 
 function getLegacyPaneTabId(record: SleepingAgentSessionRecord): string | null {
@@ -84,7 +94,7 @@ function hasRestorableStablePanePty(
 // the pane that reconnects on activation. Liveness comes from the runtime
 // live-PTY map (ptyIdsByTabId), not the layout's ptyIdsByLeafId snapshot, which
 // persists stale across sleep/restart.
-function stablePaneHasLivePty(
+export function stablePaneHasLivePty(
   tabId: string,
   leafId: string,
   ptyIdsByTabId: Record<string, string[]>,
@@ -110,19 +120,14 @@ function paneWillConnectOnActivation(
   if (state.activeWorktreeId !== worktreeId) {
     return false
   }
-  if (state.activeTabType === 'terminal' && state.activeTabId === tabId) {
-    return true
-  }
-  // Why: split groups can show multiple terminal tabs at once; each group's
-  // active terminal mounts and connects even when another group has focus.
-  const groups = state.groupsByWorktree[worktreeId] ?? []
-  const unifiedTabs = state.unifiedTabsByWorktree[worktreeId] ?? []
-  return groups.some((group) => {
-    const tab = group.activeTabId
-      ? unifiedTabs.find((candidate) => candidate.id === group.activeTabId)
-      : null
-    return tab?.contentType === 'terminal' && tab.entityId === tabId
-  })
+  // Why: keep-alive mounts every terminal tab of the active worktree and pane
+  // connect is not visibility-gated (cold-activation deferral delays a mount,
+  // never cancels it), so any preserved restorable pane cold-restores in place.
+  // Gating on the visible tab forked a second live surface onto the same
+  // provider session for every non-group-active agent tab. Web-mirror tabs are
+  // the exception: their pane attaches the host PTY instead of cold-restoring
+  // from a note, so they cannot own recovery.
+  return !isWebTerminalSurfaceTabId(tabId)
 }
 
 export function recordPaneIsOwnedByPreservedPane(
@@ -140,7 +145,7 @@ export function recordPaneIsOwnedByPreservedPane(
     if (!tab || !hasMatchingStablePaneLayout(tabId, stable.leafId, state.terminalLayoutsByTabId)) {
       return false
     }
-    if (isPassiveCompletedHibernationEvidence(record)) {
+    if (activationTreatsNoteAsFinished(record)) {
       return true
     }
     // Why: a pane with a live PTY owns its running session regardless of which

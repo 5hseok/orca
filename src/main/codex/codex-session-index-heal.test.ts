@@ -14,6 +14,7 @@ import type { CodexAppServerInvocation } from './codex-app-server-session'
 import { createCodexSessionBackfillAuditWriter } from './codex-session-backfill-audit'
 import { CODEX_SESSION_INDEX_HEAL_VERSION } from './codex-session-index-heal-state'
 import {
+  buildNativeHealInvocation,
   runCodexSessionIndexHeal,
   type CodexSessionIndexHealPaths
 } from './codex-session-index-heal'
@@ -147,6 +148,7 @@ function createHealRig(options: {
     readLogFile,
     buildInvocation: (_systemCodexHomePath, timeoutMs) => ({
       command: process.execPath,
+      cliPath: null,
       args: [stubPath],
       env: {
         STUB_CONFIG: JSON.stringify({
@@ -232,7 +234,7 @@ describe('runCodexSessionIndexHeal', () => {
     expect(marker.healedThreads).toBe(3)
   })
 
-  it('is a no-op when the marker matches the audit ledger size', async () => {
+  it('keeps second and later passes cheap when the audit ledger is unchanged', async () => {
     const rig = createHealRig({
       auditedThreads: [{ stamp: '2026-07-01T10-00-00', id: threadId('1') }]
     })
@@ -245,9 +247,36 @@ describe('runCodexSessionIndexHeal', () => {
       buildInvocation: rig.buildInvocation,
       interBatchDelayMs: 0
     })
+    const third = await runCodexSessionIndexHeal(rig.paths, {
+      buildInvocation: rig.buildInvocation,
+      interBatchDelayMs: 0
+    })
     expect(second.outcome).toBe('up-to-date')
-    // One spawn from the first run only — the no-op run must not hit the CLI.
+    expect(third.outcome).toBe('up-to-date')
+    // One spawn from the first run only — no-op runs must not hit the CLI.
     expect(rig.readLog().serverStarts).toBe(1)
+  })
+
+  it('re-reads a healed thread after a later publication event', async () => {
+    const id = threadId('1')
+    const stamp = '2026-07-01T10-00-00'
+    const rig = createHealRig({ auditedThreads: [{ stamp, id }] })
+    await runCodexSessionIndexHeal(rig.paths, {
+      buildInvocation: rig.buildInvocation,
+      interBatchDelayMs: 0
+    })
+
+    await createCodexSessionBackfillAuditWriter(rig.paths.auditLogPath)({
+      action: 'existing',
+      target: rolloutTarget(rig.paths.systemSessionsRoot, stamp, id)
+    })
+    const repeated = await runCodexSessionIndexHeal(rig.paths, {
+      buildInvocation: rig.buildInvocation,
+      interBatchDelayMs: 0
+    })
+
+    expect(repeated).toMatchObject({ pendingThreads: 1, healedThreads: 1 })
+    expect(rig.readLog().threadIds).toEqual([id, id])
   })
 
   it('resumes only unprocessed sessions when the audit ledger grows', async () => {
@@ -312,6 +341,7 @@ describe('runCodexSessionIndexHeal', () => {
     const marker = JSON.parse(readFileSync(rig.paths.healMarkerPath, 'utf-8')) as {
       retryableFailureAt: number
     }
+    expect(marker.retryableFailureAt).toEqual(expect.any(Number))
     marker.retryableFailureAt = 0
     writeFileSync(rig.paths.healMarkerPath, `${JSON.stringify(marker)}\n`, 'utf-8')
     const retried = await runCodexSessionIndexHeal(rig.paths, {
@@ -460,6 +490,25 @@ describe('runCodexSessionIndexHeal', () => {
     })
     expect(resumed.outcome).toBe('completed')
     expect(resumed.healedThreads + summary.healedThreads).toBe(4)
+  })
+
+  it('writes no completion marker when stop flips inside the last batch', async () => {
+    const rig = createHealRig({
+      auditedThreads: [
+        { stamp: '2026-07-02T10-00-00', id: threadId('2') },
+        { stamp: '2026-07-01T10-00-00', id: threadId('1') }
+      ]
+    })
+
+    const summary = await runCodexSessionIndexHeal(rig.paths, {
+      buildInvocation: rig.buildInvocation,
+      readConcurrency: 1,
+      interBatchDelayMs: 0,
+      shouldStop: () => rig.readLog().threadIds.length > 0
+    })
+
+    expect(summary).toMatchObject({ outcome: 'stopped', healedThreads: 1 })
+    expect(existsSync(rig.paths.healMarkerPath)).toBe(false)
   })
 
   it('does not spawn another server when stop flips during the inter-batch delay', async () => {
@@ -747,5 +796,13 @@ describe('runCodexSessionIndexHeal', () => {
     })
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
+  })
+})
+
+describe('buildNativeHealInvocation', () => {
+  it('pins the app-server to the given home', () => {
+    const invocation = buildNativeHealInvocation('/codex-home', 1_000)
+
+    expect(invocation.env).toEqual({ CODEX_HOME: '/codex-home' })
   })
 })

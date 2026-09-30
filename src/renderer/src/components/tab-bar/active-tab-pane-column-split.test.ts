@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useAppStore } from '../../store'
-import type { Tab } from '../../../../shared/types'
+import type { Tab } from '../../../../shared/tab-types'
 import {
   TAB_SPLIT_SHORTCUT_DIRECTIONS,
   resolveActiveTabPaneColumnTarget

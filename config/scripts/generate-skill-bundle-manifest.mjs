@@ -6,8 +6,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { isDeepStrictEqual } from 'node:util'
 
-// Why: the three artifacts version independently — bumping one shape must not
-// rewrite the others or bypass the registry's schema-gated append-only guard.
+// Version artifacts independently to preserve the registry's schema-gated append-only guard.
 const CURRENT_MANIFEST_SCHEMA_VERSION = 2
 const SNAPSHOT_REGISTRY_SCHEMA_VERSION = 1
 const RELEASE_MAPPING_SCHEMA_VERSION = 1
@@ -41,17 +40,18 @@ function normalizeText(bytes) {
   return Buffer.from(text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'), 'utf8')
 }
 
-function classifyFile(bytes) {
+function normalizedTextOrNull(bytes) {
   if (bytes.includes(0)) {
-    return 'binary'
+    return null
   }
   try {
-    normalizeText(bytes)
-    return 'text'
+    return normalizeText(bytes)
   } catch {
-    return 'binary'
+    return null
   }
 }
+
+const classifyFile = (bytes) => (normalizedTextOrNull(bytes) === null ? 'binary' : 'text')
 
 function assertSafeRelativePath(relativePath) {
   if (
@@ -64,17 +64,17 @@ function assertSafeRelativePath(relativePath) {
 }
 
 function describeFile(manifestPath, bytes, executable) {
-  const classification = classifyFile(bytes)
+  const normalized = normalizedTextOrNull(bytes)
   const exactSha256 = sha256(bytes)
-  const textNormalizedSha256 = classification === 'text' ? sha256(normalizeText(bytes)) : null
+  const textNormalizedSha256 = normalized === null ? null : sha256(normalized)
   return {
     path: manifestPath,
     size: bytes.length,
     executable,
-    classification,
+    classification: normalized === null ? 'binary' : 'text',
     exactSha256,
     textNormalizedSha256,
-    identitySha256: classification === 'text' && !executable ? textNormalizedSha256 : exactSha256,
+    identitySha256: normalized !== null && !executable ? textNormalizedSha256 : exactSha256,
     gitBlobSha: gitObjectSha('blob', bytes).toString('hex')
   }
 }
@@ -124,6 +124,18 @@ function gitTreeSha(entries) {
   return hashDirectory(root).toString('hex')
 }
 
+// Why: kept in step with isOsMetadataSkillEntryName in src/main/skills/skill-package-identity.ts.
+// The scanner ignores these because the OS writes them into a live install; the generator
+// ignores them so a stray one in a working tree cannot be committed into the manifest as
+// content no user could ever match. Skipped rather than rejected: the file is not the
+// developer's doing, so failing the build over it would be hostile.
+const OS_METADATA_FILE_NAMES = new Set(['.ds_store', 'thumbs.db', 'ehthumbs.db', 'desktop.ini'])
+
+function isOsMetadataSkillEntryName(name) {
+  const folded = name.toLocaleLowerCase('en-US')
+  return OS_METADATA_FILE_NAMES.has(folded) || folded.startsWith('._')
+}
+
 async function collectPackageFiles(packageRoot) {
   const files = []
   const caseFoldedPaths = new Map()
@@ -135,6 +147,14 @@ async function collectPackageFiles(packageRoot) {
     entries.sort((left, right) => compareCodeUnits(left.name, right.name))
     for (const entry of entries) {
       const absolutePath = path.join(directory, entry.name)
+      const fileStat = await lstat(absolutePath)
+      // Only a plain file is OS-authored, so the type decides and not the name alone: a
+      // directory or link wearing the name would otherwise drop its subtree out of the
+      // manifest and skip the guards below. Decided before the case-fold map so two
+      // spellings of one sidecar cannot collide.
+      if (isOsMetadataSkillEntryName(entry.name) && fileStat.isFile()) {
+        continue
+      }
       const relativePath = path.relative(packageRoot, absolutePath)
       assertSafeRelativePath(relativePath)
       const manifestPath = relativePath.split(path.sep).join('/')
@@ -144,7 +164,6 @@ async function collectPackageFiles(packageRoot) {
         throw new Error(`Case-colliding skill paths: ${collision} and ${manifestPath}`)
       }
       caseFoldedPaths.set(foldedPath, manifestPath)
-      const fileStat = await lstat(absolutePath)
       if (fileStat.isSymbolicLink()) {
         throw new Error(`Symlink is not allowed in a shipped skill: ${manifestPath}`)
       }
@@ -208,7 +227,7 @@ function readGitBlobs(objectShas) {
   let offset = 0
   for (const requestedSha of uniqueShas) {
     const headerEnd = output.indexOf(10, offset)
-    if (headerEnd < 0) {
+    if (headerEnd === -1) {
       throw new Error(`Missing git cat-file header for ${requestedSha}`)
     }
     const header = output.subarray(offset, headerEnd).toString('utf8')
@@ -629,8 +648,8 @@ async function main() {
   const argv = process.argv.slice(2)
   const rebuildFromTags = argv.includes('--rebuild-from-tags')
   const releaseIndex = argv.indexOf('--release')
-  const releaseVersion = releaseIndex >= 0 ? argv[releaseIndex + 1] : null
-  if (releaseIndex >= 0 && !releaseVersion) {
+  const releaseVersion = releaseIndex !== -1 ? argv[releaseIndex + 1] : null
+  if (releaseIndex !== -1 && !releaseVersion) {
     throw new Error('--release requires a version argument, e.g. --release 1.4.160')
   }
 

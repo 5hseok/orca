@@ -120,9 +120,7 @@ describe('EphemeralVmsPane', () => {
     const container = await renderPane()
 
     await vi.waitFor(() => expect(container.textContent).toContain('Cloud Sandbox'))
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain('Per-Workspace Environments skill')
-    )
+    await vi.waitFor(() => expect(container.textContent).toContain('Cloud VM setup skill'))
     expect(container.textContent).toContain('What the skill does, with you')
     const useButton = [...container.querySelectorAll('button')].find(
       (button) => button.textContent === 'Use in workspace'
@@ -138,6 +136,51 @@ describe('EphemeralVmsPane', () => {
       initialEphemeralVmRecipeId: 'cloud-sandbox',
       telemetrySource: 'settings'
     })
+  })
+
+  it('does not schedule a reset when clipboard completion arrives after unmount', async () => {
+    let finishClipboard!: () => void
+    vi.mocked(window.api.ui.writeClipboardText).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishClipboard = resolve
+      })
+    )
+    const container = await renderPane()
+    const setTimeout = vi.spyOn(window, 'setTimeout')
+    try {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('button[aria-label="Copy"]')?.click()
+      })
+      await act(async () => roots.pop()?.unmount())
+      setTimeout.mockClear()
+      await act(async () => {
+        finishClipboard()
+        await Promise.resolve()
+      })
+      expect(setTimeout.mock.calls.filter(([, delay]) => delay === 1500)).toHaveLength(0)
+    } finally {
+      setTimeout.mockRestore()
+    }
+  })
+
+  it('shows copied feedback while mounted and releases its reset on unmount', async () => {
+    const container = await renderPane()
+    const setTimeout = vi.spyOn(window, 'setTimeout')
+    const clearTimeout = vi.spyOn(window, 'clearTimeout')
+    try {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('button[aria-label="Copy"]')?.click()
+      })
+      expect(container.querySelector('button[aria-label="Copy"]')?.textContent).toBe('Copied')
+      const timerIndex = setTimeout.mock.calls.findIndex(([, delay]) => delay === 1500)
+      expect(timerIndex).toBeGreaterThanOrEqual(0)
+      const timer = setTimeout.mock.results[timerIndex].value
+      await act(async () => roots.pop()?.unmount())
+      expect(clearTimeout).toHaveBeenCalledWith(timer)
+    } finally {
+      setTimeout.mockRestore()
+      clearTimeout.mockRestore()
+    }
   })
 
   it('refreshes the catalog when plugin content changes', async () => {

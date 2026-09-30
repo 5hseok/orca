@@ -15,21 +15,18 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { ChevronLeft } from 'lucide-react-native'
 import { colors, radii, spacing, typography } from '../../../src/theme/mobile-theme'
 import { loadHosts, updateHostNameAndEndpoint } from '../../../src/transport/host-store'
-import {
-  displayHostEndpoint,
-  endpointPort,
-  endpointScheme,
-  normalizeHostEndpoint
-} from '../../../src/transport/host-endpoint'
-import { useForceReconnect, usePrimeHosts } from '../../../src/transport/client-context'
+import { displayHostEndpoint } from '../../../src/transport/host-endpoint'
+import { resolveHostEndpointEdit } from '../../../src/transport/host-endpoint-edit'
+import { usePrimeHosts, useRefreshHostClient } from '../../../src/transport/client-context'
 import type { HostProfile } from '../../../src/transport/types'
+import { hostOs } from '../../../src/platform/host-os'
 
 export default function EditHostScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const { hostId } = useLocalSearchParams<{ hostId: string }>()
   const primeHosts = usePrimeHosts()
-  const forceReconnectHost = useForceReconnect()
+  const refreshHostClient = useRefreshHostClient()
 
   const [host, setHost] = useState<HostProfile | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -55,7 +52,8 @@ export default function EditHostScreen() {
         return
       }
       setHost(found)
-      setName(found.name)
+      // The field edits the phone's override; an empty field means "use the desktop's name".
+      setName(found.personalName ?? '')
       setAddress(displayHostEndpoint(found.endpoint))
       setLoadError(null)
     } catch (err) {
@@ -68,42 +66,34 @@ export default function EditHostScreen() {
     void load()
   }, [load])
 
-  const fallbackPort = host ? endpointPort(host.endpoint) : undefined
-  const fallbackScheme = host ? endpointScheme(host.endpoint) : 'ws'
-
-  const normalizedEndpoint = useMemo(
-    () => normalizeHostEndpoint(address, { fallbackPort, fallbackScheme }),
-    [address, fallbackPort, fallbackScheme]
+  const endpointEdit = useMemo(
+    () => (host ? resolveHostEndpointEdit(host.endpoint, address) : null),
+    [address, host]
   )
 
   const nameTrimmed = name.trim()
-  const nameChanged = host != null && nameTrimmed.length > 0 && nameTrimmed !== host.name
-  const endpointChanged =
-    host != null && normalizedEndpoint.ok && normalizedEndpoint.endpoint !== host.endpoint
+  const nameChanged = host != null && nameTrimmed !== (host.personalName ?? '')
+  const endpointChanged = endpointEdit?.kind === 'changed'
   const canSave =
     host != null &&
-    nameTrimmed.length > 0 &&
-    normalizedEndpoint.ok &&
+    endpointEdit != null &&
+    endpointEdit.kind !== 'invalid' &&
     (nameChanged || endpointChanged) &&
     !saving
 
   async function handleSave() {
-    if (!host || !hostId || savingRef.current) {
+    if (!host || !hostId || !endpointEdit || savingRef.current) {
       return
     }
     const nextName = name.trim()
-    if (!nextName) {
-      setSaveError('Enter a name.')
-      return
-    }
-    if (!normalizedEndpoint.ok) {
-      setSaveError(normalizedEndpoint.error)
+    if (endpointEdit.kind === 'invalid') {
+      setSaveError(endpointEdit.error)
       return
     }
 
-    const willRename = nextName !== host.name
-    const willUpdateEndpoint = normalizedEndpoint.endpoint !== host.endpoint
-    if (!willRename && !willUpdateEndpoint) {
+    const willRename = nextName !== (host.personalName ?? '')
+    const nextEndpoint = endpointEdit.kind === 'changed' ? endpointEdit.endpoint : undefined
+    if (!willRename && nextEndpoint === undefined) {
       router.back()
       return
     }
@@ -116,8 +106,8 @@ export default function EditHostScreen() {
       // atomically — a mid-save failure can never persist one without the
       // other, and a host removed mid-edit throws instead of no-oping.
       await updateHostNameAndEndpoint(host.id, {
-        ...(willRename ? { name: nextName } : {}),
-        ...(willUpdateEndpoint ? { endpoint: normalizedEndpoint.endpoint } : {})
+        ...(willRename ? { personalName: nextName || null } : {}),
+        ...(nextEndpoint !== undefined ? { endpoint: nextEndpoint } : {})
       })
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save host.')
@@ -140,11 +130,9 @@ export default function EditHostScreen() {
     setSaving(false)
     router.back()
 
-    if (willUpdateEndpoint) {
-      // Why: reconnect is a follow-on side effect of a save that already
-      // committed — its failure or a hang must not be reported as a save
-      // failure or block navigating back.
-      void forceReconnectHost(host.id).catch(() => {})
+    if (nextEndpoint !== undefined) {
+      // Why: the live client, even one riding the relay, and its primed profile hold the old address.
+      refreshHostClient(host.id)
     }
   }
 
@@ -192,16 +180,17 @@ export default function EditHostScreen() {
       ) : (
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={hostOs() === 'ios' ? 'padding' : undefined}
         >
           <ScrollView
             contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + spacing.xl }]}
             keyboardShouldPersistTaps="handled"
           >
             <Text style={styles.help}>
-              Change the display name or connection address. Address edits only switch where this
-              phone connects — they do not re-pair. Use this when the same desktop is reachable at a
-              different IP (for example home LAN vs Tailscale).
+              Change the display name or connection address. Leave the name empty to use the name
+              the desktop reports. Address edits only switch where this phone connects — they do not
+              re-pair. Use this when the same desktop is reachable at a different IP (for example
+              home LAN vs Tailscale).
             </Text>
 
             <Text style={styles.label}>Name</Text>
@@ -213,7 +202,7 @@ export default function EditHostScreen() {
                 setName(value)
                 setSaveError(null)
               }}
-              placeholder="Host name"
+              placeholder={host.lastKnownMachineName ?? 'Host name'}
               placeholderTextColor={colors.textMuted}
               autoCapitalize="words"
               autoCorrect={false}
@@ -247,12 +236,12 @@ export default function EditHostScreen() {
               (or 6768).
             </Text>
 
-            {normalizedEndpoint.ok ? (
+            {endpointEdit == null ? null : endpointEdit.kind !== 'invalid' ? (
               <Text style={styles.preview} numberOfLines={2}>
-                Connects to {normalizedEndpoint.endpoint}
+                Connects to {endpointEdit.endpoint}
               </Text>
             ) : address.trim().length > 0 ? (
-              <Text style={styles.previewError}>{normalizedEndpoint.error}</Text>
+              <Text style={styles.previewError}>{endpointEdit.error}</Text>
             ) : null}
 
             {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}

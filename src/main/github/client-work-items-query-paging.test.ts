@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as GithubApiRepositoryModule from './github-api-repository'
 
+// Keep legacy REST request/failure coverage; API-boundary suites exercise the GraphQL path.
+vi.mock('./client/list/work-item-search-page', () => ({ usesGraphqlWorkItemSearch: () => false }))
+
 const {
   execFileAsyncMock,
   ghExecFileAsyncMock,
@@ -63,7 +66,8 @@ vi.mock('./gh-utils', () => ({
   release: releaseMock,
   _resetOwnerRepoCache: vi.fn(),
   classifyGhError: (stderr: string) => ({ type: 'unknown', message: stderr }),
-  classifyListIssuesError: (stderr: string) => ({ type: 'unknown', message: stderr })
+  classifyListIssuesError: (stderr: string) => ({ type: 'unknown', message: stderr }),
+  classifyListPrsError: (stderr: string) => ({ type: 'unknown', message: stderr })
 }))
 
 vi.mock('../git/runner', () => ({
@@ -117,7 +121,7 @@ import {
   _resetMergeQueueCacheForTests,
   _resetOwnerRepoCache
 } from './client'
-import { GITHUB_WORK_ITEMS_QUERY_MAX_BYTES } from '../../shared/github-work-items-query-bounds'
+import { GITHUB_WORK_ITEMS_QUERY_MAX_BYTES } from '../../shared/github/work-items-query-bounds'
 
 import { _resetOriginGitHubApiRepositoryCache } from './github-api-repository'
 
@@ -264,6 +268,22 @@ describe('listWorkItems query paging', () => {
       { cwd: '/repo-root' }
     )
     expect(items.map((item) => item.number)).toEqual([4, 3])
+  })
+
+  it('lifts a swallowed PR-side failure onto errors.prs instead of reading as end-of-data', async () => {
+    getIssueOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    // Non-availability failure (plain 403): swallowed into [], must still surface.
+    ghExecFileAsyncMock.mockRejectedValueOnce(new Error('HTTP 403: Forbidden'))
+
+    const envelope = await listWorkItems('/repo-root', 10, 'is:pr is:open', 2)
+
+    expect(envelope.items).toEqual([])
+    expect(envelope.errors?.issues).toBeUndefined()
+    expect(envelope.errors?.prs).toEqual({
+      type: 'unknown',
+      message: expect.stringContaining('HTTP 403')
+    })
   })
 
   it('filters pull request rows out of issue Search API results', async () => {

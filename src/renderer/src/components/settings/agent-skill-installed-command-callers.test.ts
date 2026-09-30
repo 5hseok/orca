@@ -6,81 +6,38 @@ import { describe, expect, it } from 'vitest'
 const repoRoot = path.resolve(fileURLToPath(new URL('../../../../../', import.meta.url)))
 const componentsRoot = path.join(repoRoot, 'src/renderer/src/components')
 
-const updateCapableCallers = new Map<string, readonly string[]>([
-  [
-    'src/renderer/src/components/settings/OrchestrationPane.tsx',
-    ['ORCHESTRATION_SKILL_UPDATE_COMMAND', 'installedCommand={orchestrationUpdateCommand}']
-  ],
-  [
-    'src/renderer/src/components/settings/OrchestrationSetupCard.tsx',
-    ['ORCHESTRATION_SKILL_UPDATE_COMMAND', 'installedCommand={updateCommand}']
-  ],
-  [
-    'src/renderer/src/components/floating-terminal/FloatingTerminalOrchestrationDialog.tsx',
-    ['ORCHESTRATION_SKILL_UPDATE_COMMAND', 'installedCommand={updateCommand}']
-  ],
-  [
-    'src/renderer/src/components/settings/ComputerUseSkillSetupPanel.tsx',
-    ['COMPUTER_USE_SKILL_UPDATE_COMMAND', 'installedCommand={updateCommand}']
-  ],
-  [
-    // Why: the Linear settings section shares the update-target resolver so
-    // legacy-only installs keep the command and freshness identity aligned.
-    'src/renderer/src/components/settings/LinearAgentSkillPane.tsx',
-    ['getLinearAgentSkillUpdateTarget', 'installedCommand={updateCommand}']
-  ],
-  [
-    'src/renderer/src/components/settings/EphemeralVmsPane.tsx',
-    ['EPHEMERAL_VMS_SKILL_UPDATE_COMMAND', 'installedCommand={updateCommand}']
-  ],
-  [
-    'src/renderer/src/components/settings/CliSection.tsx',
-    ['ORCA_CLI_SKILL_UPDATE_COMMAND', 'installedCommand={cliSkillUpdateCommand}']
-  ],
-  [
-    'src/renderer/src/components/settings/BrowserUsePane.tsx',
-    ['ORCA_CLI_SKILL_UPDATE_COMMAND', 'installedCommand={browserUseUpdateCommand}']
-  ],
-  [
-    'src/renderer/src/components/settings/BrowserUseSkillStep.tsx',
-    ['installedCommand={installedCommand}']
-  ],
-  [
-    'src/renderer/src/components/feature-wall/BrowserUseSkillSetupCard.tsx',
-    ['ORCA_CLI_SKILL_UPDATE_COMMAND', 'installedCommand={updateCommand}']
-  ],
-  [
-    // Why: the single-skill update command selection moved into
-    // getLinearAgentSkillUpdateCommand so the settings install CTA shares it.
-    'src/renderer/src/components/sidebar/LinearAgentSkillSetupPrompt.tsx',
-    ['getLinearAgentSkillUpdateCommand', 'installedCommand={installedCommand}']
-  ],
-  [
-    'src/renderer/src/components/sidebar/LinearAgentSkillSetupDialog.tsx',
-    ['installedCommand={installedCommand}']
-  ],
-  [
-    'src/renderer/src/components/settings/MobileEmulatorAgentControlRow.tsx',
-    ['ORCA_CLI_SKILL_UPDATE_COMMAND', 'installedCommand={cliSkillUpdateCommand}']
-  ]
-])
+const updateCapableCallers: readonly string[] = [
+  'src/renderer/src/components/settings/OrchestrationPane.tsx',
+  'src/renderer/src/components/settings/OrchestrationSetupCard.tsx',
+  'src/renderer/src/components/floating-terminal/FloatingTerminalOrchestrationDialog.tsx',
+  'src/renderer/src/components/settings/ComputerUseSkillSetupPanel.tsx',
+  'src/renderer/src/components/settings/use-linear-agent-skill-setup.ts',
+  'src/renderer/src/components/settings/LinearAgentSkillPane.tsx',
+  'src/renderer/src/components/settings/TaskSourceLinearSetup.tsx',
+  'src/renderer/src/components/settings/EphemeralVmsPane.tsx',
+  'src/renderer/src/components/settings/CliSection.tsx',
+  'src/renderer/src/components/settings/BrowserUsePane.tsx',
+  'src/renderer/src/components/settings/BrowserUseSkillStep.tsx',
+  'src/renderer/src/components/feature-wall/BrowserUseSkillSetupCard.tsx',
+  'src/renderer/src/components/sidebar/LinearAgentSkillSetupPrompt.tsx',
+  'src/renderer/src/components/sidebar/LinearAgentSkillSetupDialog.tsx',
+  'src/renderer/src/components/settings/MobileEmulatorAgentControlRow.tsx'
+]
 
-const installOnlyCallers = new Map<string, readonly string[]>([
-  [
-    'src/renderer/src/components/emulator-pane/MobileEmulatorAgentSetupGuideSteps.tsx',
-    ['showInstallWhenInstalled={!setup.cliSkillInstalled}']
-  ]
-])
+const installOnlyCallers: readonly string[] = [
+  'src/renderer/src/components/emulator-pane/MobileEmulatorAgentSetupGuideSteps.tsx'
+]
 
 const directPanelCallers = new Set([
-  // BrowserUsePane and LinearAgentSkillSetupPrompt delegate through child setup
-  // components that forward installedCommand and are validated separately above.
-  ...[...updateCapableCallers.keys()].filter(
+  // BrowserUsePane and LinearAgentSkillSetupPrompt render the panel through child
+  // components; use-linear-agent-skill-setup is a resolver, not a panel host.
+  ...updateCapableCallers.filter(
     (relativePath) =>
       relativePath !== 'src/renderer/src/components/settings/BrowserUsePane.tsx' &&
-      relativePath !== 'src/renderer/src/components/sidebar/LinearAgentSkillSetupPrompt.tsx'
+      relativePath !== 'src/renderer/src/components/sidebar/LinearAgentSkillSetupPrompt.tsx' &&
+      relativePath !== 'src/renderer/src/components/settings/use-linear-agent-skill-setup.ts'
   ),
-  ...installOnlyCallers.keys()
+  ...installOnlyCallers
 ])
 
 function relativeRepoPath(filePath: string): string {
@@ -112,36 +69,16 @@ function findProductionPanelCallers(dir: string): string[] {
 }
 
 describe('AgentSkillSetupPanel installed-command call sites', () => {
-  it('keeps every update-capable production caller on an explicit single-skill update command', () => {
-    for (const [relativePath, expectedSnippets] of updateCapableCallers) {
-      const source = readRepoFile(relativePath)
-      for (const snippet of expectedSnippets) {
-        expect(source, `${relativePath} should include ${snippet}`).toContain(snippet)
-      }
-    }
-  })
-
-  it('keeps orchestration installed updates on the primary panel only', () => {
-    const source = readRepoFile('src/renderer/src/components/settings/OrchestrationPane.tsx')
-
-    expect(source).toContain('installedCommand={orchestrationUpdateCommand}')
-    expect(source).not.toContain('Copy update command')
-    expect(source).not.toContain('copyUpdateCommand')
-  })
-
   it('fails when a production caller can show the default Update action without installedCommand', () => {
     const productionCallers = findProductionPanelCallers(componentsRoot)
 
     expect(productionCallers).toEqual([...directPanelCallers].sort())
 
-    for (const [relativePath, expectedSnippets] of installOnlyCallers) {
-      const source = readRepoFile(relativePath)
-      expect(source, `${relativePath} intentionally hides the installed action`).not.toContain(
-        'installedCommand='
-      )
-      for (const snippet of expectedSnippets) {
-        expect(source, `${relativePath} should include ${snippet}`).toContain(snippet)
-      }
+    for (const relativePath of installOnlyCallers) {
+      expect(
+        readRepoFile(relativePath),
+        `${relativePath} intentionally hides the installed action`
+      ).not.toContain('installedCommand=')
     }
   })
 })

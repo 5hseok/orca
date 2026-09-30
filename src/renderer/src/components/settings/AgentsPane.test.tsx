@@ -2,12 +2,18 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDefaultSettings } from '../../../../shared/constants'
-import type { GlobalSettings, TuiAgent } from '../../../../shared/types'
+import type { GlobalSettings } from '../../../../shared/global-settings-types'
+import type { TuiAgent } from '../../../../shared/tui-agent'
 import { AGENT_CATALOG } from '@/lib/agent-catalog'
 import { useAppStore } from '../../store'
 import { getAgentGeneratedTabTitlesTitle } from './agent-generated-tab-title-copy'
 import { getAgentStatusHooksTitle } from './agent-status-hooks-copy'
+import {
+  getAgentWorkspaceTrustDescription,
+  getAgentWorkspaceTrustTitle
+} from './agent-workspace-trust-copy'
 import { getAgentAwakeDescription, getAgentAwakeTitle } from './agent-awake-copy'
+import { getCodexTerminalServerIsolationTitle } from './codex-terminal-server-isolation-copy'
 import { AgentAwakeSetting } from './AgentAwakeSetting'
 import { AgentRuntimeSetting } from './AgentRuntimeSetting'
 import type * as AgentRuntimeSettingModule from './AgentRuntimeSetting'
@@ -16,6 +22,7 @@ import {
   AgentPermissionsSetting,
   AgentGeneratedTabTitlesSetting,
   AgentStatusHooksSetting,
+  AgentWorkspaceTrustSetting,
   AgentsPane,
   getAgentsPaneSearchEntries,
   buildAgentAvailabilitySettingsUpdate,
@@ -115,19 +122,6 @@ function visit(node: unknown, cb: (node: ReactElementLike) => void): void {
   if (element.props?.control) {
     visit(element.props.control, cb)
   }
-}
-
-function findSwitch(node: unknown, ariaLabel: string): ReactElementLike {
-  let found: ReactElementLike | null = null
-  visit(node, (entry) => {
-    if (entry.props.role === 'switch' && entry.props['aria-label'] === ariaLabel) {
-      found = entry
-    }
-  })
-  if (!found) {
-    throw new Error('switch not found')
-  }
-  return found
 }
 
 function findSwitchRow(node: unknown, ariaLabel: string): ReactElementLike {
@@ -249,17 +243,56 @@ describe('AgentsPane', () => {
     expect(agentRuntimeSettingMock.lastRefresh).not.toBe(detectedAgentsMock.refresh)
   })
 
-  it('renders the keep-awake toggle from settings', () => {
+  it('renders the keep-awake modes from settings', () => {
     const markup = renderPane(getDefaultSettings('/tmp'))
 
     expect(markup).not.toContain('Agent location')
     expect(markup).not.toContain('Agent runtime')
     expect(markup).not.toContain('aria-label="Agent runtime"')
-    expect(markup).toContain('Keep computer awake while agents are working')
+    expect(markup).toContain('Keep computer awake')
     expect(markup).toContain(
-      'Keeps this computer and display awake while agents are working. Orca also asks this device to stay awake when the lid is closed, subject to its power policy.'
+      'Choose On, Agent, or Off. Agent mode stays awake while agents are working. Orca also asks this device to stay awake when the lid is closed, subject to its power policy.'
     )
-    expect(markup).toContain('aria-checked="false"')
+    expect(markup).toContain('role="radiogroup"')
+    expect(markup).toContain('>Agent<')
+  })
+
+  it('hides desktop-only awake modes in paired web clients', () => {
+    ;(globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__ = true
+    try {
+      expect(renderPane(getDefaultSettings('/tmp'))).not.toContain('Keep computer awake')
+      expect(
+        matchesSettingsSearch('awake', getAgentsPaneSearchEntries({ includeAgentAwake: false }))
+      ).toBe(false)
+    } finally {
+      delete (globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__
+    }
+  })
+
+  it('keeps the host-only folder trust row out of paired web clients and their search', () => {
+    Reflect.set(globalThis, '__ORCA_WEB_CLIENT__', true)
+    try {
+      expect(renderPane(getDefaultSettings('/tmp'))).not.toContain(getAgentWorkspaceTrustTitle())
+      expect(
+        matchesSettingsSearch(
+          'trust',
+          getAgentsPaneSearchEntries({ includeAgentWorkspaceTrust: false })
+        )
+      ).toBe(false)
+    } finally {
+      Reflect.deleteProperty(globalThis, '__ORCA_WEB_CLIENT__')
+    }
+  })
+
+  it('keeps the host-only Codex server row out of paired web clients', () => {
+    Reflect.set(globalThis, '__ORCA_WEB_CLIENT__', true)
+    try {
+      expect(renderPane(getDefaultSettings('/tmp'))).not.toContain(
+        getCodexTerminalServerIsolationTitle()
+      )
+    } finally {
+      Reflect.deleteProperty(globalThis, '__ORCA_WEB_CLIENT__')
+    }
   })
 
   it('renders the agent runtime control on Windows-class hosts', () => {
@@ -316,11 +349,11 @@ describe('AgentsPane', () => {
 
   it('describes Windows lid behavior according to the device', () => {
     expect(getAgentAwakeDescription('Windows')).toBe(
-      "Keeps this computer and display awake while agents are working. Lid-close behavior follows this device's power settings."
+      "Choose On, Agent, or Off. Agent mode stays awake while agents are working; lid-close behavior follows this device's power settings."
     )
   })
 
-  it('toggles the keep-awake setting with the next value', () => {
+  it('updates the keep-awake mode with its legacy fallback', () => {
     const updateSettings = vi.fn()
     const element = AgentAwakeSetting({
       settings: {
@@ -331,14 +364,14 @@ describe('AgentsPane', () => {
     })
 
     const keepAwakeTitle = getAgentAwakeTitle()
-    const keepAwakeSwitch = findSwitch(element, keepAwakeTitle)
-    expect(keepAwakeSwitch.props['aria-label']).toBe(keepAwakeTitle)
-    expect(keepAwakeSwitch.props['aria-checked']).toBe(false)
+    const keepAwakeControl = findSegmentedControl(element, keepAwakeTitle)
+    expect(keepAwakeControl.props.value).toBe('off')
 
-    const onClick = keepAwakeSwitch.props.onClick as () => void
-    onClick()
+    const onChange = keepAwakeControl.props.onChange as (mode: 'auto') => void
+    onChange('auto')
 
     expect(updateSettings).toHaveBeenCalledWith({
+      computerAwakeMode: 'auto',
       keepComputerAwakeWhileAgentsRun: true
     })
   })
@@ -362,6 +395,28 @@ describe('AgentsPane', () => {
     expect(updateSettings).toHaveBeenCalledWith({
       agentStatusHooksEnabled: false
     })
+  })
+
+  it('defaults agent folder trust on and toggles it off', () => {
+    const updateSettings = vi.fn()
+    const element = AgentWorkspaceTrustSetting({
+      settings: getDefaultSettings('/tmp'),
+      updateSettings
+    })
+
+    const trustSwitch = findSwitchRow(element, getAgentWorkspaceTrustTitle())
+    expect(trustSwitch.props.checked).toBe(true)
+    expect(getAgentWorkspaceTrustDescription()).toContain('hooks')
+    expect(getAgentWorkspaceTrustDescription()).toContain('already trusted stay trusted')
+    expect(getAgentWorkspaceTrustDescription()).toContain('without you watching')
+
+    const onChange: unknown = trustSwitch.props.onChange
+    expect(typeof onChange).toBe('function')
+    if (typeof onChange === 'function') {
+      onChange()
+    }
+
+    expect(updateSettings).toHaveBeenCalledWith({ agentWorkspaceTrustEnabled: false })
   })
 
   it('toggles generated tab titles with the next value', () => {
@@ -627,5 +682,52 @@ describe('AgentsPane', () => {
 
     writes[1].resolve()
     await secondWrite
+  })
+})
+
+describe('empty agent detection must not cost the saved default (#15256)', () => {
+  const withEmptyDetection = <T,>(run: () => T): T => {
+    const previous = detectedAgentsMock.detectedIds
+    detectedAgentsMock.detectedIds = []
+    try {
+      return run()
+    } finally {
+      detectedAgentsMock.detectedIds = previous
+    }
+  }
+
+  /** The rendered `<button>` whose label contains `label`. */
+  const pillMarkup = (markup: string, label: string): string => {
+    const chunk = markup.split('<button').find((part) => part.includes(label))
+    expect(chunk, `no pill labelled ${label}`).toBeDefined()
+    return String(chunk)
+  }
+
+  it('does not present Auto as the active choice while an agent is stored', () => {
+    // The Auto pill's handler writes null. Rendering it pressed while
+    // `defaultTuiAgent: "claude"` is stored made the already-selected pill
+    // destructive: one click erased the setting, and later successful
+    // detection did not bring it back.
+    const markup = withEmptyDetection(() =>
+      renderPane({ ...getDefaultSettings('/tmp'), defaultTuiAgent: 'claude' })
+    )
+    expect(pillMarkup(markup, 'Auto')).toContain('aria-pressed="false"')
+  })
+
+  it('still offers the stored agent so the choice can be kept', () => {
+    // With zero detected there were no agent pills at all, so the stored value
+    // was invisible and unrecoverable through the UI.
+    const markup = withEmptyDetection(() =>
+      renderPane({ ...getDefaultSettings('/tmp'), defaultTuiAgent: 'claude' })
+    )
+    expect(markup).toContain('Saved as your default, but not detected right now')
+  })
+
+  it('keeps a Refresh control reachable when nothing is detected', () => {
+    // Refresh lived inside the Installed section, which only renders when at
+    // least one agent was found -- gone in exactly the state needing a retry.
+    const markup = withEmptyDetection(() => renderPane(getDefaultSettings('/tmp')))
+    expect(markup).toContain('No agents detected')
+    expect(markup).toContain('Refresh')
   })
 })
