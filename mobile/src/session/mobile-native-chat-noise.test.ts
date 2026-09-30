@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { isNoiseMessage, stripNoiseMessages } from '../../../src/shared/native-chat-noise'
 import type { NativeChatMessage } from '../../../src/shared/native-chat-types'
-import { isNoiseMessage, stripNoiseMessages } from './mobile-native-chat-noise'
 
 function msg(
   role: NativeChatMessage['role'],
@@ -44,6 +44,7 @@ describe('isNoiseMessage', () => {
 
   it('keeps assistant and tool turns', () => {
     expect(isNoiseMessage(msg('assistant', '<system-reminder> in prose'))).toBe(false)
+    expect(isNoiseMessage(msg('system', 'Conversation interrupted'))).toBe(false)
   })
 
   it('keeps a user turn that carries tool results', () => {

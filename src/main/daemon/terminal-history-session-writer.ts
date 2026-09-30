@@ -15,7 +15,11 @@ import {
 } from './terminal-history-log'
 import type { SessionMeta } from './terminal-history-metadata'
 import { clearTerminalHistoryRecoveryProtection } from './terminal-history-recovery-quarantine'
-import type { PendingOutputRecord, TerminalCheckpointFile, TerminalSnapshot } from './types'
+import type { PendingOutputRecord, TerminalSnapshot } from './types'
+import { TERMINAL_HISTORY_CHECKPOINT_MAX_BYTES } from './terminal-history-file-limits'
+import { serializeTerminalCheckpointWithinLimit } from './terminal-checkpoint-serializer'
+import { PRIVATE_FILE_MODE, tightenPathMode } from './daemon-private-file-modes'
+import { tightenTerminalHistorySessionDirMode } from './terminal-history-session-files'
 
 // Why 5MB: bounds cold-restore replay time and per-session disk; hitting the cap triggers one checkpoint that resets the log.
 const LOG_MAX_BYTES = 5 * 1024 * 1024
@@ -28,12 +32,15 @@ export class TerminalHistorySessionWriter {
 
   constructor(
     readonly dir: string,
-    fresh: boolean
+    fresh: boolean,
+    private readonly checkpointMaxBytes = TERMINAL_HISTORY_CHECKPOINT_MAX_BYTES
   ) {
     this.checkpointPath = join(dir, 'checkpoint.json')
     this.logPath = join(dir, 'output.log')
     this.logGeneration = fresh ? 0 : null
     this.logBytes = fresh ? 0 : null
+    // Why here: a warm attach reuses files an older daemon created at umask, which `mode` cannot fix.
+    tightenTerminalHistorySessionDirMode(dir)
   }
 
   async appendIncrements(
@@ -47,39 +54,57 @@ export class TerminalHistorySessionWriter {
       return 'needs-checkpoint'
     }
     if (this.logBytes === 0) {
-      await fsPromises.writeFile(this.logPath, encodeLogHeader(this.logGeneration ?? 0))
+      await fsPromises.writeFile(this.logPath, encodeLogHeader(this.logGeneration ?? 0), {
+        mode: PRIVATE_FILE_MODE
+      })
       this.logBytes = LOG_HEADER_BYTES
     }
-    await fsPromises.appendFile(this.logPath, batch)
+    await fsPromises.appendFile(this.logPath, batch, { mode: PRIVATE_FILE_MODE })
     this.logBytes = (this.logBytes ?? LOG_HEADER_BYTES) + batch.length
     return 'ok'
   }
 
-  async checkpoint(snapshot: TerminalSnapshot): Promise<void> {
+  async checkpoint(
+    snapshot: TerminalSnapshot,
+    opts?: { pendingOutputSeq?: number }
+  ): Promise<{ result: 'committed' } | { result: 'retryable'; error: Error }> {
     // Why: snapshot.cwd is null until OSC-7; preserve meta.json's usable cwd for cold restore.
     const effectiveCwd = snapshot.cwd ?? this.readMeta()?.cwd ?? null
     this.resolveLogState()
     const generation = (this.logGeneration ?? 0) + 1
-    const checkpointFile: TerminalCheckpointFile = {
-      snapshotAnsi: snapshot.snapshotAnsi,
-      scrollbackAnsi: snapshot.scrollbackAnsi,
-      oscLinks: snapshot.oscLinks,
-      rehydrateSequences: snapshot.rehydrateSequences,
-      cwd: effectiveCwd,
-      cols: snapshot.cols,
-      rows: snapshot.rows,
-      modes: snapshot.modes,
-      scrollbackLines: snapshot.scrollbackLines,
-      generation,
-      checkpointedAt: new Date().toISOString()
+    let data: string
+    try {
+      data = await serializeTerminalCheckpointWithinLimit(
+        snapshot,
+        {
+          cwd: effectiveCwd,
+          generation,
+          ...(opts?.pendingOutputSeq !== undefined
+            ? { pendingOutputSeq: opts.pendingOutputSeq }
+            : {}),
+          checkpointedAt: new Date().toISOString()
+        },
+        this.checkpointMaxBytes
+      )
+    } catch (error) {
+      return {
+        result: 'retryable',
+        error: error instanceof Error ? error : new Error(String(error))
+      }
     }
     const tmpPath = `${this.checkpointPath}.tmp`
-    await fsPromises.writeFile(tmpPath, JSON.stringify(checkpointFile))
+    // Mode on the tmp file, not after the rename: the checkpoint is never briefly world-readable.
+    await fsPromises.writeFile(tmpPath, data, { mode: PRIVATE_FILE_MODE })
+    // A tmp left behind by a pre-fix crash is reused in place, where `mode` no longer applies.
+    tightenPathMode(tmpPath, PRIVATE_FILE_MODE)
     await fsPromises.rename(tmpPath, this.checkpointPath)
-    await fsPromises.writeFile(this.logPath, encodeLogHeader(generation))
+    await fsPromises.writeFile(this.logPath, encodeLogHeader(generation), {
+      mode: PRIVATE_FILE_MODE
+    })
     this.logGeneration = generation
     this.logBytes = LOG_HEADER_BYTES
     clearTerminalHistoryRecoveryProtection(this.dir)
+    return { result: 'committed' }
   }
 
   // Why: a warm writer must append to the existing generation without clobbering its log.

@@ -1,65 +1,41 @@
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, extname, join, win32 } from 'node:path'
 import {
   buildManagedCommandHook,
   createManagedCommandMatcher,
   getSharedManagedScriptPath,
   isPlainObject,
+  MANAGED_HOOK_TIMEOUT_SECONDS,
   removeManagedCommands,
-  wrapPosixHookCommand,
-  wrapWindowsGitBashHookCommand,
+  wrapWindowsPowerShellEncodedCommand,
+  type HookCommandConfig,
   type HookDefinition,
   type HooksConfig
 } from '../agent-hooks/installer-utils'
+import { quotePowerShellLiteral } from '../../shared/powershell-native-argument'
+import { wrapRuntimeHomeHookCommand } from '../agent-hooks/runtime-home-hook-command'
+import { wrapWindowsDirectCmdHookCommand } from '../agent-hooks/windows-direct-cmd-hook-command'
+import { isGitBashAvailable } from '../git-bash'
+import type { ClaudeManagedHookPlan } from './claude-managed-hook-events'
 
 export type ClaudeCompatibleHookSettings = {
-  configDirName: '.claude' | '.openclaude'
-  scriptBaseName: 'claude-hook' | 'openclaude-hook'
+  configDirName: '.claude' | '.openclaude' | '.qoder' | '.codebuddy'
+  scriptBaseName: 'claude-hook' | 'openclaude-hook' | 'qoder-hook' | 'codebuddy-hook'
+  usesWindowsCompatLauncher: boolean
+  windowsHookShell?: 'powershell'
 }
 
 export const CLAUDE_HOOK_SETTINGS: ClaudeCompatibleHookSettings = {
   configDirName: '.claude',
-  scriptBaseName: 'claude-hook'
+  scriptBaseName: 'claude-hook',
+  usesWindowsCompatLauncher: true
 }
 
 export const OPENCLAUDE_HOOK_SETTINGS: ClaudeCompatibleHookSettings = {
   configDirName: '.openclaude',
-  scriptBaseName: 'openclaude-hook'
+  scriptBaseName: 'openclaude-hook',
+  usesWindowsCompatLauncher: false
 }
-
-export const CLAUDE_EVENTS = [
-  { eventName: 'UserPromptSubmit', definition: { hooks: [{ type: 'command', command: '' }] } },
-  { eventName: 'Stop', definition: { hooks: [{ type: 'command', command: '' }] } },
-  // Why: OpenClaude skips normal Stop hooks after API/model errors and emits
-  // StopFailure instead; without this hook Orca leaves the turn spinning.
-  { eventName: 'StopFailure', definition: { hooks: [{ type: 'command', command: '' }] } },
-  // Why: subagent/teammate lifecycle feeds the sidebar's child rows and keeps
-  // a pane 'working' while background children outlive the lead's turn.
-  // TeammateIdle parks turn-based teammates without trusting their permanently
-  // "running" background_tasks entry to gate the pane.
-  // Older Claude builds ignore unregistered event names (StopFailure precedent).
-  { eventName: 'SubagentStart', definition: { hooks: [{ type: 'command', command: '' }] } },
-  { eventName: 'SubagentStop', definition: { hooks: [{ type: 'command', command: '' }] } },
-  { eventName: 'TeammateIdle', definition: { hooks: [{ type: 'command', command: '' }] } },
-  // Why: PreToolUse gives the dashboard a live readout of the in-flight tool
-  // (name + input preview) before it completes.
-  {
-    eventName: 'PreToolUse',
-    definition: { matcher: '*', hooks: [{ type: 'command', command: '' }] }
-  },
-  {
-    eventName: 'PostToolUse',
-    definition: { matcher: '*', hooks: [{ type: 'command', command: '' }] }
-  },
-  {
-    eventName: 'PostToolUseFailure',
-    definition: { matcher: '*', hooks: [{ type: 'command', command: '' }] }
-  },
-  {
-    eventName: 'PermissionRequest',
-    definition: { matcher: '*', hooks: [{ type: 'command', command: '' }] }
-  }
-] as const
 
 export function getConfigPath(settings = CLAUDE_HOOK_SETTINGS): string {
   return join(homedir(), settings.configDirName, 'settings.json')
@@ -101,32 +77,112 @@ export function getRemoteConfigPath(remoteHome: string, settings = CLAUDE_HOOK_S
   return `${remoteHome.replace(/\/$/, '')}/${settings.configDirName}/settings.json`
 }
 
-export function getManagedCommand(scriptPath: string): string {
-  return process.platform === 'win32'
-    ? wrapWindowsGitBashHookCommand(scriptPath)
-    : wrapPosixHookCommand(scriptPath)
+export function getManagedCommand(
+  scriptPath: string,
+  options: { neutralJsonWhenMissing?: boolean } = {}
+): string {
+  const scriptFileName = basename(scriptPath)
+  const extension = extname(scriptFileName)
+  return wrapRuntimeHomeHookCommand(
+    extension ? scriptFileName.slice(0, -extension.length) : scriptFileName,
+    options
+  )
+}
+
+export function getManagedLifecycleHook(
+  scriptPath: string,
+  settings = CLAUDE_HOOK_SETTINGS,
+  options: WindowsManagedLifecycleHookOptions = {}
+): HookCommandConfig {
+  if (process.platform !== 'win32' || !settings.usesWindowsCompatLauncher) {
+    return buildManagedCommandHook(getManagedCommand(scriptPath, { neutralJsonWhenMissing: true }))
+  }
+  if (settings.windowsHookShell === 'powershell') {
+    return {
+      type: 'command',
+      command: getWindowsPowerShellLifecycleCommand(scriptPath),
+      shell: 'powershell',
+      timeout: MANAGED_HOOK_TIMEOUT_SECONDS
+    }
+  }
+  return getWindowsManagedLifecycleHook(scriptPath, options)
+}
+
+export type WindowsManagedLifecycleHookOptions = { gitBashAvailable?: boolean }
+
+// Why: some Claude-compatible consumers ignore `args`, so the invocation must be self-contained.
+export function getWindowsManagedLifecycleHook(
+  scriptPath: string,
+  options: WindowsManagedLifecycleHookOptions = {}
+): HookCommandConfig {
+  // Why (#18875): the encoded launcher cost a PowerShell start-up per hook event. Take the direct
+  // path only where the host can parse `||` — Git Bash can, Windows PowerShell 5.1 cannot.
+  const directCommand =
+    (options.gitBashAvailable ?? isGitBashAvailable())
+      ? wrapWindowsDirectCmdHookCommand(scriptPath)
+      : null
+  if (directCommand) {
+    return { type: 'command', command: directCommand, timeout: MANAGED_HOOK_TIMEOUT_SECONDS }
+  }
+  return {
+    type: 'command',
+    command: wrapWindowsPowerShellEncodedCommand(getWindowsPowerShellLifecycleCommand(scriptPath)),
+    timeout: MANAGED_HOOK_TIMEOUT_SECONDS
+  }
+}
+
+function getWindowsPowerShellLifecycleCommand(scriptPath: string): string {
+  const scriptFileName = win32.basename(scriptPath)
+  const quotedRelativePath = quotePowerShellLiteral(`.orca\\agent-hooks\\${scriptFileName}`)
+  return (
+    `$scriptPath = Join-Path $env:USERPROFILE ${quotedRelativePath}; ` +
+    'if (Test-Path -LiteralPath $scriptPath -PathType Leaf) { & $scriptPath; exit $LASTEXITCODE }; ' +
+    "[Console]::In.ReadToEnd() | Out-Null; Write-Output '{}'; exit 0"
+  )
+}
+
+export function hasSameManagedHookInvocation(
+  actual: HookCommandConfig,
+  expected: HookCommandConfig
+): boolean {
+  return (
+    actual.command === expected.command &&
+    actual.shell === expected.shell &&
+    JSON.stringify(actual.args ?? []) === JSON.stringify(expected.args ?? [])
+  )
 }
 
 export function getRemoteManagedCommand(scriptPath: string): string {
-  return wrapPosixHookCommand(scriptPath)
+  return getManagedCommand(scriptPath, { neutralJsonWhenMissing: true })
 }
 
 export function applyManagedHooks(
   config: HooksConfig,
-  command: string,
-  scriptFileName = getManagedScriptFileName()
+  hook: HookCommandConfig,
+  scriptFileName: string,
+  plan: ClaudeManagedHookPlan
 ): HooksConfig {
   const nextHooks = { ...config.hooks }
   const isManagedCommand = createManagedCommandMatcher(scriptFileName)
 
-  for (const event of CLAUDE_EVENTS) {
-    const current = Array.isArray(nextHooks[event.eventName]) ? nextHooks[event.eventName] : []
-    const cleaned = removeManagedCommands(current, isManagedCommand)
-    const definition: HookDefinition = {
-      ...event.definition,
-      hooks: [buildManagedCommandHook(command)]
-    }
+  for (const event of plan.install) {
+    const current = nextHooks[event.eventName]
+    const cleaned = Array.isArray(current) ? removeManagedCommands(current, isManagedCommand) : []
+    const definition: HookDefinition = { ...event.definition, hooks: [hook] }
     nextHooks[event.eventName] = [...cleaned, definition]
+  }
+
+  for (const event of plan.retire) {
+    const current = nextHooks[event.eventName]
+    if (!Array.isArray(current) || current.length === 0) {
+      continue
+    }
+    const cleaned = removeManagedCommands(current, isManagedCommand)
+    if (cleaned.length === 0) {
+      delete nextHooks[event.eventName]
+    } else {
+      nextHooks[event.eventName] = cleaned
+    }
   }
 
   return { ...config, hooks: nextHooks }

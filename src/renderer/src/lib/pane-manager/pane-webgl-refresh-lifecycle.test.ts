@@ -17,12 +17,14 @@ function createPane(
     leafId,
     stablePaneId: leafId,
     terminal: {
+      options: { cursorBlink: true },
       element: null,
       cols: 80,
       rows: 24,
       buffer: { active: { type: 'normal', viewportY: 0, baseY: 0 } },
       refresh: vi.fn(),
       resize: vi.fn(),
+      blur: vi.fn(),
       dispose: vi.fn()
     } as never,
     container: {
@@ -51,6 +53,7 @@ function createPane(
     webLinksAddon: { dispose: vi.fn() } as never,
     webglAddon: { dispose: vi.fn() } as never,
     ligaturesAddon: null,
+    imageAddon: null,
     compositionHandler: null,
     pendingSplitScrollState: null,
     pendingSplitScrollBufferDisposable: null,
@@ -121,7 +124,7 @@ describe('pane WebGL refresh lifecycle', () => {
     expect(pane.webglAddon).toBeNull()
   })
 
-  it('disposes WebGL whenever rendering is suspended', () => {
+  it('disposes WebGL when rendering is suspended', () => {
     const dispose = vi.fn()
     const pane = createPane({ webglAddon: { dispose } as never })
 

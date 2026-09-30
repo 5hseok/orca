@@ -1,5 +1,9 @@
+import {
+  readPersistedProfileState,
+  mutateStoppedProfileState
+} from './helpers/persisted-profile-state'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 import type { ElectronApplication } from '@stablyai/playwright-test'
@@ -16,7 +20,6 @@ import {
 import { ensureTerminalVisible, waitForActiveWorktree, waitForSessionReady } from './helpers/store'
 import { attachRepoAndOpenTerminal, createRestartSession } from './helpers/orca-restart'
 import { PROTOCOL_VERSION } from '../../src/main/daemon/types'
-import { DEFAULT_LOCAL_ORCA_PROFILE_ID } from '../../src/shared/orca-profiles'
 
 const PROVIDER_SESSION_ID = 'e2e-live-force-exit-session'
 
@@ -41,17 +44,9 @@ type PersistedData = {
   workspaceSession?: PersistedWorkspaceSession
 }
 
-function dataFilePath(userDataDir: string): string {
-  // Fresh sessions migrate the seeded legacy file, then persist only here.
-  return path.join(userDataDir, 'profiles', DEFAULT_LOCAL_ORCA_PROFILE_ID, 'orca-data.json')
-}
-
 function readPersistedData(userDataDir: string): PersistedData {
-  return JSON.parse(readFileSync(dataFilePath(userDataDir), 'utf8')) as PersistedData
-}
-
-function writePersistedData(userDataDir: string, data: PersistedData): void {
-  writeFileSync(dataFilePath(userDataDir), `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: This test owns the persisted fixture; optional fields are checked at use sites.
+  return readPersistedProfileState(userDataDir) as PersistedData
 }
 
 function daemonPidPath(userDataDir: string): string {
@@ -115,29 +110,31 @@ function killPid(pid: number): void {
 }
 
 function stripPersistedPtyOwnership(userDataDir: string): void {
-  const data = readPersistedData(userDataDir)
-  const session = data.workspaceSession
-  if (!session) {
-    throw new Error('Expected persisted workspace session')
-  }
-  for (const tabs of Object.values(session.tabsByWorktree ?? {})) {
-    for (const tab of tabs) {
-      tab.ptyId = null
+  return mutateStoppedProfileState(userDataDir, (state) => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: This test owns the persisted fixture; optional fields are checked at use sites.
+    const data = state as PersistedData
+    const session = data.workspaceSession
+    if (!session) {
+      throw new Error('Expected persisted workspace session')
     }
-  }
-  // Why: this models the updater/crash artifact from #6370: the UI tab and
-  // live resume record survive, but no pane has the old stable leaf key or
-  // daemon session to own resume.
-  session.terminalLayoutsByTabId = {}
-  session.activeWorktreeIdsOnShutdown = []
-  for (const record of Object.values(session.sleepingAgentSessionsByPaneKey ?? {})) {
-    if (record.providerSession?.id === PROVIDER_SESSION_ID) {
-      // Why: the e2e proof should verify Orca launches the resumed command,
-      // not depend on a developer machine having a real Codex CLI installed.
-      record.launchConfig = { agentCommand: 'echo', agentArgs: '', agentEnv: {} }
+    for (const tabs of Object.values(session.tabsByWorktree ?? {})) {
+      for (const tab of tabs) {
+        tab.ptyId = null
+      }
     }
-  }
-  writePersistedData(userDataDir, data)
+    // Why: this models the updater/crash artifact from #6370: the UI tab and
+    // live resume record survive, but no pane has the old stable leaf key or
+    // daemon session to own resume.
+    session.terminalLayoutsByTabId = {}
+    session.activeWorktreeIdsOnShutdown = []
+    for (const record of Object.values(session.sleepingAgentSessionsByPaneKey ?? {})) {
+      if (record.providerSession?.id === PROVIDER_SESSION_ID) {
+        // Why: the e2e proof should verify Orca launches the resumed command,
+        // not depend on a developer machine having a real Codex CLI installed.
+        record.launchConfig = { agentCommand: 'echo', agentArgs: '', agentEnv: {} }
+      }
+    }
+  })
 }
 
 function persistedLiveRecordExists(userDataDir: string): boolean {
@@ -183,27 +180,33 @@ test('resumes a live agent record after force-exit restart when pane PTY ownersh
 
     const descriptor = await waitForActivePaneHookDescriptor(page)
     const ptyId = await waitForActivePanePtyId(page)
+    const transcriptPath = session.seedCodexResumeRollout(PROVIDER_SESSION_ID, repoPath)
     const marker = `AGENT_LIVE_FORCE_EXIT_${Date.now()}`
     await execInTerminal(page, ptyId, `echo ${marker}`)
     await waitForTerminalOutput(page, marker)
 
     await page.evaluate(
-      ({ paneKey, worktreeId: wtId, providerSessionId }) => {
-        window.__store
-          ?.getState()
-          .setAgentStatus(
-            paneKey,
-            { state: 'working', prompt: 'finish the task', agentType: 'codex' },
-            'Codex',
-            undefined,
-            { worktreeId: wtId },
-            { providerSession: { key: 'session_id', id: providerSessionId } }
-          )
+      ({ paneKey, worktreeId: wtId, providerSessionId, transcriptPath }) => {
+        window.__store?.getState().setAgentStatus(
+          paneKey,
+          { state: 'working', prompt: 'finish the task', agentType: 'codex' },
+          'Codex',
+          undefined,
+          { worktreeId: wtId },
+          {
+            providerSession: {
+              key: 'session_id',
+              id: providerSessionId,
+              transcriptPath
+            }
+          }
+        )
       },
       {
         paneKey: descriptor.paneKey,
         worktreeId: descriptor.worktreeId,
-        providerSessionId: PROVIDER_SESSION_ID
+        providerSessionId: PROVIDER_SESSION_ID,
+        transcriptPath
       }
     )
 

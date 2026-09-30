@@ -10,7 +10,7 @@ export function openHostLogicalClient(host: HostProfile, onLog: ConnectionLogSin
   // direct socket remains a replaceable first physical generation.
   const logical = createStableLogicalRpcClient(
     connect(host.endpoint, host.deviceToken, host.publicKeyB64, { onLog }),
-    directPathForEndpoint(host, host.endpoint)
+    directPathForEndpoint(host.endpoint)
   )
   if (Platform.OS === 'web') {
     return logical
@@ -28,9 +28,11 @@ export function openHostLogicalClient(host: HostProfile, onLog: ConnectionLogSin
     closeLogical()
   }
   const notifyLogicalForeground = logical.notifyForeground
-  logical.notifyForeground = () => {
-    endpointLifecycle.setForeground(true)
-    notifyLogicalForeground()
+  logical.notifyForeground = (reason = 'focus') => {
+    // Why: a nudge while already foreground must not re-enter setForeground —
+    // that path suspended healthy relays; the supervisor probes or replaces instead.
+    endpointLifecycle.nudge(reason)
+    notifyLogicalForeground(reason)
   }
   return logical
 }

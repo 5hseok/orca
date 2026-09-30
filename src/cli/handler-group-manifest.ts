@@ -18,6 +18,22 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
     load: async () => (await import('./handlers/core.js')).CORE_HANDLERS
   },
   {
+    name: 'account',
+    keys: ['account add', 'account list'],
+    load: async () => (await import('./handlers/account.js')).ACCOUNT_HANDLERS
+  },
+  {
+    name: 'artifacts',
+    keys: [
+      'artifacts list',
+      'artifacts share',
+      'artifacts update',
+      'artifacts unshare',
+      'artifacts delete'
+    ],
+    load: async () => (await import('./handlers/artifacts.js')).ARTIFACT_HANDLERS
+  },
+  {
     name: 'automations',
     keys: [
       'automations list',
@@ -87,6 +103,11 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
   {
     name: 'orchestration',
     keys: [
+      'orchestration run-create',
+      'orchestration run-use',
+      'orchestration run-current',
+      'orchestration run-list',
+      'orchestration run-show',
       'orchestration send',
       'orchestration check',
       'orchestration reply',
@@ -94,11 +115,20 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
       'orchestration task-create',
       'orchestration task-list',
       'orchestration task-update',
+      'orchestration worker-start',
+      'orchestration worker-show',
+      'orchestration worker-read',
+      'orchestration worker-stop',
+      'orchestration worker-abandon',
+      'orchestration worker-release',
+      'orchestration worker-retain',
+      'orchestration worker-list',
       'orchestration dispatch',
       'orchestration ask',
       'orchestration dispatch-show',
-      'orchestration run',
-      'orchestration run-stop',
+      'orchestration coordinator-start',
+      'orchestration coordinator-stop',
+      'orchestration request-show',
       'orchestration gate-create',
       'orchestration gate-resolve',
       'orchestration gate-list',
@@ -150,8 +180,13 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
   },
   {
     name: 'agent-hooks',
-    keys: ['agent hooks status', 'agent hooks off', 'agent hooks on'],
+    keys: ['agent hooks prepare-codex', 'agent hooks status', 'agent hooks off', 'agent hooks on'],
     load: async () => (await import('./handlers/agent-hooks.js')).AGENT_HOOK_HANDLERS
+  },
+  {
+    name: 'profile-state',
+    keys: ['profile state exports', 'profile state rollback'],
+    load: async () => (await import('./handlers/profile-state.js')).PROFILE_STATE_HANDLERS
   },
   {
     name: 'diagnostics',
@@ -165,7 +200,14 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
   },
   {
     name: 'environment',
-    keys: ['environment add', 'environment list', 'environment show', 'environment rm'],
+    keys: [
+      'host name',
+      'host list',
+      'environment add',
+      'environment list',
+      'environment show',
+      'environment rm'
+    ],
     load: async () => (await import('./handlers/environment.js')).ENVIRONMENT_HANDLERS
   },
   {
@@ -207,8 +249,18 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
     load: async () => (await import('./handlers/vm.js')).VM_HANDLERS
   },
   {
+    name: 'skill-sharing',
+    keys: ['skills installed', 'skills share'],
+    load: async () => (await import('./handlers/skill-sharing.js')).SKILL_SHARING_HANDLERS
+  },
+  {
     name: 'skills',
-    keys: ['skills list', 'skills get'],
+    keys: ['skills list', 'skills get', 'skills install', 'skills update'],
     load: async () => (await import('./handlers/skills.js')).SKILL_HANDLERS
+  },
+  {
+    name: 'search',
+    keys: ['search'],
+    load: async () => (await import('./handlers/search.js')).SEARCH_HANDLERS
   }
 ]

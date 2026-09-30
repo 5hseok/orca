@@ -1,6 +1,5 @@
-import { type ReactNode, useState } from 'react'
-import { resolveBottomDrawerMounted } from './bottom-drawer-mount-state'
-import { MountedBottomDrawer } from './mounted-bottom-drawer'
+import type { ReactNode } from 'react'
+import { KeyedBottomDrawer } from './keyed-bottom-drawer'
 
 type Props = {
   visible: boolean
@@ -19,47 +18,21 @@ type Props = {
   zIndex?: number
 }
 
-export function BottomDrawer({
-  visible,
-  onClose,
-  onAfterClose,
-  children,
-  dragContentToDismiss = true,
-  contentScrollable = true,
-  fillAvailable = false,
-  interactive = true,
-  zIndex
-}: Props) {
-  const [mounted, setMounted] = useState(visible)
-  const resolvedMounted = resolveBottomDrawerMounted(visible, mounted)
+const SHOWN = 'shown'
+const sheetKey = () => SHOWN
 
-  // Why: opening drawers should mount before commit; waiting for a passive
-  // Effect adds a null render before every drawer can animate in.
-  if (resolvedMounted !== mounted) {
-    setMounted(resolvedMounted)
-  }
-
-  // Why: hidden drawers are rendered by parent screens even while closed; keep
-  // their Reanimated/Gesture setup out of hot paths like commit-message typing.
-  if (!resolvedMounted) {
-    return null
-  }
-
+export function BottomDrawer({ visible, onClose, onAfterClose, children, ...drawerProps }: Props) {
+  // Why: hidden drawers are rendered by parent screens even while closed; the keyed drawer
+  // renders nothing until shown, which keeps Reanimated/Gesture setup out of hot paths.
   return (
-    <MountedBottomDrawer
-      visible={visible}
+    <KeyedBottomDrawer
+      {...drawerProps}
+      sheet={visible ? SHOWN : null}
+      sheetKey={sheetKey}
       onClose={onClose}
-      onHidden={() => {
-        setMounted(false)
-        onAfterClose?.()
-      }}
-      dragContentToDismiss={dragContentToDismiss}
-      contentScrollable={contentScrollable}
-      fillAvailable={fillAvailable}
-      interactive={interactive}
-      zIndex={zIndex}
+      onAfterClose={onAfterClose}
     >
-      {children}
-    </MountedBottomDrawer>
+      {() => children}
+    </KeyedBottomDrawer>
   )
 }

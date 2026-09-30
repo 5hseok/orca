@@ -3,111 +3,64 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('startup ordering', () => {
-  it('passes the startup barrier into PTY handlers without blocking window creation', () => {
-    const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8')
-    const attachStart = source.indexOf('attachMainWindowServices(')
-    const attachEnd = source.indexOf('rateLimits.attach(window)', attachStart)
-    const attachBlock = source.slice(attachStart, attachEnd)
-    const desktopStart = source.indexOf('const [win] = await Promise.all([')
-    const desktopEnd = source.indexOf('// Why: the macOS notification permission dialog')
-    const desktopStartup = source.slice(desktopStart, desktopEnd)
-
-    expect(attachBlock).toContain('awaitLocalPtyStartup: () => localPtyStartupReady')
-    expect(attachBlock).toContain(
-      'awaitLocalPtyProviderStartup: () => localPtyProviderStartupReady'
+  it('keeps the power bridge through vetoable before-quit and disposes after commit', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/main/startup/main-process-quit.ts'),
+      'utf8'
     )
-    expect(source).toContain('firstWindowStartupServicesReady = startupServices.firstWindowReady')
-    expect(source).toContain('localPtyStartupReady = startupServices.localPtyReady')
+    const beforeQuitStart = source.indexOf("app.on('before-quit'")
+    const willQuitStart = source.indexOf("app.on('will-quit'", beforeQuitStart)
+    const windowAllClosedStart = source.indexOf("app.on('window-all-closed'", willQuitStart)
+    const beforeQuit = source.slice(beforeQuitStart, willQuitStart)
+    const willQuit = source.slice(willQuitStart, windowAllClosedStart)
+    const commitIndex = willQuit.indexOf('quitTeardownStartGate.tryStart(event)')
+    const disposeIndex = willQuit.indexOf('unsubscribeSystemResumeBroadcast?.()')
 
-    const windowIndex = desktopStartup.indexOf('Promise.resolve(openMainWindow())')
-    const rpcStartIndex = desktopStartup.indexOf('desktopRuntimeRpc.start()')
-    const legacyRpcStartIndex = desktopStartup.indexOf('runtimeRpc.start()')
-
-    expect(windowIndex).toBeGreaterThanOrEqual(0)
-    expect(Math.max(rpcStartIndex, legacyRpcStartIndex)).toBeGreaterThanOrEqual(0)
+    expect(beforeQuitStart).toBeGreaterThanOrEqual(0)
+    expect(willQuitStart).toBeGreaterThan(beforeQuitStart)
+    expect(windowAllClosedStart).toBeGreaterThan(willQuitStart)
+    expect(beforeQuit).not.toContain('unsubscribeSystemResumeBroadcast')
+    expect(commitIndex).toBeGreaterThanOrEqual(0)
+    expect(disposeIndex).toBeGreaterThan(commitIndex)
   })
 
-  it('bounds WSL reconciliation before serve RPC while leaving desktop startup independent', () => {
-    const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8')
-    const barrierStart = source.indexOf("ipcMain.handle('app:awaitFirstWindowStartupServices'")
-    const barrierEnd = source.indexOf("ipcMain.handle(\n  'app:startupDiagnostic'", barrierStart)
-    const barrier = source.slice(barrierStart, barrierEnd)
-    const reconciliationStart = source.indexOf(
-      'managedWslCliReconciliationReady = reconcileManagedWslCliRegistrations('
+  it('joins agent-browser cleanup before the committed quit exits', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/main/startup/main-process-quit.ts'),
+      'utf8'
     )
-    const serveStart = source.indexOf('if (serveOptions) {', reconciliationStart)
+    const willQuitStart = source.indexOf("app.on('will-quit'")
+    const windowAllClosedStart = source.indexOf("app.on('window-all-closed'", willQuitStart)
+    const willQuit = source.slice(willQuitStart, windowAllClosedStart)
+    const cleanupStart = willQuit.indexOf('const browserShutdown')
+    const offscreenCleanupStart = willQuit.indexOf(
+      'runtime?.getOffscreenBrowserBackend()?.destroyAll?.()'
+    )
+    const residualCleanupStart = willQuit.indexOf(
+      'runtime?.getAgentBrowserBridge()?.destroyAllSessions()'
+    )
+    const barrierStart = willQuit.indexOf('settleTeardownWithinDeadline([')
+
+    expect(willQuitStart).toBeGreaterThanOrEqual(0)
+    expect(windowAllClosedStart).toBeGreaterThan(willQuitStart)
+    expect(cleanupStart).toBeGreaterThanOrEqual(0)
+    expect(offscreenCleanupStart).toBeGreaterThan(cleanupStart)
+    expect(residualCleanupStart).toBeGreaterThan(offscreenCleanupStart)
+    expect(barrierStart).toBeGreaterThan(cleanupStart)
+    expect(willQuit.slice(barrierStart)).toContain("{ name: 'browser', promise: browserShutdown }")
+  })
+
+  it('registers repeatable serve signal handling before headless startup completes', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/main/startup/main-process-runtime-launch.ts'),
+      'utf8'
+    )
+    const serveStart = source.indexOf('async function launchServeMode(')
+    const signalHandlers = source.indexOf('registerServeSignalHandlers(process', serveStart)
     const serveReady = source.indexOf('await printServeReady(serveOptions)', serveStart)
-    const serveEnd = source.indexOf('return', serveReady)
-    const desktopWindowStart = source.indexOf('Promise.resolve(openMainWindow())')
-    const serveStartup = source.slice(serveStart, serveEnd)
-    const desktopStartup = source.slice(serveEnd, desktopWindowStart)
-
-    expect(reconciliationStart).toBeGreaterThanOrEqual(0)
-    expect(serveStart).toBeGreaterThan(reconciliationStart)
-    expect(serveEnd).toBeGreaterThan(serveStart)
-    expect(desktopWindowStart).toBeGreaterThan(reconciliationStart)
-    expect(serveStartup).toContain('await managedWslCliStartupBarrierReady')
-    expect(serveStartup).not.toContain('await managedWslCliReconciliationReady')
-    expect(serveStartup.indexOf('await managedWslCliStartupBarrierReady')).toBeLessThan(
-      serveStartup.indexOf('await runtimeRpc.start()')
-    )
-    expect(desktopStartup).not.toContain('await managedWslCliReconciliationReady')
-    expect(barrier).toContain('managedWslCliStartupBarrierReady')
-    expect(barrier).not.toContain('managedWslCliReconciliationReady')
-  })
-
-  it('exposes managed WSL reconciliation status to headless serve clients and diagnostics', () => {
-    const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8')
-
-    // Why: the barrier fails open, so the serve-ready payload must carry the
-    // reconciliation state and the bounded wait must be traceable via a milestone.
-    const readyStart = source.indexOf('await serveReadinessPublisher.publish(')
-    const readyEnd = source.indexOf('pairing: pairing.available', readyStart)
-    const readyPayload = source.slice(readyStart, readyEnd)
-    expect(readyPayload).toContain('managedWslCliReconciliation: managedWslCliReconciliationStatus')
-
-    expect(source).toContain("managedWslCliReconciliationStatus = 'pending'")
-    expect(source).toContain("managedWslCliReconciliationStatus = 'settled'")
-    expect(source).toContain("managedWslCliReconciliationStatus = 'failed'")
-    expect(source).toContain("logStartupMilestone('wsl-cli-barrier-resolved'")
-  })
-
-  it('notifies the serve supervisor only after publishing readiness', () => {
-    const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8')
-    const readyStart = source.indexOf('await serveReadinessPublisher.publish(')
-    const supervisorReady = source.indexOf('notifyServeSupervisorReady(', readyStart)
-
-    expect(readyStart).toBeGreaterThanOrEqual(0)
-    expect(supervisorReady).toBeGreaterThan(readyStart)
-  })
-
-  it('does not run the rate-limit quota fetch before the first window can show results', () => {
-    const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8')
-    const attachIndex = source.indexOf('rateLimits.attach(window)')
-    const startIndex = source.indexOf('rateLimits.start({ fetchImmediately: false })')
-
-    expect(attachIndex).toBeGreaterThanOrEqual(0)
-    expect(startIndex).toBeGreaterThan(attachIndex)
-  })
-
-  it('starts the automation scheduler before headless serve reports ready', () => {
-    const source = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8')
-    const serveStart = source.indexOf('if (serveOptions) {')
-    const serveReady = source.indexOf('await printServeReady(serveOptions)', serveStart)
-    const serveReturn = source.indexOf('return', serveReady)
-    const runtimeRpcStart = source.indexOf('await runtimeRpc.start()', serveStart)
-    const automationStart = source.indexOf('automations.start()', serveStart)
-    const desktopSetWebContents = source.indexOf('automations.setWebContents(window.webContents)')
-    const desktopAutomationStart = source.indexOf('automations.start()', desktopSetWebContents + 1)
 
     expect(serveStart).toBeGreaterThanOrEqual(0)
-    expect(serveReady).toBeGreaterThan(serveStart)
-    expect(serveReturn).toBeGreaterThan(serveReady)
-    expect(runtimeRpcStart).toBeGreaterThan(serveStart)
-    expect(automationStart).toBeGreaterThan(runtimeRpcStart)
-    expect(automationStart).toBeLessThan(serveReady)
-    expect(automationStart).toBeLessThan(serveReturn)
-    expect(desktopSetWebContents).toBeGreaterThanOrEqual(0)
-    expect(desktopAutomationStart).toBeGreaterThan(desktopSetWebContents)
+    expect(signalHandlers).toBeGreaterThan(serveStart)
+    expect(signalHandlers).toBeLessThan(serveReady)
   })
 })

@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ORPHAN_WORKTREE_ID } from '../../../../shared/constants'
-import type { BrowserWorkspace } from '../../../../shared/types'
+import type { BrowserWorkspace } from '../../../../shared/browser-workspace-types'
 import type { UnifiedSessionRow, UnifiedWorktreeRow } from './resource-usage-merge-types'
 
 vi.mock('@/store', () => {
@@ -23,6 +23,7 @@ vi.mock('@/components/ui/tooltip', () => ({
 }))
 
 vi.mock('@/i18n/i18n', () => ({
+  i18n: { language: 'en' },
   translate: (_key: string, fallback: string, values?: Record<string, string>) =>
     values
       ? Object.entries(values).reduce(
@@ -45,6 +46,7 @@ function makeSession(overrides: Partial<UnifiedSessionRow>): UnifiedSessionRow {
     pid: 100,
     label: 'zsh',
     bound: true,
+    agentOwnership: 'absent' as const,
     tabId: 'tab-1',
     cpu: 1,
     memory: 100,

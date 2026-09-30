@@ -1,4 +1,4 @@
-import type { WorkspaceSidebarPosition } from '../../../shared/types'
+import type { WorkspaceSidebarPosition } from '../../../shared/ui-chrome-types'
 import { shouldRenderDesktopWindowChrome } from './desktop-window-chrome'
 
 /** Workspace list vs the activity/explorer panel — the two sidebars that can swap edges. */

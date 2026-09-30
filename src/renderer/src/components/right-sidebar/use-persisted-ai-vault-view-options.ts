@@ -1,5 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { AiVaultAgent, AiVaultGroup, AiVaultSort } from '../../../../shared/ai-vault-types'
+import {
+  AI_VAULT_AGENTS,
+  type AiVaultAgent,
+  type AiVaultGroup,
+  type AiVaultSearchSort,
+  type AiVaultSort
+} from '../../../../shared/ai-vault-types'
 import {
   createDefaultAiVaultViewOptions,
   enabledAiVaultAgents,
@@ -7,18 +13,24 @@ import {
   writeAiVaultViewOptions,
   type AiVaultViewOptions
 } from './ai-vault-view-options-persistence'
+import type { AiVaultSessionLimit } from './ai-vault-session-limit'
 
 type AiVaultViewOptionsUpdate = (current: AiVaultViewOptions) => AiVaultViewOptions
 
 export function usePersistedAiVaultViewOptions(): {
   agents: AiVaultAgent[]
   sort: AiVaultSort
+  searchSort: AiVaultSearchSort
   group: AiVaultGroup
   hideEmptySessions: boolean
+  sessionLimit: AiVaultSessionLimit
   setSort: (sort: AiVaultSort) => void
+  setSearchSort: (sort: AiVaultSearchSort) => void
   setGroup: (group: AiVaultGroup) => void
   setHideEmptySessions: (hide: boolean) => void
+  setSessionLimit: (limit: AiVaultSessionLimit) => void
   setAgentEnabled: (agent: AiVaultAgent, enabled: boolean) => void
+  setAllAgentsEnabled: (enabled: boolean) => void
   resetViewOptions: () => void
 } {
   const [options, setOptions] = useState<AiVaultViewOptions>(() => readAiVaultViewOptions())
@@ -45,6 +57,13 @@ export function usePersistedAiVaultViewOptions(): {
       updateOptions((current) => (current.sort === sort ? current : { ...current, sort })),
     [updateOptions]
   )
+  const setSearchSort = useCallback(
+    (searchSort: AiVaultSearchSort) =>
+      updateOptions((current) =>
+        current.searchSort === searchSort ? current : { ...current, searchSort }
+      ),
+    [updateOptions]
+  )
   const setGroup = useCallback(
     (group: AiVaultGroup) =>
       updateOptions((current) => (current.group === group ? current : { ...current, group })),
@@ -59,6 +78,13 @@ export function usePersistedAiVaultViewOptions(): {
       ),
     [updateOptions]
   )
+  const setSessionLimit = useCallback(
+    (sessionLimit: AiVaultSessionLimit) =>
+      updateOptions((current) =>
+        current.sessionLimit === sessionLimit ? current : { ...current, sessionLimit }
+      ),
+    [updateOptions]
+  )
   const setAgentEnabled = useCallback(
     (agent: AiVaultAgent, enabled: boolean) => {
       updateOptions((current) => {
@@ -66,12 +92,26 @@ export function usePersistedAiVaultViewOptions(): {
         if (enabled === !isDisabled) {
           return current
         }
+        // Why: allow zero enabled agents so Clear + re-check one agent is a two-step filter.
         const disabledAgents = enabled
           ? current.disabledAgents.filter((entry) => entry !== agent)
           : [...current.disabledAgents, agent]
-        return enabledAiVaultAgents(disabledAgents).length > 0
-          ? { ...current, disabledAgents }
-          : current
+        return { ...current, disabledAgents }
+      })
+    },
+    [updateOptions]
+  )
+  const setAllAgentsEnabled = useCallback(
+    (enabled: boolean) => {
+      updateOptions((current) => {
+        const disabledAgents = enabled ? [] : [...AI_VAULT_AGENTS]
+        if (
+          disabledAgents.length === current.disabledAgents.length &&
+          disabledAgents.every((agent) => current.disabledAgents.includes(agent))
+        ) {
+          return current
+        }
+        return { ...current, disabledAgents }
       })
     },
     [updateOptions]
@@ -88,12 +128,17 @@ export function usePersistedAiVaultViewOptions(): {
   return {
     agents,
     sort: options.sort,
+    searchSort: options.searchSort,
     group: options.group,
     hideEmptySessions: options.hideEmptySessions,
+    sessionLimit: options.sessionLimit,
     setSort,
+    setSearchSort,
     setGroup,
     setHideEmptySessions,
+    setSessionLimit,
     setAgentEnabled,
+    setAllAgentsEnabled,
     resetViewOptions
   }
 }

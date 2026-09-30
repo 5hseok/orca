@@ -1,46 +1,65 @@
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync, existsSync, rmSync, unlinkSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { getHistorySessionDirName } from './history-paths'
+import { ensurePrivateDir } from './daemon-private-file-modes'
+import { clearReplayableTerminalHistorySessionFiles } from './terminal-history-session-files'
 import {
   fingerprintTerminalHistorySession,
   hasTerminalHistoryRecoveryProtection,
   quarantineTerminalHistorySession,
-  removeTerminalHistoryQuarantines,
   type ActiveHistoryRecoveryFreeze,
   type HistoryRecoveryFreeze
 } from './terminal-history-recovery-quarantine'
+import { TerminalHistoryRecoveryFreezes } from './terminal-history-recovery-freezes'
+import {
+  removeTerminalHistorySessionTrees,
+  schedulePendingSessionTreeRemovals
+} from './terminal-history-session-tombstone'
 import { TerminalHistorySessionWriter } from './terminal-history-session-writer'
 import {
   readTerminalHistoryMetaFromDir,
   updateTerminalHistoryMeta,
+  writeTerminalHistoryMeta,
   type SessionMeta
 } from './terminal-history-metadata'
 import type { PendingOutputRecord, TerminalSnapshot } from './types'
-import type { HistoryManagerOptions, OpenSessionOptions } from './terminal-history-manager-options'
+import { TERMINAL_HISTORY_CHECKPOINT_MAX_BYTES } from './terminal-history-file-limits'
+import { TerminalHistoryMutationTracker } from './terminal-history-mutation-tracker'
+import type {
+  HistoryCheckpointResult,
+  HistoryManagerOptions,
+  OpenSessionOptions
+} from './terminal-history-manager-options'
 
 export type { SessionMeta } from './terminal-history-metadata'
 export type { HistoryRecoveryFreeze } from './terminal-history-recovery-quarantine'
-export type { HistoryManagerOptions, OpenSessionOptions } from './terminal-history-manager-options'
+export type * from './terminal-history-manager-options'
 
 export class HistoryManager {
-  private basePath: string
   private writers = new Map<string, TerminalHistorySessionWriter>()
   private disabledSessions = new Set<string>()
-  private pendingSessionMutations = new Map<string, Set<Promise<unknown>>>()
-  private recoveryFreezes = new Map<string, ActiveHistoryRecoveryFreeze>()
+  private mutations = new TerminalHistoryMutationTracker()
+  private readonly recoveryFreezes: TerminalHistoryRecoveryFreezes
   private onWriteError?: (sessionId: string, error: Error) => void
+  private checkpointMaxBytes: number
 
-  constructor(basePath: string, opts?: HistoryManagerOptions) {
-    this.basePath = basePath
+  constructor(
+    private readonly basePath: string,
+    opts?: HistoryManagerOptions
+  ) {
     this.onWriteError = opts?.onWriteError
+    this.checkpointMaxBytes = opts?.checkpointMaxBytes ?? TERMINAL_HISTORY_CHECKPOINT_MAX_BYTES
+    this.recoveryFreezes = new TerminalHistoryRecoveryFreezes(basePath)
+    // Why: a quit between tombstone and reclaim leaves the tree on disk; nothing else rescans the queue.
+    schedulePendingSessionTreeRemovals(this.basePath)
   }
 
   async openSession(sessionId: string, opts: OpenSessionOptions): Promise<void> {
     let recoveryFreeze = opts.recoveryFreeze
     try {
       this.disabledSessions.delete(sessionId)
-      const dir = join(this.basePath, getHistorySessionDirName(sessionId))
+      const dir = this.sessionDir(sessionId)
       recoveryFreeze ??= await this.freezeForRecovery(sessionId)
       const activeFreeze = this.requireRecoveryFreeze(sessionId, recoveryFreeze)
 
@@ -53,8 +72,8 @@ export class HistoryManager {
       ) {
         throw new Error('terminal_history_recovery_generation_changed')
       }
-      this.recoveryFreezes.delete(sessionId)
-      mkdirSync(dir, { recursive: true })
+      this.recoveryFreezes.release(sessionId)
+      ensurePrivateDir(dir)
 
       const meta: SessionMeta = {
         cwd: opts.cwd,
@@ -64,24 +83,16 @@ export class HistoryManager {
         endedAt: null,
         exitCode: null
       }
-      writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2))
+      writeTerminalHistoryMeta(dir, meta)
 
       if (!opts.quarantineUnreadableRecovery) {
-        // Why: a crash before the first checkpoint must not replay a cleanly ended prior session.
-        for (const staleFile of [
-          join(dir, 'checkpoint.json'),
-          join(dir, 'scrollback.bin'),
-          join(dir, 'output.log')
-        ]) {
-          try {
-            unlinkSync(staleFile)
-          } catch {
-            // ENOENT is expected for new sessions
-          }
-        }
+        clearReplayableTerminalHistorySessionFiles(dir)
       }
 
-      this.writers.set(sessionId, new TerminalHistorySessionWriter(dir, true))
+      this.writers.set(
+        sessionId,
+        new TerminalHistorySessionWriter(dir, true, this.checkpointMaxBytes)
+      )
     } catch (err) {
       if (recoveryFreeze) {
         this.abandonRecoveryFreeze(recoveryFreeze)
@@ -101,14 +112,14 @@ export class HistoryManager {
       token: randomUUID()
     }
     const activeFreeze: ActiveHistoryRecoveryFreeze = { handle }
-    this.recoveryFreezes.set(sessionId, activeFreeze)
+    this.recoveryFreezes.hold(sessionId, activeFreeze)
     try {
-      await this.waitForSessionMutations(sessionId)
+      await this.mutations.wait(sessionId)
       activeFreeze.fingerprint = fingerprintTerminalHistorySession(this.basePath, sessionId)
       return handle
     } catch (err) {
       if (this.recoveryFreezes.get(sessionId) === activeFreeze) {
-        this.recoveryFreezes.delete(sessionId)
+        this.recoveryFreezes.release(sessionId)
       }
       throw err
     }
@@ -117,7 +128,7 @@ export class HistoryManager {
   abandonRecoveryFreeze(freeze?: HistoryRecoveryFreeze): void {
     const activeFreeze = freeze ? this.recoveryFreezes.get(freeze.sessionId) : undefined
     if (activeFreeze && activeFreeze.handle === freeze) {
-      this.recoveryFreezes.delete(activeFreeze.handle.sessionId)
+      this.recoveryFreezes.release(activeFreeze.handle.sessionId)
     }
   }
 
@@ -138,7 +149,7 @@ export class HistoryManager {
         ) {
           throw new Error('terminal_history_recovery_generation_changed')
         }
-        this.recoveryFreezes.delete(sessionId)
+        this.recoveryFreezes.release(sessionId)
       } catch (err) {
         this.abandonRecoveryFreeze(recoveryFreeze)
         this.handleWriteError(sessionId, err)
@@ -147,8 +158,11 @@ export class HistoryManager {
     } else if (this.recoveryFreezes.has(sessionId)) {
       return
     }
-    const dir = join(this.basePath, getHistorySessionDirName(sessionId))
-    this.writers.set(sessionId, new TerminalHistorySessionWriter(dir, false))
+    const dir = this.sessionDir(sessionId)
+    this.writers.set(
+      sessionId,
+      new TerminalHistorySessionWriter(dir, false, this.checkpointMaxBytes)
+    )
   }
 
   // Why: wake re-spawns a sleep-killed session; re-register without deleting checkpoint.json, clear endedAt so it can cold-restore again.
@@ -181,10 +195,7 @@ export class HistoryManager {
     seq: number,
     records: PendingOutputRecord[]
   ): Promise<'ok' | 'needs-checkpoint'> {
-    return this.trackSessionMutation(
-      sessionId,
-      this.appendIncrementsUntracked(sessionId, seq, records)
-    )
+    return this.mutations.track(sessionId, this.appendIncrementsUntracked(sessionId, seq, records))
   }
 
   private async appendIncrementsUntracked(
@@ -208,25 +219,38 @@ export class HistoryManager {
   }
 
   // Full checkpoints are rare (clean disconnect, pending-buffer overflow, log cap); the 5s tick appends increments instead.
-  checkpoint(sessionId: string, snapshot: TerminalSnapshot): Promise<void> {
-    return this.trackSessionMutation(sessionId, this.checkpointUntracked(sessionId, snapshot))
+  checkpoint(
+    sessionId: string,
+    snapshot: TerminalSnapshot,
+    opts?: { pendingOutputSeq?: number }
+  ): Promise<HistoryCheckpointResult> {
+    return this.mutations.track(sessionId, this.checkpointUntracked(sessionId, snapshot, opts))
   }
 
-  private async checkpointUntracked(sessionId: string, snapshot: TerminalSnapshot): Promise<void> {
+  private async checkpointUntracked(
+    sessionId: string,
+    snapshot: TerminalSnapshot,
+    opts?: { pendingOutputSeq?: number }
+  ): Promise<HistoryCheckpointResult> {
     if (this.disabledSessions.has(sessionId)) {
-      return
+      return 'unavailable'
     }
     const writer = this.writers.get(sessionId)
     if (!writer) {
-      return
+      return 'unavailable'
     }
 
     try {
       // Why: tmp+rename is atomic (corrupt checkpoint > stale); async so a sync ~MB write can't stall IPC (worse under Windows AV).
-      // The adapter's checkpointInFlight guard serializes checkpoints, so concurrent async writes can't collide on the fixed .tmp path.
-      await writer.checkpoint(snapshot)
+      // The adapter's per-session checkpoint queue prevents concurrent writes from colliding on the fixed .tmp path.
+      const checkpoint = await writer.checkpoint(snapshot, opts)
+      if (checkpoint.result === 'retryable') {
+        this.onWriteError?.(sessionId, checkpoint.error)
+      }
+      return checkpoint.result
     } catch (err) {
       this.handleWriteError(sessionId, err)
+      return 'unavailable'
     }
   }
 
@@ -250,16 +274,11 @@ export class HistoryManager {
   async removeSession(sessionId: string): Promise<void> {
     this.writers.delete(sessionId)
     this.disabledSessions.delete(sessionId)
-    const activeFreeze = this.recoveryFreezes.get(sessionId)
-    if (activeFreeze) {
-      this.recoveryFreezes.delete(sessionId)
-    }
-    await this.waitForSessionMutations(sessionId)
-    rmSync(join(this.basePath, getHistorySessionDirName(sessionId)), {
-      recursive: true,
-      force: true
-    })
-    removeTerminalHistoryQuarantines(this.basePath, sessionId)
+    this.recoveryFreezes.release(sessionId)
+    await this.mutations.wait(sessionId)
+    // Why tombstoned: writer handles are closed by here, so the trees only have to become unreachable —
+    // they reach hundreds of MB and every terminal a worktree delete tears down awaits this.
+    await removeTerminalHistorySessionTrees(this.basePath, sessionId)
   }
 
   isSessionDisabled(sessionId: string): boolean {
@@ -275,12 +294,11 @@ export class HistoryManager {
   }
 
   hasHistory(sessionId: string): boolean {
-    return existsSync(join(this.basePath, getHistorySessionDirName(sessionId), 'meta.json'))
+    return existsSync(join(this.sessionDir(sessionId), 'meta.json'))
   }
 
   readMeta(sessionId: string): SessionMeta | null {
-    const dir = join(this.basePath, getHistorySessionDirName(sessionId))
-    return readTerminalHistoryMetaFromDir(dir)
+    return readTerminalHistoryMetaFromDir(this.sessionDir(sessionId))
   }
 
   async dispose(): Promise<void> {
@@ -296,12 +314,17 @@ export class HistoryManager {
       }
     }
     this.writers.clear()
+    this.recoveryFreezes.releaseAll()
   }
 
   // Why: history is best-effort; callers fire-and-forget so a throw would be an unhandled rejection — disable instead.
   private handleWriteError(sessionId: string, err: unknown): void {
     this.disabledSessions.add(sessionId)
     this.onWriteError?.(sessionId, err as Error)
+  }
+
+  private sessionDir(sessionId: string): string {
+    return join(this.basePath, getHistorySessionDirName(sessionId))
   }
 
   private requireRecoveryFreeze(
@@ -317,30 +340,5 @@ export class HistoryManager {
       throw new Error('terminal_history_recovery_freeze_invalid')
     }
     return activeFreeze
-  }
-
-  private trackSessionMutation<T>(sessionId: string, operation: Promise<T>): Promise<T> {
-    const mutations = this.pendingSessionMutations.get(sessionId) ?? new Set<Promise<unknown>>()
-    mutations.add(operation)
-    this.pendingSessionMutations.set(sessionId, mutations)
-    void operation.then(
-      () => this.finishSessionMutation(sessionId, operation),
-      () => this.finishSessionMutation(sessionId, operation)
-    )
-    return operation
-  }
-
-  private finishSessionMutation(sessionId: string, operation: Promise<unknown>): void {
-    const mutations = this.pendingSessionMutations.get(sessionId)
-    mutations?.delete(operation)
-    if (mutations?.size === 0) {
-      this.pendingSessionMutations.delete(sessionId)
-    }
-  }
-
-  private async waitForSessionMutations(sessionId: string): Promise<void> {
-    while (this.pendingSessionMutations.has(sessionId)) {
-      await Promise.allSettled(this.pendingSessionMutations.get(sessionId) ?? [])
-    }
   }
 }

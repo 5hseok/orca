@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import CommentMarkdown, { remarkGitHubReferences } from './CommentMarkdown'
+import { NativeChatCodeBlock } from '@/components/native-chat/NativeChatCodeBlock'
 
 describe('CommentMarkdown', () => {
   it('marks compact headings so a parent can opt into block flow', () => {
@@ -87,6 +88,30 @@ describe('CommentMarkdown', () => {
     expect(markup).toContain('<img')
     expect(markup).toContain('alt="Image #1"')
     expect(markup).toContain('src="data:image/png;base64,abc123"')
+  })
+
+  it('renders document markdown images with an expand control for the lightbox', () => {
+    // Why: document bodies need a large preview without a provider-specific renderer.
+    const markup = renderToStaticMarkup(
+      <CommentMarkdown
+        variant="document"
+        content="See this: ![ui.png](data:image/png;base64,abc123)"
+      />
+    )
+
+    expect(markup).toContain('<img')
+    expect(markup).toContain('src="data:image/png;base64,abc123"')
+    expect(markup).toContain('aria-label="Expand image"')
+    expect(markup).toContain('type="button"')
+  })
+
+  it('adds an expand control to compact images only when requested', () => {
+    const markup = renderToStaticMarkup(
+      <CommentMarkdown expandImages content="See this: ![ui.png](data:image/png;base64,abc123)" />
+    )
+
+    expect(markup).toContain('aria-label="Expand image"')
+    expect(markup).toContain('max-h-32')
   })
 
   it('renders bare GitHub user attachment links as document videos', () => {
@@ -200,6 +225,33 @@ describe('CommentMarkdown', () => {
     expect(markup).not.toContain('<pre')
   })
 
+  it('uses the supplied code-block renderer for fenced document markdown', () => {
+    const markup = renderToStaticMarkup(
+      <CommentMarkdown
+        variant="document"
+        content={'```ts\nconst answer = 42\n```'}
+        renderCodeBlock={NativeChatCodeBlock}
+      />
+    )
+
+    expect(markup).toContain('aria-label="Copy code"')
+    expect(markup).toContain('data-code-language="ts"')
+    expect(markup).toContain('const answer = 42')
+  })
+
+  it('does not invent a language label for a bare code fence', () => {
+    const markup = renderToStaticMarkup(
+      <CommentMarkdown
+        variant="document"
+        content={'```\nconst answer = 42\n```'}
+        renderCodeBlock={NativeChatCodeBlock}
+      />
+    )
+
+    expect(markup).toContain('aria-label="Copy code"')
+    expect(markup).not.toContain('data-code-language')
+  })
+
   it('keeps compact mermaid fences as bounded source blocks', () => {
     const markup = renderToStaticMarkup(
       <CommentMarkdown content={'```mermaid\ngraph TD; A-->B;\n```'} />
@@ -209,6 +261,24 @@ describe('CommentMarkdown', () => {
     expect(markup).toContain('max-h-32')
     expect(markup).toContain('overflow-x-auto')
     expect(markup).not.toContain('mermaid-block')
+  })
+
+  it('renders headings as block elements with hierarchy in the document variant', () => {
+    const markup = renderToStaticMarkup(
+      <CommentMarkdown variant="document" content={'## Problem to solve\n\nSome body text.'} />
+    )
+
+    expect(markup).toContain('<h2')
+    expect(markup).toContain('Problem to solve')
+  })
+
+  it('flattens headings to inline text in the compact variant', () => {
+    const markup = renderToStaticMarkup(
+      <CommentMarkdown content={'## Problem to solve\n\nSome body text.'} />
+    )
+
+    expect(markup).not.toContain('<h2')
+    expect(markup).toContain('Problem to solve')
   })
 
   it('contains long PR body markdown inside its available width', () => {

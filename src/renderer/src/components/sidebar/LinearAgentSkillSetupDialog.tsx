@@ -12,10 +12,6 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import {
-  AGENT_SKILL_CLI_PREREQUISITE_NOTICE,
-  isOrcaCliAvailableOnPath
-} from '@/lib/agent-skill-cli-prerequisite'
 import { translate } from '@/i18n/i18n'
 
 type AgentSkillSetupPanelProps = ComponentProps<typeof AgentSkillSetupPanel>
@@ -28,11 +24,10 @@ type LinearAgentSkillSetupDialogProps = {
   command: string
   installedCommand: string
   terminalShellOverride?: string
+  terminalRuntime?: AgentSkillSetupPanelProps['terminalRuntime']
   installed: boolean
   loading: boolean
   error: string | null
-  getPrerequisiteStatus?: AgentSkillSetupPanelProps['getPrerequisiteStatus']
-  onBeforeOpenTerminal: AgentSkillSetupPanelProps['onBeforeOpenTerminal']
   onRecheck: AgentSkillSetupPanelProps['onRecheck']
   onOpenChange: (open: boolean) => void
   onDismissPermanently: () => void
@@ -47,11 +42,10 @@ export function LinearAgentSkillSetupDialog({
   command,
   installedCommand,
   terminalShellOverride,
+  terminalRuntime,
   installed,
   loading,
   error,
-  getPrerequisiteStatus,
-  onBeforeOpenTerminal,
   onRecheck,
   onOpenChange,
   onDismissPermanently,
@@ -137,20 +131,17 @@ export function LinearAgentSkillSetupDialog({
               terminalWorktreeId="sidebar-linear-agent-skill-setup"
               terminalHeightPx={240}
               terminalShellOverride={terminalShellOverride}
+              terminalRuntime={terminalRuntime}
               installed={installed}
               loading={loading}
               error={error}
               installLabel={translate(
-                'auto.components.sidebar.LinearAgentSkillSetupPrompt.install',
-                'Install CLI & Skill'
+                'auto.components.skills.SkillInstallDialog.39acb9e8f4',
+                'Install skill'
               )}
               // Why: Install is this modal's sole CTA, so make it the filled primary —
               // matching the other setup surfaces (filled primary + muted dismiss).
               installVariant="default"
-              preInstallNotice={AGENT_SKILL_CLI_PREREQUISITE_NOTICE}
-              getPrerequisiteStatus={getPrerequisiteStatus}
-              isPrerequisiteAvailable={isOrcaCliAvailableOnPath}
-              onBeforeOpenTerminal={onBeforeOpenTerminal}
               onRecheck={onRecheck}
             />
             {/* Why: permanent opt-out as a quiet EyeOff icon next to the × — matching
@@ -191,3 +182,5 @@ export function LinearAgentSkillSetupDialog({
     </Dialog>
   )
 }
+
+export default LinearAgentSkillSetupDialog

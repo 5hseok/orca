@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import {
   chmod,
   copyFile,
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -14,6 +15,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
+import { observeSkillPackage } from '../../src/main/skills/skill-package-identity'
 import {
   appendReleaseRow,
   assertReleasedHistoryPreserved,
@@ -436,14 +438,101 @@ describe('skill bundle manifest generator', () => {
     )
   })
 
+  it('ignores OS-authored sidecars a working tree may carry', async () => {
+    const packageRoot = await createPackage()
+    await writeFile(path.join(packageRoot, 'SKILL.md'), 'demo skill\n')
+    await mkdir(path.join(packageRoot, 'references'))
+    await writeFile(path.join(packageRoot, 'references', 'guide.md'), 'nested\n')
+    const pristine = await collectPackageFiles(packageRoot)
+    expect(pristine.map((file) => file.path)).toEqual(['SKILL.md', 'references/guide.md'])
+    // Finder writes .DS_Store into any browsed folder, and it is gitignored — so without
+    // this the committed artifacts read as stale and lint fails for that developer, while
+    // the scanner would have no snapshot a real install could match.
+    await writeFile(path.join(packageRoot, '.DS_Store'), Buffer.from([0, 1, 2, 3]))
+    await writeFile(path.join(packageRoot, '._SKILL.md'), Buffer.from([0, 5]))
+    await writeFile(path.join(packageRoot, 'Thumbs.db'), Buffer.from([9]))
+    // Nested folders get browsed too, and a sidecar there shifts the same index-aligned list.
+    await writeFile(path.join(packageRoot, 'references', '.DS_Store'), Buffer.from([7]))
+
+    expect(await collectPackageFiles(packageRoot)).toEqual(pristine)
+  })
+
+  it('still records an unexpected file that is not OS metadata', async () => {
+    const packageRoot = await createPackage()
+    await writeFile(path.join(packageRoot, 'SKILL.md'), 'demo skill\n')
+    await writeFile(path.join(packageRoot, 'payload.sh'), 'echo hi\n')
+
+    expect((await collectPackageFiles(packageRoot)).map((file) => file.path)).toEqual([
+      'SKILL.md',
+      'payload.sh'
+    ])
+  })
+
+  it('keeps guarding a directory or link that only wears an OS metadata name', async () => {
+    const packageRoot = await createPackage()
+    await writeFile(path.join(packageRoot, 'SKILL.md'), 'demo skill\n')
+    // Only plain files are OS-authored, so a subtree behind one of these names is real
+    // content that must stay in the manifest instead of shipping unrecorded.
+    await mkdir(path.join(packageRoot, '.DS_Store'))
+    await writeFile(path.join(packageRoot, '.DS_Store', 'payload.sh'), 'echo hi\n')
+
+    expect((await collectPackageFiles(packageRoot)).map((file) => file.path)).toEqual([
+      '.DS_Store/payload.sh',
+      'SKILL.md'
+    ])
+
+    if (process.platform !== 'win32') {
+      await rm(path.join(packageRoot, '.DS_Store'), { recursive: true })
+      await symlink('SKILL.md', path.join(packageRoot, '._SKILL.md'))
+      await expect(collectPackageFiles(packageRoot)).rejects.toThrow(
+        'Symlink is not allowed in a shipped skill'
+      )
+    }
+  })
+
+  // Why: the predicate is hand-copied from the scanner, and an asymmetric skip is worse than
+  // no skip — one side would bake in content the other can never observe, leaving every
+  // install permanently unrecognized. Compared through both walkers so ordering and the
+  // case-fold map are covered too, not just the name test.
+  it('skips exactly the names the scanner skips', async () => {
+    const packageRoot = await createPackage()
+    for (const name of [
+      'SKILL.md',
+      '.DS_Store',
+      '.ds_store',
+      '.DS_STORE',
+      'Thumbs.db',
+      'THUMBS.DB',
+      'ehthumbs.db',
+      'desktop.ini',
+      'Desktop.INI',
+      '._SKILL.md',
+      '._',
+      // Near misses that both sides must keep.
+      '.dsstore',
+      'ds_store.md',
+      '_SKILL.md',
+      '.DS_Store.md'
+    ]) {
+      await writeFile(path.join(packageRoot, name), `${name}\n`)
+    }
+
+    const generated = (await collectPackageFiles(packageRoot)).map((file) => file.path)
+    expect(generated).toEqual((await observeSkillPackage(packageRoot)).files.map((f) => f.path))
+    expect(generated).toEqual(['.DS_Store.md', '.dsstore', 'SKILL.md', '_SKILL.md', 'ds_store.md'])
+  })
+
   it('computes the same Git tree identity as Git', async () => {
-    const packageRoot = path.resolve('skills', 'orca-cli')
+    const packageRoot = await createPackage()
+    await cp(path.join(REPO_ROOT, 'skills', 'orca-cli'), packageRoot, { recursive: true })
     const files = await collectPackageFiles(packageRoot)
-    const expected = execFileSync('git', ['ls-tree', 'HEAD:skills', 'orca-cli'], {
+    // Compare the same bytes even when the skill has uncommitted edits.
+    execFileSync('git', ['init', '--quiet'], { cwd: packageRoot })
+    execFileSync('git', ['-c', 'core.autocrlf=false', 'add', '-A'], { cwd: packageRoot })
+    const expected = execFileSync('git', ['write-tree'], {
+      cwd: packageRoot,
       encoding: 'utf8'
-    })
-      .trim()
-      .split(/\s+/)[2]
+    }).trim()
 
     expect(gitTreeSha(files)).toBe(expected)
   })

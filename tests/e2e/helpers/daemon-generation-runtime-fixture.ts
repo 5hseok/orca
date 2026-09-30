@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { build } from 'esbuild'
@@ -21,6 +29,7 @@ export type DaemonGenerationRuntime = {
   daemonDir: string
   entryPath: string
   reconnectClientEntryPath: string
+  legacyCloseClientEntryPath: string
   canaryPath: string
   electronPath: string
   retainDiagnostics(generations: readonly DiagnosticGeneration[]): void
@@ -106,7 +115,14 @@ export async function createDaemonGenerationRuntime(
   mkdirSync(daemonDir, { recursive: true })
   const entryPath = path.join(rootDir, 'daemon-generation-entry.cjs')
   const reconnectClientEntryPath = path.join(rootDir, 'daemon-generation-reconnect-client.cjs')
+  const legacyCloseClientEntryPath = path.join(rootDir, 'daemon-generation-legacy-close-client.cjs')
   const repoRoot = process.cwd()
+  // ESM imports in the bundled fixture resolve from its temp directory, not NODE_PATH.
+  symlinkSync(
+    path.join(repoRoot, 'node_modules'),
+    path.join(rootDir, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir'
+  )
   await buildFixtureEntry(
     path.join(repoRoot, 'tests/e2e/fixtures/daemon-generation-entry.ts'),
     entryPath
@@ -115,12 +131,17 @@ export async function createDaemonGenerationRuntime(
     path.join(repoRoot, 'tests/e2e/fixtures/daemon-generation-reconnect-client.ts'),
     reconnectClientEntryPath
   )
+  await buildFixtureEntry(
+    path.join(repoRoot, 'tests/e2e/fixtures/daemon-generation-legacy-close-client.ts'),
+    legacyCloseClientEntryPath
+  )
   return {
     rootDir,
     userDataDir,
     daemonDir,
     entryPath,
     reconnectClientEntryPath,
+    legacyCloseClientEntryPath,
     canaryPath: path.join(repoRoot, 'tests/e2e/fixtures/daemon-generation-canary.cjs'),
     electronPath: resolveElectronExecutable(repoRoot),
     retainDiagnostics: (generations) => {

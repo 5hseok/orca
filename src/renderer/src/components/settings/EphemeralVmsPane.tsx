@@ -9,10 +9,6 @@ import { AgentSkillSetupPanel } from './AgentSkillSetupPanel'
 import { EphemeralVmRecipeRow } from './EphemeralVmRecipeRow'
 import { translate } from '@/i18n/i18n'
 import {
-  AGENT_SKILL_CLI_PREREQUISITE_NOTICE,
-  ensureOrcaCliAvailableForAgentSkillTerminal
-} from '@/lib/agent-skill-cli-prerequisite'
-import {
   EPHEMERAL_VMS_SKILL_INSTALL_COMMAND,
   EPHEMERAL_VMS_SKILL_NAME,
   EPHEMERAL_VMS_SKILL_UPDATE_COMMAND
@@ -22,11 +18,7 @@ import {
   useInstalledAgentSkill
 } from '@/hooks/useInstalledAgentSkills'
 import { useActiveProjectSkillRuntime } from '@/hooks/useActiveProjectSkillRuntime'
-import {
-  buildSkillCommandForRuntime,
-  ensureWslCliAvailableForAgentSkillTerminal,
-  getWslCliDistroRequest
-} from './CliSkillRuntimeSetup'
+import { buildSkillCommandForRuntime } from './CliSkillRuntimeSetup'
 
 type RecipeCatalogEntry = Awaited<
   ReturnType<typeof window.api.ephemeralVm.listRecipeCatalog>
@@ -45,21 +37,30 @@ export function EphemeralVmsPane(): React.JSX.Element {
   const [promptCopied, setPromptCopied] = useState(false)
   const mountedRef = useMountedRef()
   const refreshGenerationRef = useRef(0)
+  const promptResetTimerRef = useRef<number | null>(null)
 
-  const installCommand =
-    activeSkillRuntime.agentRuntime && !activeSkillRuntime.installDisabledReason
-      ? buildSkillCommandForRuntime(
-          EPHEMERAL_VMS_SKILL_INSTALL_COMMAND,
-          activeSkillRuntime.agentRuntime
-        )
-      : EPHEMERAL_VMS_SKILL_INSTALL_COMMAND
-  const updateCommand =
-    activeSkillRuntime.agentRuntime && !activeSkillRuntime.installDisabledReason
-      ? buildSkillCommandForRuntime(
-          EPHEMERAL_VMS_SKILL_UPDATE_COMMAND,
-          activeSkillRuntime.agentRuntime
-        )
-      : EPHEMERAL_VMS_SKILL_UPDATE_COMMAND
+  useEffect(() => {
+    return () => {
+      if (promptResetTimerRef.current !== null) {
+        window.clearTimeout(promptResetTimerRef.current)
+      }
+    }
+  }, [])
+
+  // Why: an absent runtime still resolves to the local host, which is what the
+  // seven sibling panes rely on to reach the Windows npx preflight.
+  const installCommand = activeSkillRuntime.installDisabledReason
+    ? EPHEMERAL_VMS_SKILL_INSTALL_COMMAND
+    : buildSkillCommandForRuntime(
+        EPHEMERAL_VMS_SKILL_INSTALL_COMMAND,
+        activeSkillRuntime.agentRuntime
+      )
+  const updateCommand = activeSkillRuntime.installDisabledReason
+    ? EPHEMERAL_VMS_SKILL_UPDATE_COMMAND
+    : buildSkillCommandForRuntime(
+        EPHEMERAL_VMS_SKILL_UPDATE_COMMAND,
+        activeSkillRuntime.agentRuntime
+      )
 
   const {
     installed: skillDetected,
@@ -126,8 +127,17 @@ export function EphemeralVmsPane(): React.JSX.Element {
     try {
       await window.api.ui.writeClipboardText(AGENT_PROMPT)
       useAppStore.getState().recordFeatureInteraction('ephemeral-vm-setup')
+      if (!mountedRef.current) {
+        return
+      }
       setPromptCopied(true)
-      setTimeout(() => setPromptCopied(false), 1500)
+      if (promptResetTimerRef.current !== null) {
+        window.clearTimeout(promptResetTimerRef.current)
+      }
+      promptResetTimerRef.current = window.setTimeout(() => {
+        promptResetTimerRef.current = null
+        setPromptCopied(false)
+      }, 1500)
     } catch {
       toast.error(
         translate(
@@ -144,8 +154,8 @@ export function EphemeralVmsPane(): React.JSX.Element {
     <div className="space-y-6" data-settings-section="ephemeral-vms">
       <AgentSkillSetupPanel
         title={translate(
-          'auto.components.settings.EphemeralVmsPane.skillTitle',
-          'Per-Workspace Environments skill'
+          'auto.components.settings.EphemeralVmsPane.cloudVmSkillTitle',
+          'Cloud VM setup skill'
         )}
         description={translate(
           'auto.components.settings.EphemeralVmsPane.skillDescription',
@@ -153,31 +163,25 @@ export function EphemeralVmsPane(): React.JSX.Element {
         )}
         command={installCommand}
         installedCommand={updateCommand}
-        terminalTitle="Ephemeral VMs setup"
-        terminalAriaLabel="Ephemeral VMs skill install terminal"
+        terminalTitle={translate(
+          'auto.components.settings.EphemeralVmsPane.cloudVmTerminalTitle',
+          'Cloud VM setup'
+        )}
+        terminalAriaLabel={translate(
+          'auto.components.settings.EphemeralVmsPane.cloudVmTerminalAriaLabel',
+          'Cloud VM skill install terminal'
+        )}
         terminalWorktreeId="settings-ephemeral-vms-skill-terminal"
         terminalShellOverride={activeSkillRuntime.terminalShellOverride}
+        terminalRuntime={activeSkillRuntime.agentRuntime}
         installed={skillDetected}
         loading={skillLoading}
         error={activeSkillRuntime.installDisabledReason ?? skillError}
         installDisabled={Boolean(activeSkillRuntime.installDisabledReason)}
         icon={<Server className="size-5" />}
-        preInstallNotice={AGENT_SKILL_CLI_PREREQUISITE_NOTICE}
-        getPrerequisiteStatus={() =>
-          activeSkillRuntime.agentRuntime?.runtime === 'wsl'
-            ? window.api.cli.getWslInstallStatus(
-                getWslCliDistroRequest(activeSkillRuntime.agentRuntime)
-              )
-            : window.api.cli.getInstallStatus()
-        }
-        onBeforeOpenTerminal={async () => {
-          await (activeSkillRuntime.agentRuntime?.runtime === 'wsl'
-            ? ensureWslCliAvailableForAgentSkillTerminal(activeSkillRuntime.agentRuntime)
-            : ensureOrcaCliAvailableForAgentSkillTerminal())
-        }}
         onRecheck={refreshSkill}
         freshnessSkillName={
-          activeSkillRuntime.agentRuntime?.runtime === 'wsl' ? undefined : EPHEMERAL_VMS_SKILL_NAME
+          activeSkillRuntime.canUseLocalSkillFreshness ? EPHEMERAL_VMS_SKILL_NAME : undefined
         }
       />
 
@@ -258,8 +262,8 @@ export function EphemeralVmsPane(): React.JSX.Element {
             variant="outline"
             size="icon-sm"
             aria-label={translate(
-              'auto.components.settings.EphemeralVmsPane.refresh',
-              'Refresh ephemeral VM recipes'
+              'auto.components.settings.EphemeralVmsPane.cloudVmRefresh',
+              'Refresh Cloud VM recipes'
             )}
             onClick={() => void refresh()}
             disabled={isLoading}

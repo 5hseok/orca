@@ -12,7 +12,9 @@ function createMockTransport(): MultiplexerTransport & {
   const written: Buffer[] = []
 
   return {
-    write: (data: Buffer) => written.push(data),
+    write: (data: Buffer) => {
+      written.push(data)
+    },
     onData: (cb) => dataCallbacks.push(cb),
     onClose: (cb) => closeCallbacks.push(cb),
     dataCallbacks,
@@ -121,6 +123,28 @@ describe('SshChannelMultiplexer', () => {
       transport.dataCallbacks[0](response)
 
       await expect(promise).rejects.toThrow('PTY allocation failed')
+    })
+
+    it('runs beforeResolve before an adjacent notification in the same decoder turn', async () => {
+      const order: string[] = []
+      mux.onNotification(() => order.push('notification'))
+      const promise = mux.request(
+        'pty.attach',
+        { id: 'pty-1' },
+        {
+          beforeResolve: () => order.push('beforeResolve')
+        }
+      )
+
+      transport.dataCallbacks[0](
+        Buffer.concat([
+          makeResponseFrame(1, { incarnationId: 'incarnation-1' }, 1),
+          makeNotificationFrame('pty.data', { id: 'pty-1', data: 'first' }, 2)
+        ])
+      )
+
+      expect(order).toEqual(['beforeResolve', 'notification'])
+      await expect(promise).resolves.toEqual({ incarnationId: 'incarnation-1' })
     })
 
     it('times out after 30s with no response', async () => {
@@ -328,6 +352,52 @@ describe('SshChannelMultiplexer', () => {
       vi.advanceTimersByTime(25_000)
       expect(mux.isDisposed()).toBe(true)
     })
+
+    it('survives local saturation while the peer keeps talking, and rebases both clocks on drain', () => {
+      mux.dispose()
+      let drain = (): void => {}
+      let feed: (chunk: Buffer) => void = () => {}
+      const written: Buffer[] = []
+      const saturatedTransport: MultiplexerTransport = {
+        write: (data) => {
+          written.push(data)
+          return false
+        },
+        supportsWriteSettlement: true,
+        onDrain: (callback) => {
+          drain = callback
+        },
+        onData: (callback) => {
+          feed = callback
+        },
+        onClose: vi.fn()
+      }
+      mux = new SshChannelMultiplexer(saturatedTransport)
+
+      vi.advanceTimersByTime(5_000)
+      // The writer parked after its first frame: that is the saturation this test is about.
+      expect(written).toHaveLength(1)
+      // Why: backpressure on our uplink is not evidence of death. The relay's own keepalive is,
+      // and only that inbound traffic may keep the link alive — suppressing the check on
+      // saturation alone wedged a half-open link forever (see the saturation-wedge suite).
+      for (let tick = 0; tick < 5; tick++) {
+        feed(encodeKeepAliveFrame(0, 0))
+        vi.advanceTimersByTime(5_000)
+      }
+      expect(mux.isDisposed()).toBe(false)
+      expect(written).toHaveLength(1)
+
+      drain()
+      const resumedAt = Date.now()
+      const internals = getMuxInternals(mux)
+      expect(internals.lastReceivedAt).toBe(resumedAt)
+      expect(new Set(internals.unackedTimestamps.values())).toEqual(new Set([resumedAt]))
+
+      vi.advanceTimersByTime(20_000)
+      expect(mux.isDisposed()).toBe(false)
+      vi.advanceTimersByTime(5_000)
+      expect(mux.isDisposed()).toBe(true)
+    })
   })
 
   describe('wake guard (timer pause across system sleep, #7773)', () => {
@@ -438,6 +508,51 @@ describe('SshChannelMultiplexer', () => {
       mux.dispose()
 
       await expect(mux.request('pty.spawn')).rejects.toThrow('Multiplexer disposed')
+    })
+
+    it('tags a request after a shutdown dispose with DISPOSED', async () => {
+      mux.dispose()
+
+      const error = (await mux.request('pty.spawn').catch((e: unknown) => e)) as Error & {
+        code?: string
+      }
+      expect(error.code).toBe('DISPOSED')
+    })
+
+    it('reports a request after a lost connection as transient', async () => {
+      transport.closeCallbacks[0]()
+
+      const error = (await mux
+        .request('fs.readDir', { path: '/home/me' })
+        .catch((e: unknown) => e)) as Error & { code?: string }
+      expect(error.message).toBe('SSH connection lost, reconnecting...')
+      expect(error.code).toBe('CONNECTION_LOST')
+    })
+
+    it('reports a settled notify after a lost connection as transient', () => {
+      transport.closeCallbacks[0]()
+
+      const settled = vi.fn()
+      mux.notifyWithSettlement('pty.data', { id: 'pty-1', data: 'x' }, settled)
+
+      expect(settled).toHaveBeenCalledWith({
+        outcome: 'refused',
+        reason: 'transport_disposed',
+        error: expect.objectContaining({
+          message: 'SSH connection lost, reconnecting...',
+          code: 'CONNECTION_LOST'
+        })
+      })
+    })
+
+    it('fires a dispose handler registered after dispose with the recorded reason', () => {
+      mux.dispose('connection_lost')
+
+      const disposeHandler = vi.fn()
+      mux.onDispose(disposeHandler)
+
+      expect(disposeHandler).toHaveBeenCalledWith('connection_lost')
+      expect(disposeHandler).toHaveBeenCalledTimes(1)
     })
 
     it('ignores notify after dispose', () => {

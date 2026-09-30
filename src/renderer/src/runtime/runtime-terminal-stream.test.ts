@@ -102,12 +102,21 @@ describe('remote runtime terminal data subscriptions', () => {
       subscribeFrame &&
       decodeTerminalStreamJson<{
         streamId: number
-        capabilities?: { ackOutput?: 1; desktopViewportClaims?: 1 }
+        capabilities?: {
+          ackOutput?: 1
+          ackOutputSourceRanges?: 1
+          desktopViewportClaims?: 1
+          outputPause?: 1
+          writeUnavailable?: 1
+        }
       }>(subscribeFrame.payload)
     expect(subscribePayload?.streamId).toEqual(expect.any(Number))
     expect(subscribePayload?.capabilities).toEqual({
       ackOutput: 1,
-      desktopViewportClaims: 1
+      ackOutputSourceRanges: 1,
+      desktopViewportClaims: 1,
+      outputPause: 1,
+      writeUnavailable: 1
     })
 
     callbacks?.onBinary?.(
@@ -138,6 +147,49 @@ describe('remote runtime terminal data subscriptions', () => {
     dispose()
     expect(unsubscribe).toHaveBeenCalled()
     expect(_getRemoteRuntimeTerminalMultiplexerCountForTest()).toBe(0)
+  })
+
+  it('echoes the opaque stream generation in cumulative source-range ACKs', async () => {
+    const dispose = await subscribeToRuntimeTerminalData(
+      { activeRuntimeEnvironmentId: 'env-fallback' },
+      'remote:env-1@@terminal-1',
+      'watcher-1',
+      vi.fn()
+    )
+    await vi.waitFor(() => expect(sendBinary).toHaveBeenCalled())
+    const subscribeFrame = decodeTerminalStreamFrame(sendBinary.mock.calls[0][0])
+    const subscribePayload =
+      subscribeFrame && decodeTerminalStreamJson<{ streamId: number }>(subscribeFrame.payload)
+    callbacks?.onResponse({
+      ok: true,
+      result: {
+        type: 'subscribed',
+        streamId: subscribePayload!.streamId,
+        streamGeneration: 'opaque-generation',
+        capabilities: { ackOutputSourceRanges: 1 }
+      }
+    })
+
+    callbacks?.onBinary?.(
+      encodeTerminalStreamFrame({
+        opcode: TerminalStreamOpcode.Output,
+        streamId: subscribePayload!.streamId,
+        seq: 4,
+        payload: encodeTerminalStreamText('live')
+      })
+    )
+
+    await vi.waitFor(() => {
+      const ack = sendBinary.mock.calls
+        .slice(1)
+        .map((call) => decodeTerminalStreamFrame(call[0]))
+        .find((frame) => frame?.opcode === TerminalStreamOpcode.Ack)
+      expect(ack && decodeTerminalStreamJson(ack.payload)).toEqual({
+        streamGeneration: 'opaque-generation',
+        ackedEndByte: 4
+      })
+    })
+    dispose()
   })
 
   it('can start at the live tail without replaying the initial snapshot', async () => {
@@ -414,6 +466,63 @@ describe('remote runtime terminal multiplex ACK gate', () => {
     liveTerminal.close()
   })
 
+  it('drops output only from the armed stream when its replacement reuses the stream ID', async () => {
+    const { getRemoteRuntimeTerminalMultiplexer, resetRemoteRuntimeTerminalMultiplexersForTests } =
+      await import('./remote-runtime-terminal-multiplexer')
+    resetRemoteRuntimeTerminalMultiplexersForTests()
+
+    const oldData = vi.fn()
+    const oldStream = await getRemoteRuntimeTerminalMultiplexer(
+      'env-output-drop-gate'
+    ).subscribeTerminal({
+      terminal: 'terminal-reused-stream-id',
+      client: { id: 'desktop-old', type: 'desktop' },
+      callbacks: { onData: oldData, onSnapshot: vi.fn() }
+    })
+    const gate = (
+      window as typeof window & {
+        __remoteTerminalMultiplexAckGate?: {
+          dropOutputUntilResubscribe: (terminals: string[]) => number
+          release: () => void
+        }
+      }
+    ).__remoteTerminalMultiplexAckGate
+    expect(gate?.dropOutputUntilResubscribe(['terminal-reused-stream-id'])).toBe(1)
+
+    callbacks?.onBinary?.(
+      encodeTerminalStreamFrame({
+        opcode: TerminalStreamOpcode.Output,
+        streamId: oldStream.streamId,
+        seq: 7,
+        payload: encodeTerminalStreamText('dropped')
+      })
+    )
+    expect(oldData).not.toHaveBeenCalled()
+    oldStream.close()
+
+    const replacementData = vi.fn()
+    const replacement = await getRemoteRuntimeTerminalMultiplexer(
+      'env-output-drop-gate'
+    ).subscribeTerminal({
+      terminal: 'terminal-reused-stream-id',
+      client: { id: 'desktop-new', type: 'desktop' },
+      callbacks: { onData: replacementData, onSnapshot: vi.fn() }
+    })
+    expect(replacement.streamId).toBe(oldStream.streamId)
+    callbacks?.onBinary?.(
+      encodeTerminalStreamFrame({
+        opcode: TerminalStreamOpcode.Output,
+        streamId: replacement.streamId,
+        seq: 9,
+        payload: encodeTerminalStreamText('delivered')
+      })
+    )
+
+    expect(replacementData).toHaveBeenCalledWith('delivered', { seq: 9, rawLength: 9 })
+    gate?.release()
+    replacement.close()
+  })
+
   it('applies mid-session recovery snapshots without re-subscribing', async () => {
     const { getRemoteRuntimeTerminalMultiplexer } =
       await import('./remote-runtime-terminal-multiplexer')
@@ -463,7 +572,10 @@ describe('remote runtime terminal multiplex ACK gate', () => {
 
     injectSnapshot({ kind: 'scrollback', cols: 120, rows: 40, truncated: false }, 'initial state')
     expect(onSnapshot).toHaveBeenCalledWith('initial state', {
-      pendingEscapeTailAnsi: undefined
+      pendingEscapeTailAnsi: undefined,
+      // The host's serialization grid; the restorer replays there, not at the pane's own.
+      cols: 120,
+      rows: 40
     })
     expect(onSubscribed).toHaveBeenCalledTimes(1)
 
@@ -480,8 +592,10 @@ describe('remote runtime terminal multiplex ACK gate', () => {
     // Why: an unsolicited recovery snapshot replaces terminal state, so it
     // clears screen and scrollback first and must not replay the subscribe
     // lifecycle.
-    expect(onSnapshot).toHaveBeenCalledWith(`\x1b[2J\x1b[3J\x1b[H${'recovered state'}`, {
-      pendingEscapeTailAnsi: undefined
+    expect(onSnapshot).toHaveBeenCalledWith(`\x1b[?2026l\x1b[2J\x1b[3J\x1b[H${'recovered state'}`, {
+      pendingEscapeTailAnsi: undefined,
+      cols: 120,
+      rows: 40
     })
     expect(onSubscribed).toHaveBeenCalledTimes(1)
 
@@ -497,8 +611,10 @@ describe('remote runtime terminal multiplex ACK gate', () => {
       },
       ''
     )
-    expect(onSnapshot).toHaveBeenCalledWith('\x1b[2J\x1b[3J\x1b[H', {
-      pendingEscapeTailAnsi: undefined
+    expect(onSnapshot).toHaveBeenCalledWith('\x1b[?2026l\x1b[2J\x1b[3J\x1b[H', {
+      pendingEscapeTailAnsi: undefined,
+      cols: 120,
+      rows: 40
     })
     expect(onSubscribed).toHaveBeenCalledTimes(1)
 

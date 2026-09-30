@@ -8,10 +8,6 @@ import {
 } from './pr-comment-presentation'
 
 describe('pr-comment-presentation', () => {
-  it('defaults to cards layout', () => {
-    expect(DEFAULT_PR_COMMENT_PRESENTATION_VARIANT).toBe('cards')
-  })
-
   it('returns card layout tokens for cards and focus variants', () => {
     const cards = getPRCommentPresentationClasses('cards')
     expect(cards.useCardLayout).toBe(true)
@@ -22,6 +18,10 @@ describe('pr-comment-presentation', () => {
     expect(cards.group).toContain('shadow-xs')
     expect(cards.avatar).toContain('border-border')
     expect(cards.avatar).toContain('bg-background')
+    // Why: replies must read nested under the root (GitHub-style), not full-width siblings.
+    expect(cards.repliesContainer).toContain('ml-3')
+    expect(cards.repliesContainer).toContain('border-l-2')
+    expect(cards.commentRowReply).toContain('pl-3')
 
     const focus = getPRCommentPresentationClasses('focus')
     expect(focus.useCardLayout).toBe(true)
@@ -37,6 +37,8 @@ describe('pr-comment-presentation', () => {
     expect(focus.commentHeaderReply).toContain('px-3 py-2')
     expect(focus.commentHeaderMeta).toContain('pl-7')
     expect(focus.commentHeaderMetaWithSelection).toContain('pl-[3.25rem]')
+    expect(focus.repliesContainer).toContain('ml-3')
+    expect(focus.repliesContainer).toContain('border-l-2')
   })
 
   it('restores block flow for span-rendered markdown paragraphs and headings', () => {

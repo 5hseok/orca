@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from './pairing'
 import {
   EPHEMERAL_VM_RECIPE_JSON_STRUCTURE_LIMITS,
+  parseEphemeralVmRecipeResult
+} from './ephemeral-vm-recipes'
+import {
   getEphemeralVmRecipeResultWarnings,
-  parseEphemeralVmRecipeResult,
   redactEphemeralVmRecipeDiagnosticText,
   redactEphemeralVmRecipeResultForDiagnostics
-} from './ephemeral-vm-recipes'
+} from './ephemeral-vm-recipe-diagnostics'
 
 function makePairingCode(endpoint = 'wss://sandbox.example.com'): string {
   return encodePairingOffer({
@@ -121,6 +123,43 @@ describe('parseEphemeralVmRecipeResult', () => {
           }
         },
         userData: { sandboxId: 'sandbox-123' }
+      }
+    })
+  })
+
+  it('parses the provisioned-root version handshake', () => {
+    const result = parseEphemeralVmRecipeResult(
+      JSON.stringify({
+        schemaVersion: 2,
+        checkoutMode: 'provisioned-root',
+        connection: {
+          type: 'ssh',
+          projectRoot: 'C:\\workspace\\repo',
+          target: {
+            label: 'Sandbox',
+            host: 'sandbox.example.com',
+            port: 22,
+            username: 'root'
+          }
+        }
+      })
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      result: {
+        schemaVersion: 2,
+        checkoutMode: 'provisioned-root',
+        connection: {
+          type: 'ssh',
+          projectRoot: 'C:\\workspace\\repo',
+          target: {
+            label: 'Sandbox',
+            host: 'sandbox.example.com',
+            port: 22,
+            username: 'root'
+          }
+        }
       }
     })
   })
@@ -246,6 +285,11 @@ describe('parseEphemeralVmRecipeResult', () => {
     ).toBe(
       '{"pairingCode":"[redacted]","token":"[redacted]","identityFile":"[redacted]","proxyCommand":"[redacted]","ok":true}'
     )
+    expect(
+      redactEphemeralVmRecipeDiagnosticText(
+        'clone https://recipe-user:recipe-token@git.example.com/team/repo.git'
+      )
+    ).toBe('clone https://git.example.com/team/repo.git')
     expect(
       redactEphemeralVmRecipeResultForDiagnostics({
         schemaVersion: 1,

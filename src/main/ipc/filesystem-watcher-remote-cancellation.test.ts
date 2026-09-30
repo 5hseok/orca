@@ -1,3 +1,4 @@
+import { createWatcherSender } from './filesystem-watcher-test-sender'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { handleMock, getSshFilesystemProviderMock } = vi.hoisted(() => ({
@@ -19,7 +20,7 @@ vi.mock('../providers/ssh-filesystem-dispatch', () => ({
 
 import { closeAllWatchers, registerFilesystemWatcherHandlers } from './filesystem-watcher'
 
-type HandlerMap = Record<string, (_event: unknown, args: unknown) => Promise<unknown> | unknown>
+type HandlerMap = Record<string, (_event: unknown, args: unknown) => unknown>
 
 describe('remote filesystem watcher cancellation', () => {
   const handlers: HandlerMap = {}
@@ -50,8 +51,8 @@ describe('remote filesystem watcher cancellation', () => {
     )
     getSshFilesystemProviderMock.mockReturnValue({ watch: watchMock })
     const args = { worktreePath: '/home/me/repo', connectionId: 'conn-1' }
-    const senderOne = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 1 }
-    const senderTwo = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 2 }
+    const senderOne = createWatcherSender(1)
+    const senderTwo = createWatcherSender(2)
     const first = handlers['fs:watchWorktree']({ sender: senderOne }, args) as Promise<unknown>
     const second = handlers['fs:watchWorktree']({ sender: senderTwo }, args) as Promise<unknown>
 
@@ -101,8 +102,8 @@ describe('remote filesystem watcher cancellation', () => {
       })
     getSshFilesystemProviderMock.mockReturnValue({ watch: watchMock })
     const args = { worktreePath: '/home/me/repo', connectionId: 'conn-1' }
-    const firstSender = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 1 }
-    const secondSender = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 2 }
+    const firstSender = createWatcherSender(1)
+    const secondSender = createWatcherSender(2)
     const first = handlers['fs:watchWorktree']({ sender: firstSender }, args) as Promise<unknown>
 
     await Promise.resolve()
@@ -113,7 +114,8 @@ describe('remote filesystem watcher cancellation', () => {
     await Promise.all([first, second])
     expect(watchMock).toHaveBeenCalledTimes(2)
     secondCallback?.([{ kind: 'update', absolutePath: '/home/me/repo/file.ts' }])
-    expect(secondSender.send).toHaveBeenCalledTimes(1)
+    // Why: remote fs:changed rides the shared debounce window, so the send lands a flush later.
+    await vi.waitFor(() => expect(secondSender.send).toHaveBeenCalledTimes(1))
 
     handlers['fs:unwatchWorktree']({ sender: { id: 2 } }, args)
     expect(secondUnwatch).toHaveBeenCalledTimes(1)
@@ -135,6 +137,7 @@ describe('remote filesystem watcher cancellation', () => {
     const destroyedSender = {
       isDestroyed: () => false,
       send: vi.fn(),
+      removeListener: vi.fn(),
       once: vi.fn((event: string, callback: () => void) => {
         if (event === 'destroyed') {
           destroyedCallbacks.push(callback)
@@ -155,7 +158,7 @@ describe('remote filesystem watcher cancellation', () => {
     installs.get('/destroyed')?.resolve(vi.fn())
     await destroyedWatch
 
-    const shutdownSender = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 2 }
+    const shutdownSender = createWatcherSender(2)
     const shutdownArgs = { worktreePath: '/shutdown', connectionId: 'conn-1' }
     const shutdownWatch = handlers['fs:watchWorktree'](
       { sender: shutdownSender },
@@ -181,8 +184,8 @@ describe('remote filesystem watcher cancellation', () => {
     )
     getSshFilesystemProviderMock.mockReturnValue({ watch: watchMock })
     const args = { worktreePath: '/home/me/repo', connectionId: 'conn-1' }
-    const senderOne = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 1 }
-    const senderTwo = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 2 }
+    const senderOne = createWatcherSender(1)
+    const senderTwo = createWatcherSender(2)
     const first = handlers['fs:watchWorktree']({ sender: senderOne }, args) as Promise<unknown>
 
     await Promise.resolve()
@@ -215,8 +218,8 @@ describe('remote filesystem watcher cancellation', () => {
     )
     getSshFilesystemProviderMock.mockReturnValue({ watch: watchMock })
     const args = { worktreePath: '/home/me/repo', connectionId: 'conn-1' }
-    const firstSender = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 1 }
-    const secondSender = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 2 }
+    const firstSender = createWatcherSender(1)
+    const secondSender = createWatcherSender(2)
     const first = handlers['fs:watchWorktree']({ sender: firstSender }, args) as Promise<unknown>
 
     await Promise.resolve()
@@ -258,9 +261,9 @@ describe('remote filesystem watcher cancellation', () => {
     const args = { worktreePath: '/home/me/repo', connectionId: 'conn-1' }
     const reopenArgs = { worktreePath: '/home/me/other', connectionId: 'conn-1' }
     const lateUnwatch = vi.fn()
-    const firstSender = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 1 }
-    const joinerSender = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 2 }
-    const reopenSender = { isDestroyed: () => false, send: vi.fn(), once: vi.fn(), id: 3 }
+    const firstSender = createWatcherSender(1)
+    const joinerSender = createWatcherSender(2)
+    const reopenSender = createWatcherSender(3)
     const first = handlers['fs:watchWorktree']({ sender: firstSender }, args) as Promise<unknown>
 
     await Promise.resolve()

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as DeployHelpers from './ssh-relay-deploy-helpers'
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn()
 }))
 
-vi.mock('./ssh-relay-deploy-helpers', () => ({
+vi.mock('./ssh-relay-deploy-helpers', async (importOriginal) => ({
+  ...(await importOriginal<typeof DeployHelpers>()),
   execCommand: vi.fn()
 }))
 
@@ -134,6 +136,7 @@ describe('isRelayAlreadyInstalled', () => {
     const cmd = mockExec.mock.calls.at(-1)?.[1] ?? ''
     expect(cmd).toContain('relay.js')
     expect(cmd).toContain('relay-watcher.js')
+    expect(cmd).toContain('relay-ai-vault-service.js')
     expect(cmd).toContain('managed-hook-runtime.js')
     expect(cmd).toContain('.install-complete')
   })
@@ -908,7 +911,9 @@ describe('gcOldRelayVersions', () => {
       .mockResolvedValueOnce('OWNED')
       .mockRejectedValueOnce(unconfirmed)
 
-    await gcOldRelayVersions(conn, '/home/u', '/home/u/.orca-remote/relay-0.1.0+bbb')
+    await expect(
+      gcOldRelayVersions(conn, '/home/u', '/home/u/.orca-remote/relay-0.1.0+bbb')
+    ).rejects.toBe(unconfirmed)
 
     const releaseCommands = mockExec.mock.calls
       .map(([, command]) => command)
