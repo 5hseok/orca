@@ -13,8 +13,8 @@ let active = 0
 
 function pump(): void {
   while (active < MAX_CONCURRENT_BLAME_REQUESTS) {
-    // Why: newest first — a pane scrolled into view matters more than ones already scrolled past.
-    const next = pending.pop()
+    // Why: FIFO so a still-mounted pane can't starve; panes scrolled past cancel their queued request on unmount.
+    const next = pending.shift()
     if (!next) {
       return
     }

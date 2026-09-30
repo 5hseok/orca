@@ -39,4 +39,30 @@ describe('enqueueGitBlameRequest', () => {
     await Promise.all([b.promise, d.promise])
     expect(started).toEqual(['a', 'b', 'd'])
   })
+
+  it('starts queued requests oldest first so later arrivals cannot starve them', async () => {
+    const started: string[] = []
+    const gates = {
+      a: deferred(),
+      b: deferred(),
+      old: deferred(),
+      mid: deferred(),
+      late: deferred()
+    }
+    const run = (name: keyof typeof gates) => () => {
+      started.push(name)
+      return gates[name].promise
+    }
+    enqueueGitBlameRequest(run('a'))
+    enqueueGitBlameRequest(run('b'))
+    enqueueGitBlameRequest(run('old'))
+    enqueueGitBlameRequest(run('mid'))
+    enqueueGitBlameRequest(run('late'))
+
+    gates.a.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    gates.b.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(started).toEqual(['a', 'b', 'old', 'mid'])
+  })
 })
