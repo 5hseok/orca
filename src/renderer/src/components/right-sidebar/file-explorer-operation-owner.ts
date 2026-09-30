@@ -128,16 +128,6 @@ export function getFileExplorerOperationRoute(
   }
 }
 
-export function requireFileExplorerOperationRoute(
-  worktreeId: string | null | undefined
-): FileExplorerOperationRoute {
-  const route = getFileExplorerOperationRoute(getFileExplorerOperationOwner(worktreeId))
-  if (!route) {
-    throw new Error(getFileExplorerOwnerUnresolvedMessage())
-  }
-  return route
-}
-
 export function requireMatchingFileExplorerOperationRoute(
   worktreeId: string | null | undefined,
   expectedOwner: FileExplorerOperationOwner | undefined
@@ -242,6 +232,12 @@ function getFileExplorerGenerationRoute(
     case undefined:
       return null
   }
+}
+
+export function getFileExplorerOperationExecutionHostId(
+  owner: FileExplorerOperationOwner | undefined
+): ExecutionHostId | null {
+  return getFileExplorerGenerationRoute(owner)?.executionHostId ?? null
 }
 
 export function getFileExplorerOwnerUnresolvedMessage(): string {

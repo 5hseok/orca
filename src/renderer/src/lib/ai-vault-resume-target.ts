@@ -6,8 +6,8 @@ import {
   toSshExecutionHostId,
   type ExecutionHostId
 } from '../../../shared/execution-host'
-import type { Repo } from '../../../shared/types'
-import { getRepoIdFromWorktreeId } from '../../../shared/worktree-id'
+import type { Repo } from '../../../shared/repo-types'
+import { getRepoIdFromWorktreeId } from '../../../shared/worktree/id'
 import { parseWorkspaceKey } from '../../../shared/workspace-scope'
 import { isWslUncPath } from '../../../shared/wsl-paths'
 import type { AppState } from '@/store/types'
@@ -27,12 +27,6 @@ export function getAiVaultResumeRepoTargetStatus(
   // Why: SSH and WSL targets use the normal PTY startup path. Runtime-owned
   // repos intentionally keep connectionId null, so check the execution host.
   return getAiVaultResumeExecutionHostTargetStatus(getRepoExecutionHostId(repo))
-}
-
-export function isSupportedAiVaultResumeRepo(
-  repo: AiVaultResumeRepoOwner | null | undefined
-): boolean {
-  return isSupportedAiVaultResumeTargetStatus(getAiVaultResumeRepoTargetStatus(repo))
 }
 
 export function isSupportedAiVaultResumeTargetStatus(status: AiVaultResumeTargetStatus): boolean {
@@ -91,34 +85,6 @@ export function canResumeAiVaultSessionOnTarget(args: {
   return true
 }
 
-export function isUnsupportedAiVaultResumeRepo(
-  repo: AiVaultResumeRepoOwner | null | undefined
-): boolean {
-  const status = getAiVaultResumeRepoTargetStatus(repo)
-  return status !== 'unknown' && !isSupportedAiVaultResumeTargetStatus(status)
-}
-
-export function getAiVaultResumeWorktreeTargetStatus(args: {
-  worktreeId: string | null
-  worktrees: readonly { id: string; repoId: string; hostId?: ExecutionHostId }[]
-  repos: readonly AiVaultResumeRepoOwnerWithId[]
-}): AiVaultResumeTargetStatus {
-  if (!args.worktreeId) {
-    return 'unknown'
-  }
-  const worktree = args.worktrees.find((candidate) => candidate.id === args.worktreeId)
-  if (!worktree) {
-    return 'unknown'
-  }
-  const worktreeHost = getAiVaultResumeExecutionHostTargetStatus(worktree.hostId)
-  if (worktreeHost !== 'unknown') {
-    return worktreeHost
-  }
-  return getAiVaultResumeRepoTargetStatus(
-    args.repos.find((candidate) => candidate.id === worktree.repoId)
-  )
-}
-
 export function getAiVaultResumeWorkspaceExecutionHostId(
   state: Pick<AppState, 'folderWorkspaces' | 'projectGroups' | 'repos' | 'worktreesByRepo'>,
   workspaceId: string | null
@@ -166,8 +132,6 @@ export function getAiVaultResumeWorkspaceTargetStatus(
   return getAiVaultResumeRepoTargetStatus(state.repos.find((repo) => repo.id === repoId))
 }
 
-type AiVaultResumeRepoOwnerWithId = AiVaultResumeRepoOwner & { id: string }
-
 function getAiVaultResumeFolderTargetStatus(
   state: Pick<AppState, 'folderWorkspaces' | 'projectGroups' | 'repos'>,
   folderWorkspaceId: string
@@ -178,7 +142,7 @@ function getAiVaultResumeFolderTargetStatus(
   }
 
   const group = state.projectGroups.find((entry) => entry.id === workspace.projectGroupId)
-  const groupHostId = normalizeExecutionHostId(group?.executionHostId)
+  const groupHostId = normalizeExecutionHostId(workspace.executionHostId ?? group?.executionHostId)
   if (groupHostId) {
     return getAiVaultResumeExecutionHostTargetStatus(groupHostId)
   }
@@ -202,7 +166,7 @@ function getAiVaultResumeFolderExecutionHostId(
   }
 
   const group = state.projectGroups.find((entry) => entry.id === workspace.projectGroupId)
-  const groupHostId = normalizeExecutionHostId(group?.executionHostId)
+  const groupHostId = normalizeExecutionHostId(workspace.executionHostId ?? group?.executionHostId)
   if (groupHostId) {
     return groupHostId
   }

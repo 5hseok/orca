@@ -1,6 +1,6 @@
 import type React from 'react'
 import { useRef, useState } from 'react'
-import type { Repo, RepoFormatOnSaveSettings } from '../../../../shared/types'
+import type { Repo, RepoFormatOnSaveSettings } from '../../../../shared/repo-types'
 import {
   formatOnSaveIncludeToInput,
   getDefaultRepoFormatOnSaveSettings,
@@ -13,21 +13,26 @@ import { getRepoExecutionHostId, parseExecutionHostId } from '../../../../shared
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { SearchableSetting } from './SearchableSetting'
+import { matchesSettingsSearch } from './settings-search'
+import { matchesRepositoryIdentitySearch } from './repository-identity-search'
+import { getRepositoryFormatOnSaveSearchEntries } from './repository-format-on-save-search-entries'
 import { SettingsSubsectionHeader, SettingsSwitchRow } from './SettingsFormControls'
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
 
 type RepositoryFormatOnSaveSectionProps = {
   repo: Repo
-  forceVisible?: boolean
+  searchQuery: string
   onUpdateFormatOnSave: (next: RepoFormatOnSaveSettings) => void
 }
 
 export function RepositoryFormatOnSaveSection({
   repo,
-  forceVisible = false,
+  searchQuery,
   onUpdateFormatOnSave
-}: RepositoryFormatOnSaveSectionProps): React.JSX.Element {
+}: RepositoryFormatOnSaveSectionProps): React.JSX.Element | null {
+  // Why: a project-name search is navigation to the project, so it shows the whole pane.
+  const forceVisible = matchesRepositoryIdentitySearch(searchQuery, repo)
   const settings = normalizeRepoFormatOnSaveSettings(
     repo.formatOnSave ?? getDefaultRepoFormatOnSaveSettings()
   )
@@ -98,6 +103,14 @@ export function RepositoryFormatOnSaveSection({
     'auto.components.settings.RepositoryFormatOnSaveSection.enableDescription',
     "Run this project's formatter after Orca saves a file in this repository."
   )
+
+  // Why: after every hook, so a search that excludes the section only skips the markup.
+  if (
+    !forceVisible &&
+    !matchesSettingsSearch(searchQuery, getRepositoryFormatOnSaveSearchEntries(repo))
+  ) {
+    return null
+  }
 
   return (
     <section key="format-on-save" className="space-y-4">

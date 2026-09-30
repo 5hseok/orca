@@ -15,7 +15,7 @@ import {
   relativePathInsideRoot
 } from '../shared/cross-platform-path'
 import { stableInFlightKey } from '../shared/in-flight-promise-dedupe'
-import type { RepoFormatOnSaveSettings } from '../shared/types'
+import type { RepoFormatOnSaveSettings } from '../shared/repo-types'
 
 export type RemoteFormatExecResult = {
   stdout: string

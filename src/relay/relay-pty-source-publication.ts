@@ -7,6 +7,7 @@ import type { PtySourceReceivingActivation } from '../shared/pty-source-receivin
 import {
   createPtySourceReceivingActivation,
   pendingPtySourceRecoveryResult,
+  boundedPtyRecoveryEnd,
   registerCanceledPtySourceRetirement,
   registerPtySourceActivationSettlement,
   samePtySourceRecoveryRequest
@@ -16,7 +17,11 @@ import {
   type RelayPtySourceDeliveryRecord,
   type RelayPtySourcePublicationCounters
 } from './relay-pty-source-send-scheduler'
-import { sealAndPublishPtySourceExit } from './relay-pty-source-exit-publication'
+import {
+  RelayPtySourceLegacyExitIndex,
+  sealAndPublishTrackedPtySourceExit,
+  type PtyExitParams
+} from './relay-pty-source-exit-publication'
 import type { RelayDispatcher, RequestContext } from './dispatcher'
 import {
   appendPtySourceOutput,
@@ -28,6 +33,7 @@ import type { SshPtyConsumerSessionAdapter } from './ssh-pty-consumer-session-ad
 
 export class RelayPtySourcePublication {
   private readonly deliveries = new Map<string, RelayPtySourceDeliveryRecord>()
+  private readonly legacyExits = new RelayPtySourceLegacyExitIndex()
   private readonly counters: RelayPtySourcePublicationCounters = {
     opened: 0,
     rotated: 0,
@@ -60,20 +66,22 @@ export class RelayPtySourcePublication {
     context: RequestContext | undefined,
     recovery?: PtySourceRecoveryRequest
   ): false | 'opened' | 'rotated' | 'existing' | PtySourceRecoveryResult {
+    let current = this.deliveries.get(id)
+    // Only release this caller's delivery; its replacement may still be rotating.
+    const owned = current?.clientId === context?.clientId ? current : undefined
     if (!context?.onResponseSettled) {
-      this.sender.releaseRotationFence(this.deliveries.get(id))
+      this.sender.releaseRotationFence(owned)
       return false
     }
     const mode = this.session.deliveryMode(context.clientId)
-    let current = this.deliveries.get(id)
-    if (mode === 'subscriber') {
-      this.sender.releaseRotationFence(current)
+    if (mode === 'unadmitted' || mode === 'subscriber') {
+      this.sender.releaseRotationFence(owned)
       return false
     }
     if (mode === 'legacy-owner') {
-      if (current) {
-        this.session.cancelDelivery(current.identity, 'source-credit-disabled')
-        this.sender.wakeSendWaiters(current)
+      if (owned) {
+        this.session.cancelDelivery(owned.identity, 'source-credit-disabled')
+        this.sender.wakeSendWaiters(owned)
         this.deliveries.delete(id)
         this.onCapacity(id)
       }
@@ -83,7 +91,7 @@ export class RelayPtySourcePublication {
       current?.clientId === context.clientId &&
       !current.restoreRequired &&
       current.sourceExitState !== 'pending' &&
-      this.deliveryClosedUnderRecord(current)
+      ptySourceDeliveryClosed(this.session, current.identity)
     ) {
       // Why: a canceled delivery can never resume as 'existing'; retire it so re-attach opens fresh.
       this.sender.wakeSendWaiters(current)
@@ -132,7 +140,7 @@ export class RelayPtySourcePublication {
         identity = rotation.identity
         displayEnd = current.displayEnd
         recoveryCheckpointSourceEndSu = recovery.acceptedSourceEndSu
-        recoveryEndSu = snapshot.receivedEndSu
+        recoveryEndSu = boundedPtyRecoveryEnd(this.session.sourceDeliverySnapshot(identity))
         recoveryWasSealed = snapshot.state === 'sealed-unsettled'
         this.counters.rotated++
       } catch (error) {
@@ -213,7 +221,8 @@ export class RelayPtySourcePublication {
       return false
     }
     if (!output.sourceAccepted && !appendPtySourceOutput(this.session, record, output)) {
-      if (this.deliveryClosedUnderRecord(record)) {
+      this.counters.appendDenied++
+      if (ptySourceDeliveryClosed(this.session, record.identity)) {
         this.sender.wakeSendWaiters(record)
         this.deliveries.delete(id)
         // Why: deferred — publish() can run inside flushPendingOutput's captured-queue drain,
@@ -223,7 +232,6 @@ export class RelayPtySourcePublication {
         queueMicrotask(() => this.onCapacity(id))
         return false
       }
-      this.counters.appendDenied++
       return false
     }
     if (!projectPtySourceOutputToLegacy(this.dispatcher, this.session, id, output, interactive)) {
@@ -233,14 +241,10 @@ export class RelayPtySourcePublication {
     return true
   }
 
-  sealAndPublishExit(params: { id: string; code: number; incarnationId: string }): boolean {
-    const record = this.deliveries.get(params.id)
-    if (!record) {
-      return false
-    }
-    return sealAndPublishPtySourceExit({
+  sealAndPublishExit = (params: PtyExitParams): boolean =>
+    sealAndPublishTrackedPtySourceExit({
       params,
-      record,
+      legacyExits: this.legacyExits,
       deliveries: this.deliveries,
       dispatcher: this.dispatcher,
       session: this.session,
@@ -248,7 +252,10 @@ export class RelayPtySourcePublication {
       counters: this.counters,
       onCapacity: this.onCapacity
     })
-  }
+
+  /** Returns null when the caller should fall back to its own legacy exit broadcast. */
+  publishExitAfterRetire = (params: PtyExitParams): boolean | null =>
+    this.legacyExits.publishAfterRetire(params, this.dispatcher, this.session)
 
   onCreditAvailable = (id: string): void => this.sender.onCreditAvailable(id)
 
@@ -257,16 +264,18 @@ export class RelayPtySourcePublication {
     if (!record || record.sourceExitState !== 'published') {
       return false
     }
+    // Why: owner and legacy subscribers both hold this exit now, so the index row would otherwise
+    // outlive the pty for the daemon's lifetime and re-publish on any later fallback.
+    this.legacyExits.forget(id)
     this.sender.pruneClosed(id, record)
     return true
   }
 
   getDebugSnapshot = () => this.sender.getDebugSnapshot()
 
-  dispose = (): void => this.sender.dispose()
-
-  private deliveryClosedUnderRecord(record: RelayPtySourceDeliveryRecord): boolean {
-    return ptySourceDeliveryClosed(this.session, record.identity)
+  dispose = (): void => {
+    this.legacyExits.clear()
+    this.sender.dispose()
   }
 
   private registerActivationSettlement(

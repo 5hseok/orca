@@ -1,14 +1,24 @@
+import { runCoalescedProbe, type CoalescedProbes } from '../git/coalesced-probe'
+import { NEGATIVE_ENTRY_TTL_MS } from '../git/remote-ref-probe-cache'
 import { glabExecFileAsync } from '../git/runner'
 import { getSshGitProviderGeneration } from '../providers/ssh-git-dispatch'
 import { DEFAULT_GITLAB_HOSTS, normalizeGitLabHost } from './project-ref-parser'
+import type { GitAdmissionTier } from '../git/command-runner/git-exec-options'
 
 export type LocalGitExecOptions = {
   wslDistro?: string
+  admissionTier?: GitAdmissionTier
 }
 
 const GLAB_KNOWN_HOSTS_TIMEOUT_MS = 10_000
-const knownHostsCacheByExecutionContext = new Map<string, readonly string[]>()
-const knownHostsInFlightByExecutionContext = new Map<string, Promise<readonly string[]>>()
+const UNAUTHENTICATED_HOSTS_MAX_ENTRIES = 128
+export const KNOWN_HOSTS_CACHE_MAX_ENTRIES = 128
+const knownHostsCacheByExecutionContext = new Map<
+  string,
+  { key: string; hosts: readonly string[] }
+>()
+const knownHostsInFlightByExecutionContext: CoalescedProbes<readonly string[]> = new Map()
+const unauthenticatedHostExpiries = new Map<string, number>()
 
 function knownHostsExecutionKey(
   connectionId?: string | null,
@@ -21,10 +31,95 @@ function knownHostsExecutionKey(
   return localGitOptions.wslDistro ? `wsl:${localGitOptions.wslDistro}` : 'native'
 }
 
+function knownHostsCacheContext(
+  connectionId?: string | null,
+  localGitOptions: LocalGitExecOptions = {}
+): { key: string; cacheKey: string } {
+  const key = knownHostsExecutionKey(connectionId, localGitOptions)
+  const cacheKey = connectionId ? `connection:${connectionId}` : key
+  const cached = knownHostsCacheByExecutionContext.get(cacheKey)
+  if (cached && cached.key !== key) {
+    knownHostsCacheByExecutionContext.delete(cacheKey)
+  }
+  return { key, cacheKey }
+}
+
 /** @internal - exposed for tests only */
 export function _resetKnownHostsCache(): void {
   knownHostsCacheByExecutionContext.clear()
   knownHostsInFlightByExecutionContext.clear()
+  unauthenticatedHostExpiries.clear()
+}
+
+/** @internal - exposed for tests only */
+export function _resetGlabUnauthenticatedHosts(): void {
+  unauthenticatedHostExpiries.clear()
+}
+
+/** @internal - exposed for cache-bound tests only. */
+export function _getKnownHostsCacheSize(): number {
+  return knownHostsCacheByExecutionContext.size
+}
+
+function trimKnownHostsCache(): void {
+  while (knownHostsCacheByExecutionContext.size > KNOWN_HOSTS_CACHE_MAX_ENTRIES) {
+    const oldest = knownHostsCacheByExecutionContext.keys().next()
+    if (oldest.done) {
+      break
+    }
+    knownHostsCacheByExecutionContext.delete(oldest.value)
+  }
+}
+
+function unauthenticatedHostKey(
+  host: string,
+  connectionId?: string | null,
+  localGitOptions: LocalGitExecOptions = {}
+): string {
+  return `${knownHostsExecutionKey(connectionId, localGitOptions)}\0${normalizeGitLabHost(host)}`
+}
+
+/**
+ * Why: `glab auth status --hostname` is how a self-hosted instance that plain
+ * `glab auth status` did not list gets discovered, so a remote that is not
+ * GitLab at all runs it too. Project-ref negatives expire now, and without this
+ * that becomes one `glab` spawn per repo per interval on the hosted-review poll.
+ * The answer is per host, not per repo, and expires on the same clock so a
+ * login still lands within an interval.
+ */
+export function isGlabHostKnownUnauthenticated(
+  host: string,
+  connectionId?: string | null,
+  localGitOptions: LocalGitExecOptions = {}
+): boolean {
+  const key = unauthenticatedHostKey(host, connectionId, localGitOptions)
+  const expiresAt = unauthenticatedHostExpiries.get(key)
+  if (expiresAt === undefined) {
+    return false
+  }
+  if (expiresAt > Date.now()) {
+    return true
+  }
+  unauthenticatedHostExpiries.delete(key)
+  return false
+}
+
+export function rememberGlabHostUnauthenticated(
+  host: string,
+  connectionId?: string | null,
+  localGitOptions: LocalGitExecOptions = {}
+): void {
+  unauthenticatedHostExpiries.set(
+    unauthenticatedHostKey(host, connectionId, localGitOptions),
+    Date.now() + NEGATIVE_ENTRY_TTL_MS
+  )
+  while (unauthenticatedHostExpiries.size > UNAUTHENTICATED_HOSTS_MAX_ENTRIES) {
+    const oldestKey = unauthenticatedHostExpiries.keys().next().value
+    if (oldestKey === undefined) {
+      return
+    }
+    unauthenticatedHostExpiries.delete(oldestKey)
+  }
 }
 
 export function rememberGlabKnownHost(
@@ -40,8 +135,8 @@ export function rememberGlabKnownHosts(
   connectionId?: string | null,
   localGitOptions: LocalGitExecOptions = {}
 ): void {
-  const key = knownHostsExecutionKey(connectionId, localGitOptions)
-  const cached = knownHostsCacheByExecutionContext.get(key) ?? DEFAULT_GITLAB_HOSTS
+  const { key, cacheKey } = knownHostsCacheContext(connectionId, localGitOptions)
+  const cached = knownHostsCacheByExecutionContext.get(cacheKey)?.hosts ?? DEFAULT_GITLAB_HOSTS
   const seen = new Set(cached.map(normalizeGitLabHost))
   const additions: string[] = []
   for (const host of hosts) {
@@ -51,39 +146,42 @@ export function rememberGlabKnownHosts(
     }
     seen.add(normalizedHost)
     additions.push(normalizedHost)
+    unauthenticatedHostExpiries.delete(
+      unauthenticatedHostKey(normalizedHost, connectionId, localGitOptions)
+    )
   }
   if (additions.length === 0) {
     return
   }
-  knownHostsCacheByExecutionContext.set(key, [...cached, ...additions])
+  knownHostsCacheByExecutionContext.set(cacheKey, { key, hosts: [...cached, ...additions] })
+  trimKnownHostsCache()
 }
 
 export async function getGlabKnownHosts(
   connectionId?: string | null,
   localGitOptions: LocalGitExecOptions = {}
 ): Promise<readonly string[]> {
-  const key = knownHostsExecutionKey(connectionId, localGitOptions)
-  const cached = knownHostsCacheByExecutionContext.get(key)
+  const { key, cacheKey } = knownHostsCacheContext(connectionId, localGitOptions)
+  const cached = knownHostsCacheByExecutionContext.get(cacheKey)?.hosts
   if (cached) {
+    const entry = knownHostsCacheByExecutionContext.get(cacheKey)
+    if (entry) {
+      knownHostsCacheByExecutionContext.delete(cacheKey)
+      knownHostsCacheByExecutionContext.set(cacheKey, entry)
+    }
     return cached
   }
-  const inFlight = knownHostsInFlightByExecutionContext.get(key)
-  if (inFlight) {
-    return inFlight
-  }
-  const probe = probeGlabKnownHosts(key, connectionId, localGitOptions)
-  knownHostsInFlightByExecutionContext.set(key, probe)
-  try {
-    return await probe
-  } finally {
-    if (knownHostsInFlightByExecutionContext.get(key) === probe) {
-      knownHostsInFlightByExecutionContext.delete(key)
-    }
-  }
+  // Why: only join a probe still young enough to answer, so a wedged one cannot
+  // pin every later retry for the life of the process (P1-D).
+  return runCoalescedProbe(knownHostsInFlightByExecutionContext, key, (ownsKey) =>
+    probeGlabKnownHosts(key, cacheKey, ownsKey, connectionId, localGitOptions)
+  )
 }
 
 async function probeGlabKnownHosts(
   key: string,
+  cacheKey: string,
+  ownsKey: () => boolean,
   connectionId?: string | null,
   localGitOptions: LocalGitExecOptions = {}
 ): Promise<readonly string[]> {
@@ -92,18 +190,28 @@ async function probeGlabKnownHosts(
     // or reconnected SSH/relay results, and bound an otherwise global probe.
     const { stdout, stderr } = await glabExecFileAsync(['auth', 'status'], {
       timeout: GLAB_KNOWN_HOSTS_TIMEOUT_MS,
+      // Why: a local probe would cache the default distro's auth under 'native'
+      // and wake an idle VM. A connection-keyed probe keeps the retry — glab never
+      // runs over SSH/relay, so the calls it gates take that same fallback.
+      ...(connectionId ? {} : { allowDefaultWslFallback: false }),
       ...(!connectionId && localGitOptions.wslDistro
         ? { wslDistro: localGitOptions.wslDistro }
-        : {})
+        : {}),
+      ...(localGitOptions.admissionTier ? { admissionTier: localGitOptions.admissionTier } : {})
     })
     const hosts = parseGlabAuthStatusHosts(`${stdout}\n${stderr}`)
-    const remembered = knownHostsCacheByExecutionContext.get(key) ?? []
+    const cached = knownHostsCacheByExecutionContext.get(cacheKey)
+    const remembered = cached?.key === key ? cached.hosts : []
     const merged = Array.from(new Set([...DEFAULT_GITLAB_HOSTS, ...remembered, ...hosts]))
-    knownHostsCacheByExecutionContext.set(key, merged)
+    if (ownsKey() && knownHostsExecutionKey(connectionId, localGitOptions) === key) {
+      knownHostsCacheByExecutionContext.set(cacheKey, { key, hosts: merged })
+      trimKnownHostsCache()
+    }
     return merged
   } catch {
     // Keep failures uncached so auth or tunnel recovery is discovered later.
-    return knownHostsCacheByExecutionContext.get(key) ?? [...DEFAULT_GITLAB_HOSTS]
+    const cached = knownHostsCacheByExecutionContext.get(cacheKey)
+    return cached?.key === key ? cached.hosts : [...DEFAULT_GITLAB_HOSTS]
   }
 }
 

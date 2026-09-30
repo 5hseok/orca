@@ -1,7 +1,5 @@
 import { useAppStore } from '@/store'
-import { TOGGLE_TERMINAL_PANE_EXPAND_EVENT } from '@/constants/terminal'
 import {
-  activateWebRuntimeSessionTab,
   closeWebRuntimeSessionTab,
   isWebRuntimeSessionActive,
   toHostSessionTabId
@@ -11,11 +9,20 @@ import {
   resolveHostSessionTabIdForWebSessionTab
 } from '@/runtime/web-session-tabs-sync'
 import { resolveTerminalWorktreeRoute } from '@/lib/terminal-worktree-route'
-import { guardPinnedTabClose, resolvePinnedTabLabel } from '@/store/pinned-tab-close-guard'
+import {
+  guardPinnedTabClose,
+  isUnifiedTabPinned,
+  resolvePinnedTabLabel,
+  shouldConfirmPinnedTabClose
+} from '@/store/pinned-tab-close-guard'
 import type {
   TerminalTabCloseReason,
   TerminalTabRetirementPlan
 } from '@/store/slices/terminal-tab-retirement'
+import {
+  guardRunningTerminalClose,
+  shouldConfirmRunningTerminalClose
+} from './running-terminal-close-guard'
 import { closeLocalTerminalTabState } from './close-local-terminal-tab-state'
 import { getTerminalIncarnationHandle } from './terminal-close-incarnation'
 import {
@@ -26,20 +33,6 @@ import {
 } from './terminal-close-target'
 export type { PrecomputedTerminalCloseState } from './terminal-close-target'
 export { closeOtherTerminalTabs, closeTerminalTabsToRight } from './terminal-tab-bulk-actions'
-
-type TerminalTabActionState = ReturnType<typeof useAppStore.getState>
-
-function isPinnedVisibleTab(
-  state: TerminalTabActionState,
-  worktreeId: string,
-  visibleId: string
-): boolean {
-  return (
-    (state.unifiedTabsByWorktree?.[worktreeId] ?? []).some(
-      (tab) => (tab.id === visibleId || tab.entityId === visibleId) && tab.isPinned
-    ) ?? false
-  )
-}
 
 export function closeTerminalTab(
   tabId: string,
@@ -53,6 +46,9 @@ export function closeTerminalTab(
     hostCloseReason?: TerminalTabCloseReason
     /** PTY whose lifecycle event initiated the host close. */
     lifecyclePtyId?: string
+    /** Set by callers that must never raise a modal (bulk closes, CLI/RPC, lifecycle
+     *  fallbacks) and by the re-entry that runs once the user confirmed. */
+    skipRunningProcessConfirm?: boolean
     captureRecentlyClosed?: boolean
     localPtyTeardownOwnedExternally?: boolean
     precomputedRetirementPlan?: TerminalTabRetirementPlan
@@ -69,6 +65,19 @@ export function closeTerminalTab(
   )
   const target = resolveTerminalCloseTarget(state, tabId, precomputedCloseState)
   if (!target) {
+    const closeReason = options?.reason ?? options?.hostCloseReason ?? 'user'
+    if (closeReason !== 'pty-exit') {
+      // Why: late explicit cleanup must still revoke tab-scoped resume authority after PTY exit removed the row.
+      state.closeTab(tabId, {
+        reason: closeReason,
+        ...(options?.localPtyTeardownOwnedExternally
+          ? { localPtyTeardownOwnedExternally: true }
+          : {}),
+        ...(options?.precomputedRetirementPlan
+          ? { precomputedRetirementPlan: options.precomputedRetirementPlan }
+          : {})
+      })
+    }
     options?.onClosed?.()
     return
   }
@@ -84,7 +93,7 @@ export function closeTerminalTab(
   if (
     options?.reason !== 'pty-exit' &&
     !options?.force &&
-    isPinnedVisibleTab(state, owningWorktreeId, terminalTabId)
+    isUnifiedTabPinned(state, owningWorktreeId, terminalTabId)
   ) {
     // Why: background lifecycle callers cannot safely wait on a modal whose
     // owner may be unattended; reject pinned tabs without bypassing the guard.
@@ -92,10 +101,30 @@ export function closeTerminalTab(
       options.onCancel?.()
       return
     }
-    guardPinnedTabClose({
-      isPinned: true,
+    // Why: the pin prompt supersedes the running-process one only when it actually
+    // appears. With `confirmClosePinnedTab` off it says nothing, so fall through and let
+    // a busy pinned tab still get asked — Cmd+W did exactly that before #10142.
+    if (shouldConfirmPinnedTabClose(state)) {
+      guardPinnedTabClose({
+        isPinned: true,
+        tabLabel: resolvePinnedTabLabel(state, owningWorktreeId, terminalTabId),
+        onClose: () => closeTerminalTab(tabId, { ...options, force: true }),
+        ...(options?.onCancel ? { onCancel: options.onCancel } : {})
+      })
+      return
+    }
+  }
+
+  // Why: the X button, middle-click and the tab menu used to skip the running-process
+  // prompt that Cmd+W enforced (#10142). Guarding here — above the web-runtime branch so
+  // host-backed tabs are covered too — gives every close path one shared policy.
+  if (shouldConfirmRunningTerminalClose(options)) {
+    guardRunningTerminalClose({
+      terminalTabId,
       tabLabel: resolvePinnedTabLabel(state, owningWorktreeId, terminalTabId),
-      onClose: () => closeTerminalTab(tabId, { ...options, force: true }),
+      // Why: re-enter instead of continuing inline so pinned/route/precomputed state is
+      // re-validated against fresh state after an arbitrarily long dialog.
+      onClose: () => closeTerminalTab(tabId, { ...options, skipRunningProcessConfirm: true }),
       ...(options?.onCancel ? { onCancel: options.onCancel } : {})
     })
     return
@@ -169,42 +198,19 @@ export function closeTerminalTab(
     : getWorktreeTerminalTabIds(state, owningWorktreeId)
   const terminalCountBeforeClose =
     precomputedCloseState?.terminalCountBeforeClose ?? currentTerminalTabIds!.length
-  if (terminalCountBeforeClose <= 1) {
-    closeLocalTerminalTabState(terminalTabId, {
-      reason: options?.reason,
-      ...(options?.captureRecentlyClosed !== undefined
-        ? { captureRecentlyClosed: options.captureRecentlyClosed }
-        : {}),
-      ...(options?.localPtyTeardownOwnedExternally
-        ? { localPtyTeardownOwnedExternally: true }
-        : {}),
-      ...(options?.precomputedRetirementPlan
-        ? { precomputedRetirementPlan: options.precomputedRetirementPlan }
-        : {})
-    })
-    if (state.activeWorktreeId === owningWorktreeId) {
-      // Why: only deactivate the worktree when no tabs of any kind remain.
-      // Editor files are a separate tab type; closing the last terminal tab
-      // should switch to the editor view instead of tearing down the workspace.
-      const worktreeFile = state.openFiles.find((f) => f.worktreeId === owningWorktreeId)
-      if (worktreeFile) {
-        state.setActiveFile(worktreeFile.id)
-        state.setActiveTabType('editor')
-      } else {
-        const browserTab = (state.browserTabsByWorktree?.[owningWorktreeId] ?? [])[0]
-        if (browserTab) {
-          state.setActiveBrowserTab(browserTab.id)
-          state.setActiveTabType('browser')
-        } else {
-          state.setActiveWorktree(null)
-        }
-      }
-    }
-    options?.onClosed?.()
-    return
-  }
-
-  if (state.activeWorktreeId === owningWorktreeId && terminalTabId === state.activeTabId) {
+  // Why: a terminal with a unified row must leave successor choice to closeUnifiedTab's
+  // MRU/neighbor repair — a terminal-only pre-pick skips agent-session/simulator neighbors
+  // and re-stamps the group active before the canonical repair can run.
+  const hasUnifiedRow = (state.unifiedTabsByWorktree?.[owningWorktreeId] ?? []).some(
+    (tab) =>
+      tab.contentType === 'terminal' && (tab.entityId === terminalTabId || tab.id === terminalTabId)
+  )
+  if (
+    !hasUnifiedRow &&
+    terminalCountBeforeClose > 1 &&
+    state.activeWorktreeId === owningWorktreeId &&
+    terminalTabId === state.activeTabId
+  ) {
     const currentIndex = currentTerminalTabIds?.indexOf(terminalTabId) ?? -1
     const nextTabId = precomputedCloseState
       ? precomputedCloseState.nextTerminalTabId
@@ -224,40 +230,31 @@ export function closeTerminalTab(
       ? { precomputedRetirementPlan: options.precomputedRetirementPlan }
       : {})
   })
+  if (terminalCountBeforeClose <= 1 && state.activeWorktreeId === owningWorktreeId) {
+    // Why: re-read after the close — closeUnifiedTab may have already deactivated or
+    // repaired the surface, and the pre-close snapshot must not clobber that outcome.
+    const current = useAppStore.getState()
+    if (current.activeWorktreeId === owningWorktreeId) {
+      // Why: agent-session and simulator tabs render without a terminal/editor/browser
+      // entity, so only the unified renderable count can prove the worktree is empty
+      // (mirrors leaveWorktreeIfEmpty in useTabGroupTabCloseCommands).
+      const { renderableTabCount } = current.reconcileWorktreeTabModel(owningWorktreeId)
+      if (renderableTabCount === 0) {
+        const worktreeFile = current.openFiles.find((f) => f.worktreeId === owningWorktreeId)
+        if (worktreeFile) {
+          current.setActiveFile(worktreeFile.id)
+          current.setActiveTabType('editor', owningWorktreeId)
+        } else {
+          const browserTab = (current.browserTabsByWorktree?.[owningWorktreeId] ?? [])[0]
+          if (browserTab) {
+            current.setActiveBrowserTab(browserTab.id)
+            current.setActiveTabType('browser', owningWorktreeId)
+          } else {
+            current.setActiveWorktree(null)
+          }
+        }
+      }
+    }
+  }
   options?.onClosed?.()
-}
-
-export function activateTerminalTab(tabId: string): void {
-  const s = useAppStore.getState()
-  const owningWorktreeId =
-    Object.entries(s.tabsByWorktree).find(([, worktreeTabs]) =>
-      worktreeTabs.some((tab) => tab.id === tabId)
-    )?.[0] ?? null
-  const worktreeRoute = resolveTerminalWorktreeRoute(s, owningWorktreeId)
-  if (!worktreeRoute) {
-    return
-  }
-  const runtimeEnvironmentId = worktreeRoute.runtimeEnvironmentId
-  if (owningWorktreeId && isWebRuntimeSessionActive(runtimeEnvironmentId)) {
-    // Why: activation needs to update the host's active tab as well as the
-    // local optimistic state, otherwise the next host snapshot snaps back.
-    void activateWebRuntimeSessionTab({
-      worktreeId: owningWorktreeId,
-      tabId,
-      environmentId: runtimeEnvironmentId
-    })
-  }
-  s.setActiveTab(tabId)
-  s.setActiveTabType('terminal')
-}
-
-export function toggleTerminalPaneExpand(tabId: string): void {
-  useAppStore.getState().setActiveTab(tabId)
-  requestAnimationFrame(() => {
-    window.dispatchEvent(
-      new CustomEvent(TOGGLE_TERMINAL_PANE_EXPAND_EVENT, {
-        detail: { tabId }
-      })
-    )
-  })
 }

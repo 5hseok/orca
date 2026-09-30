@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NativeChatTurnLifecycle } from '../../shared/native-chat-types'
 
@@ -48,6 +49,7 @@ type SenderHarness = {
     id: number
     isDestroyed: () => boolean
     once: (event: string, callback: () => void) => void
+    removeListener: (event: string, callback: () => void) => void
     send: ReturnType<typeof vi.fn>
   }
 }
@@ -78,23 +80,18 @@ function deferredSubscription(): DeferredSubscription {
 
 function createSender(id: number): SenderHarness {
   let destroyed = false
-  const destroyedCallbacks: (() => void)[] = []
+  const events = new EventEmitter()
   return {
     destroy: () => {
       destroyed = true
-      for (const callback of destroyedCallbacks) {
-        callback()
-      }
+      events.emit('destroyed')
     },
-    registeredCleanupCount: () => destroyedCallbacks.length,
+    registeredCleanupCount: () => events.listenerCount('destroyed'),
     sender: {
       id,
       isDestroyed: () => destroyed,
-      once: (event, callback) => {
-        if (event === 'destroyed') {
-          destroyedCallbacks.push(callback)
-        }
-      },
+      once: (event, callback) => void events.once(event, callback),
+      removeListener: (event, callback) => void events.removeListener(event, callback),
       send: vi.fn()
     }
   }
@@ -126,6 +123,14 @@ function initialSnapshot(callIndex: number): InitialSnapshotCallback {
   return (call[0] as { onInitialSnapshot: InitialSnapshotCallback }).onInitialSnapshot
 }
 
+function setupSignal(callIndex: number): AbortSignal {
+  const signal = subscribeTranscript.mock.calls[callIndex]?.[1]
+  if (!(signal instanceof AbortSignal)) {
+    throw new Error('subscribe setup signal was not provided')
+  }
+  return signal
+}
+
 function unsubscribe(sender: SenderHarness['sender'], subscriptionId: string): void {
   const listener = listeners.get('nativeChat:unsubscribe')
   if (!listener) {
@@ -151,8 +156,10 @@ describe('nativeChat subscribe lifecycle', () => {
     const renderer = createSender(1)
 
     subscribe(renderer.sender, 'unmount')
+    expect(setupSignal(0).aborted).toBe(false)
     expect(_getNativeChatPendingSubscriptionCountForTest()).toBe(1)
     unsubscribe(renderer.sender, 'unmount')
+    expect(setupSignal(0).aborted).toBe(true)
     expect(_getNativeChatPendingSubscriptionCountForTest()).toBe(0)
     unsubscribe(renderer.sender, 'unmount')
     expect(_getNativeChatPendingSubscriptionCountForTest()).toBe(0)
@@ -171,7 +178,9 @@ describe('nativeChat subscribe lifecycle', () => {
     const renderer = createSender(2)
 
     subscribe(renderer.sender, 'destroy')
+    expect(setupSignal(0).aborted).toBe(false)
     renderer.destroy()
+    expect(setupSignal(0).aborted).toBe(true)
     expect(_getNativeChatPendingSubscriptionCountForTest()).toBe(0)
     expect(_getNativeChatSenderCleanupCountForTest()).toBe(0)
 
@@ -186,7 +195,10 @@ describe('nativeChat subscribe lifecycle', () => {
     const renderer = createSender(3)
 
     subscribe(renderer.sender, 'same-id')
+    const olderSignal = setupSignal(0)
     subscribe(renderer.sender, 'same-id')
+    expect(olderSignal.aborted).toBe(true)
+    expect(setupSignal(1).aborted).toBe(false)
     expect(_getNativeChatPendingSubscriptionCountForTest()).toBe(1)
 
     newer.resolve()

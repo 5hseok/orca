@@ -21,7 +21,7 @@ import {
   runFormatOnSave
 } from './format-on-save-runner'
 import { parseWslPath } from './wsl'
-import type { RepoFormatOnSaveSettings } from '../shared/types'
+import type { RepoFormatOnSaveSettings } from '../shared/repo-types'
 
 const enabledSettings: RepoFormatOnSaveSettings = {
   enabled: true,

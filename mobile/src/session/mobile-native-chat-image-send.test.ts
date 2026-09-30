@@ -26,18 +26,61 @@ function clientWithResponses(responses: RpcResponse[]): Pick<RpcClient, 'sendReq
 }
 
 describe('pasteMobileNativeChatImagePaths', () => {
+  it.each([false, true])(
+    'separates OMP references with following text: %s',
+    async (followedByText) => {
+      const client = clientWithResponses([sendResult(true), sendResult(true), sendResult(true)])
+      await pasteMobileNativeChatImagePaths({
+        client,
+        terminal: 'term-1',
+        agent: 'omp',
+        deviceToken: null,
+        imagePaths: ['/tmp/a.png', '/tmp/b.png'],
+        followedByText
+      })
+      expect(client.calls.map((call) => call.params.text)).toEqual([
+        '\x15',
+        '\x1b[200~@/tmp/a.png\x1b[201~ ',
+        `\x1b[200~@/tmp/b.png\x1b[201~${followedByText ? ' ' : ''}`
+      ])
+    }
+  )
+
+  it.each(['omp', null, undefined])('sends portable references for %s', async (agent) => {
+    const client = clientWithResponses([sendResult(true), sendResult(true)])
+    await pasteMobileNativeChatImagePaths({
+      client,
+      terminal: 'term-1',
+      agent,
+      deviceToken: null,
+      imagePaths: ['/tmp/my image.png'],
+      followedByText: true
+    })
+    expect(client.calls[1]?.params).toMatchObject({
+      text: '\x1b[200~@"/tmp/my image.png"\x1b[201~ ',
+      enter: false
+    })
+  })
+
   it('clears the input line, then pastes each path as a bracketed, non-submitting terminal.send with the mobile client tag', async () => {
-    const client = clientWithResponses([sendResult(true), sendResult(true), sendResult(true)])
+    const client = clientWithResponses([
+      sendResult(true),
+      sendResult(true),
+      sendResult(true),
+      sendResult(true)
+    ])
 
     const ok = await pasteMobileNativeChatImagePaths({
       client,
+      agent: 'claude',
       terminal: 'term-1',
       deviceToken: 'device-9',
-      imagePaths: ['/tmp/a.png', '/tmp/b.png']
+      imagePaths: ['/tmp/a.png', '/tmp/b.png', '/tmp/c.png'],
+      followedByText: true
     })
 
     expect(ok).toBe(true)
-    expect(client.calls).toHaveLength(3)
+    expect(client.calls).toHaveLength(4)
     // Leading Ctrl+U clears any stale input so a retry can't duplicate the image.
     expect(client.calls[0]).toEqual({
       method: 'terminal.send',
@@ -50,6 +93,7 @@ describe('pasteMobileNativeChatImagePaths', () => {
     })
     expect(client.calls[1]?.params.text).toBe('\x1b[200~/tmp/a.png\x1b[201~')
     expect(client.calls[2]?.params.text).toBe('\x1b[200~/tmp/b.png\x1b[201~')
+    expect(client.calls[3]?.params.text).toBe('\x1b[200~/tmp/c.png\x1b[201~ ')
   })
 
   it('stops and reports failure as soon as a paste is rejected', async () => {
@@ -58,9 +102,11 @@ describe('pasteMobileNativeChatImagePaths', () => {
 
     const ok = await pasteMobileNativeChatImagePaths({
       client,
+      agent: 'claude',
       terminal: 'term-1',
       deviceToken: null,
-      imagePaths: ['/tmp/a.png', '/tmp/b.png']
+      imagePaths: ['/tmp/a.png', '/tmp/b.png'],
+      followedByText: true
     })
 
     expect(ok).toBe(false)
@@ -86,9 +132,11 @@ describe('pasteMobileNativeChatImagePaths', () => {
 
       const ok = await pasteMobileNativeChatImagePaths({
         client,
+        agent: 'claude',
         terminal: 'term-1',
         deviceToken: null,
-        imagePaths: ['/tmp/a.png', '/tmp/b.png']
+        imagePaths: ['/tmp/a.png', '/tmp/b.png'],
+        followedByText: true
       })
 
       expect(ok).toBe(false)
@@ -112,9 +160,11 @@ describe('clearing a parked multi-line launch draft before the image paste', () 
 
     await pasteMobileNativeChatImagePaths({
       client,
+      agent: 'claude',
       terminal: 'term-1',
       deviceToken: null,
       imagePaths: ['/tmp/a.png'],
+      followedByText: true,
       clearInput
     })
 
@@ -128,9 +178,11 @@ describe('clearing a parked multi-line launch draft before the image paste', () 
 
     await pasteMobileNativeChatImagePaths({
       client,
+      agent: 'claude',
       terminal: 'term-1',
       deviceToken: null,
       imagePaths: ['/tmp/a.png', '/tmp/b.png'],
+      followedByText: true,
       clearInput
     })
 
@@ -143,11 +195,31 @@ describe('clearing a parked multi-line launch draft before the image paste', () 
 
     await pasteMobileNativeChatImagePaths({
       client,
+      agent: 'claude',
       terminal: 'term-1',
       deviceToken: null,
-      imagePaths: ['/tmp/a.png']
+      imagePaths: ['/tmp/a.png'],
+      followedByText: true
     })
 
     expect(client.calls[0]?.params.text).toBe('\x15')
+  })
+
+  it('keeps image writes byte-clean when no text or submit follows', async () => {
+    const client = clientWithResponses([sendResult(true), sendResult(true), sendResult(true)])
+
+    await pasteMobileNativeChatImagePaths({
+      client,
+      agent: 'claude',
+      terminal: 'term-1',
+      deviceToken: null,
+      imagePaths: ['/tmp/a.png', '/tmp/b.png'],
+      followedByText: false
+    })
+
+    expect(client.calls.slice(1).map((call) => call.params.text)).toEqual([
+      '\x1b[200~/tmp/a.png\x1b[201~',
+      '\x1b[200~/tmp/b.png\x1b[201~'
+    ])
   })
 })

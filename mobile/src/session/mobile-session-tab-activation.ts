@@ -1,5 +1,6 @@
-import type { RpcClient } from '../transport/rpc-client'
+import type { TabActivationIntent } from '../../../src/shared/tab-activation-intent'
 import { LogicalClientCutoverError } from '../transport/stable-logical-rpc-client'
+import { sessionTabActivate, sessionTerminalFocus } from './mobile-session-write-operations'
 import type { RpcResponse } from '../transport/types'
 import {
   getMobileTerminalDiagnosticErrorName,
@@ -7,7 +8,7 @@ import {
   shortenMobileTerminalDiagnosticId
 } from './mobile-terminal-diagnostics'
 
-type ActivationClient = Pick<RpcClient, 'sendRequest'>
+type ActivationClient = Parameters<typeof sessionTerminalFocus.request>[0]
 
 type MobileSessionTabActivationParams = {
   worktree: string
@@ -15,6 +16,8 @@ type MobileSessionTabActivationParams = {
   leafId?: string
   notifyClients: false
   navigation: 'caller'
+  /** Required so each call site declares whether a user asked for this. */
+  intent: TabActivationIntent
 }
 
 async function retryIdempotentActivationAfterCutover(
@@ -73,7 +76,7 @@ export function focusMobileTerminal(
   terminal: string
 ): Promise<RpcResponse> {
   return retryIdempotentActivationAfterCutover(
-    () => client.sendRequest('terminal.focus', { terminal, navigation: 'host' }),
+    () => sessionTerminalFocus.request(client, { terminal, navigation: 'host' }),
     'terminal.focus',
     terminal
   )
@@ -84,7 +87,7 @@ export function activateMobileSessionTab(
   params: MobileSessionTabActivationParams
 ): Promise<RpcResponse> {
   return retryIdempotentActivationAfterCutover(
-    () => client.sendRequest('session.tabs.activate', params),
+    () => sessionTabActivate.request(client, params),
     'session.tabs.activate',
     params.tabId
   )

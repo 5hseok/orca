@@ -51,14 +51,12 @@ function mountedDrawer(renderer: ReactTestRenderer) {
 
 describe('BottomDrawer close lifecycle', () => {
   beforeEach(() => {
-    globalThis.IS_REACT_ACT_ENVIRONMENT = true
     const originalConsoleError = console.error
     vi.spyOn(console, 'error').mockImplementation((...args) => {
       const message = args[0]
       if (
         typeof message === 'string' &&
-        (message.includes('react-test-renderer is deprecated') ||
-          message.includes('The current testing environment is not configured to support act'))
+        message.includes('The current testing environment is not configured to support act')
       ) {
         return
       }
@@ -99,5 +97,24 @@ describe('BottomDrawer close lifecycle', () => {
     expect(firstAfterClose).not.toHaveBeenCalled()
     expect(latestAfterClose).toHaveBeenCalledTimes(1)
     expect(renderer.toJSON()).toBeNull()
+  })
+
+  // The hide finished and the drawer reopened before the scheduled JS callback ran; that late
+  // callback used to latch, so the next close never unmounted and its invisible Modal ate taps.
+  it('a hide that lands after a reopen does not swallow the next close', () => {
+    const onAfterClose = vi.fn()
+    const renderer = renderDrawer(true, vi.fn(), onAfterClose)
+    const lateOnHidden = mountedDrawer(renderer).props.onHidden
+    updateDrawer(renderer, false, vi.fn(), onAfterClose)
+    updateDrawer(renderer, true, vi.fn(), onAfterClose)
+
+    act(() => lateOnHidden())
+    expect(mountedDrawer(renderer).props.visible).toBe(true)
+    expect(onAfterClose).not.toHaveBeenCalled()
+
+    updateDrawer(renderer, false, vi.fn(), onAfterClose)
+    act(() => mountedDrawer(renderer).props.onHidden())
+    expect(renderer.toJSON()).toBeNull()
+    expect(onAfterClose).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,5 +1,5 @@
 import type { ImageSourcePropType } from 'react-native'
-import type { TuiAgent } from '../../../src/shared/types'
+import type { TuiAgent } from '../../../src/shared/tui-agent'
 
 // Why: mobile previously rendered these agent icons from Google's favicon
 // service, which is unreachable in some regions (e.g. mainland China) and
@@ -17,6 +17,9 @@ export const MOBILE_AGENT_ICON_ASSETS: Partial<Record<TuiAgent, ImageSourcePropT
   'mimo-code': require('../../../src/shared/agent-icons/mimo-code.png'),
   ante: require('../../../src/shared/agent-icons/ante.png'),
   trae: require('../../../src/shared/agent-icons/trae.png'),
+  'prime-agent': require('../../../src/shared/agent-icons/prime-agent.png'),
+  codebuddy: require('../../../src/shared/agent-icons/codebuddy.png'),
+  qoder: require('../../../src/shared/agent-icons/qoder.png'),
   gemini: require('../../../src/shared/agent-icons/gemini.png'),
   antigravity: require('../../../src/shared/agent-icons/antigravity.png'),
   goose: require('../../../src/shared/agent-icons/goose.png'),
@@ -28,6 +31,7 @@ export const MOBILE_AGENT_ICON_ASSETS: Partial<Record<TuiAgent, ImageSourcePropT
   autohand: require('../../../src/shared/agent-icons/autohand.png'),
   cline: require('../../../src/shared/agent-icons/cline.png'),
   codebuff: require('../../../src/shared/agent-icons/codebuff.png'),
+  freebuff: require('../../../src/shared/agent-icons/freebuff.png'),
   'command-code': require('../../../src/shared/agent-icons/command-code.png'),
   continue: require('../../../src/shared/agent-icons/continue.png'),
   cursor: require('../../../src/shared/agent-icons/cursor.png'),
@@ -38,5 +42,8 @@ export const MOBILE_AGENT_ICON_ASSETS: Partial<Record<TuiAgent, ImageSourcePropT
   rovo: require('../../../src/shared/agent-icons/rovo.png'),
   hermes: require('../../../src/shared/agent-icons/hermes.png'),
   devin: require('../../../src/shared/agent-icons/devin.png'),
+  muse: require('../../../src/shared/agent-icons/muse.png'),
+  dsh: require('../../../src/shared/agent-icons/dsh.png'),
+  zcode: require('../../../src/shared/agent-icons/zcode.png'),
   openclaw: require('../../../src/shared/agent-icons/openclaw.png')
 }

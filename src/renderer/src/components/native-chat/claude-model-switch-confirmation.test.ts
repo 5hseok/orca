@@ -40,6 +40,56 @@ describe('Claude model switch confirmation detection', () => {
     expect(unsubscribe).toHaveBeenCalledOnce()
   })
 
+  it('matches the resolved-model echo when the picker label carries no version', async () => {
+    // Why: the CLI echoes what the alias resolved to ("Opus 5 (1M context)")
+    // while discovered picker labels read "Opus (1M context)"; the family word
+    // must bridge the two so verified switches do not report as unverifiable.
+    const dataObserver = { current: (_data: string): void => {} }
+    const observer = createClaudeModelSwitchConfirmationObserver({
+      ptyId: 'pty-1',
+      settings: {},
+      expectedModelLabel: 'Opus (1M context)',
+      subscribeToData: (watcher) => {
+        dataObserver.current = watcher
+        return vi.fn(() => {})
+      },
+      timeoutMs: 100
+    })
+
+    await observer.ready
+    observer.arm()
+    dataObserver.current('Set model to Opus 5 (1M context) and saved as your default')
+
+    await expect(observer.result).resolves.toBe('applied')
+  })
+
+  it('does not confirm a different context variant from the same model family', async () => {
+    vi.useFakeTimers()
+    try {
+      const dataObserver = { current: (_data: string): void => {} }
+      const observer = createClaudeModelSwitchConfirmationObserver({
+        ptyId: 'pty-1',
+        settings: {},
+        expectedModelLabel: 'Opus (1M context)',
+        subscribeToData: (watcher) => {
+          dataObserver.current = watcher
+          return vi.fn(() => {})
+        },
+        timeoutMs: 100
+      })
+
+      await observer.ready
+      observer.arm()
+      observer.startDetection()
+      dataObserver.current('Set model to Opus 5 and saved as your default')
+      await vi.advanceTimersByTimeAsync(100)
+
+      await expect(observer.result).resolves.toBe('unknown')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('accepts the exact cached-history confirmation once and keeps observing', async () => {
     const dataObserver = { current: (_data: string): void => {} }
     const submitConfirmation = vi.fn()
@@ -88,27 +138,6 @@ describe('Claude model switch confirmation detection', () => {
     await expect(observer.result).resolves.toBe('rejected')
   })
 
-  it('requests interaction for Fable one-time usage-credit consent', async () => {
-    const dataObserver = { current: (_data: string): void => {} }
-    const observer = createClaudeModelSwitchConfirmationObserver({
-      ptyId: 'pty-1',
-      settings: {},
-      expectedModelLabel: 'Fable 5',
-      subscribeToData: (watcher) => {
-        dataObserver.current = watcher
-        return vi.fn(() => {})
-      },
-      timeoutMs: 100
-    })
-
-    await observer.ready
-    observer.arm()
-    dataObserver.current('Fable 5 uses usage credits and needs a one-time consent — ')
-    dataObserver.current('pick Fable from /model in an interactive session to set it up')
-
-    await expect(observer.result).resolves.toBe('interaction-required')
-  })
-
   it('reports unknown when the PTY observer cannot be established', async () => {
     const observer = createClaudeModelSwitchConfirmationObserver({
       ptyId: 'pty-1',
@@ -121,27 +150,6 @@ describe('Claude model switch confirmation detection', () => {
     await observer.ready
     observer.arm()
     await expect(observer.result).resolves.toBe('unknown')
-  })
-
-  it('reports unknown on timeout instead of requesting the terminal', async () => {
-    vi.useFakeTimers()
-    try {
-      const observer = createClaudeModelSwitchConfirmationObserver({
-        ptyId: 'pty-1',
-        settings: {},
-        expectedModelLabel: 'Fable 5',
-        subscribeToData: () => vi.fn(() => {}),
-        timeoutMs: 100
-      })
-
-      await observer.ready
-      observer.arm()
-      observer.startDetection()
-      await vi.advanceTimersByTimeAsync(100)
-      await expect(observer.result).resolves.toBe('unknown')
-    } finally {
-      vi.useRealTimers()
-    }
   })
 
   it('does not start the detection timeout until startDetection() is called', async () => {

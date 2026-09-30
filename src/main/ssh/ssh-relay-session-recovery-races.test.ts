@@ -140,17 +140,21 @@ describe('SshRelaySession recovery race fencing', () => {
     mockDeploySuccess()
   })
 
-  function emitSourceFrame(args: {
-    targetId: string
-    token: string
-    clientGeneration: number
-    ownerGeneration: number
-    sourceStartSu: number
-    sourceEndSu: number
-  }): void {
-    ptyDataHandlerRef.current?.({
+  function emitSourceFrame(
+    args: {
+      targetId: string
+      token: string
+      clientGeneration: number
+      ownerGeneration: number
+      sourceStartSu: number
+      sourceEndSu: number
+      data?: string
+    },
+    sink = ptyDataHandlerRef.current
+  ): void {
+    sink?.({
       id: `ssh:${args.targetId}@@pty-1`,
-      data: 'late',
+      data: args.data ?? 'late',
       providerGeneration: 23,
       ptyIncarnation: 'incarnation-1',
       sequenceChars: args.sourceEndSu - args.sourceStartSu,
@@ -191,12 +195,15 @@ describe('SshRelaySession recovery race fencing', () => {
   }> {
     let generation = 0
     openConsumerSessionMock.mockImplementation(async (_mux, options) => ({
-      mode: 'negotiated',
-      clientInstanceId: options.clientInstanceId,
-      clientGeneration: ++generation,
-      ownerGeneration: generation,
-      ownerLease: `owner-lease-${generation}`,
-      outputFlowControl: { version: 1, windowSu: 256 * 1024 }
+      state: {
+        mode: 'negotiated',
+        clientInstanceId: options.clientInstanceId,
+        clientGeneration: ++generation,
+        ownerGeneration: generation,
+        ownerLease: `owner-lease-${generation}`,
+        outputFlowControl: { version: 1, windowSu: 256 * 1024 }
+      },
+      resumed: options.resume !== undefined
     }))
     vi.mocked(getSshPtyAcceptedSourceCheckpoints).mockReturnValue([
       {
@@ -224,6 +231,66 @@ describe('SshRelaySession recovery race fencing', () => {
     return { session, deps }
   }
 
+  it('keeps source output contiguous while the recovered pane binding waits for disk', async () => {
+    const targetId = 'recovery-binding-disk-wait'
+    const { session, deps } = await prepareRecovery(targetId)
+    const binding = Promise.withResolvers<boolean>()
+    vi.mocked(deps.mockStore.getSshRemotePtyLeases).mockReturnValue([
+      {
+        targetId,
+        ptyId: 'pty-1',
+        worktreeId: 'worktree-1',
+        tabId: 'tab-1',
+        leafId: 'leaf-1',
+        state: 'detached',
+        createdAt: 1,
+        updatedAt: 1
+      }
+    ])
+    vi.mocked(deps.mockStore.persistPtyBinding).mockReturnValue(binding.promise)
+    const emit = (sourceStartSu: number, sink = ptyDataHandlerRef.current): void =>
+      emitSourceFrame(
+        {
+          targetId,
+          token: 'new-token',
+          clientGeneration: 2,
+          ownerGeneration: 2,
+          sourceStartSu,
+          sourceEndSu: sourceStartSu + 4
+        },
+        sink
+      )
+    let recoverySink: typeof ptyDataHandlerRef.current
+    const recoveryActivationLease = { commit: vi.fn(), retire: vi.fn() }
+    attachForReconnectMock.mockResolvedValue({
+      incarnationId: 'incarnation-1',
+      sourceRecovery: pendingRecovery(8),
+      sourceActivationLease: {
+        commit: vi.fn(),
+        rollback: vi.fn(async () => true),
+        transferToRecovery: (sink: (payload: unknown) => void) => {
+          recoverySink = sink
+          emit(4, sink)
+          completeRecovery({ id: 'pty-1', ...pendingRecovery(8) })
+          return recoveryActivationLease
+        }
+      }
+    })
+
+    const reconnect = session.reconnect(deps.mockConn)
+    await vi.waitFor(() => expect(deps.mockStore.persistPtyBinding).toHaveBeenCalledOnce())
+    emit(8, recoverySink)
+    expect(recoveryActivationLease.commit).not.toHaveBeenCalled()
+    binding.resolve(true)
+    await reconnect
+    emit(12)
+
+    expect(
+      acceptOutputDataMock.mock.calls.map(([payload]) => payload.source.sourceStartSu)
+    ).toEqual([4, 8, 12])
+    expect(recoveryActivationLease.commit).toHaveBeenCalledOnce()
+  })
+
   it('publishes held recovery data before an exact exit without waiting for completion', async () => {
     const targetId = 'exit-with-complete-private-body'
     const { session, deps } = await prepareRecovery(targetId)
@@ -232,22 +299,18 @@ describe('SshRelaySession recovery race fencing', () => {
       commit: vi.fn(),
       rollback: vi.fn(async () => true),
       transferToRecovery: vi.fn((sink: (payload: unknown) => void) => {
-        sink({
-          id: `ssh:${targetId}@@pty-1`,
-          data: 'held',
-          providerGeneration: 23,
-          ptyIncarnation: 'incarnation-1',
-          sequenceChars: 4,
-          source: {
-            relayPtyId: 'pty-1',
-            spanId: 'new-token:4:8',
+        emitSourceFrame(
+          {
+            targetId,
+            token: 'new-token',
             clientGeneration: 2,
             ownerGeneration: 2,
-            deliveryToken: 'new-token',
             sourceStartSu: 4,
-            sourceEndSu: 8
-          }
-        })
+            sourceEndSu: 8,
+            data: 'held'
+          },
+          sink
+        )
         return recoveryActivationLease
       })
     }
@@ -279,11 +342,7 @@ describe('SshRelaySession recovery race fencing', () => {
     expect(recoveryActivationLease.retire).not.toHaveBeenCalled()
     expect(muxRequestMock).not.toHaveBeenCalledWith('pty.cancelDelivery', expect.anything())
     expect(setPtyOwnership).not.toHaveBeenCalled()
-    expect(deps.mockStore.markSshRemotePtyLease).not.toHaveBeenCalledWith(
-      targetId,
-      'pty-1',
-      'attached'
-    )
+    expect(deps.mockStore.markSshRemotePtyLeasesAttachedAsync).not.toHaveBeenCalled()
   })
 
   it('settles exact cancellation before publishing an exit with incomplete recovery data', async () => {
@@ -302,22 +361,18 @@ describe('SshRelaySession recovery race fencing', () => {
       commit: vi.fn(),
       rollback: vi.fn(async () => true),
       transferToRecovery: vi.fn((sink: (payload: unknown) => void) => {
-        sink({
-          id: `ssh:${targetId}@@pty-1`,
-          data: 'partial',
-          providerGeneration: 23,
-          ptyIncarnation: 'incarnation-1',
-          sequenceChars: 2,
-          source: {
-            relayPtyId: 'pty-1',
-            spanId: 'new-token:4:6',
+        emitSourceFrame(
+          {
+            targetId,
+            token: 'new-token',
             clientGeneration: 2,
             ownerGeneration: 2,
-            deliveryToken: 'new-token',
             sourceStartSu: 4,
-            sourceEndSu: 6
-          }
-        })
+            sourceEndSu: 6,
+            data: 'partial'
+          },
+          sink
+        )
         return recoveryActivationLease
       })
     }
@@ -421,6 +476,7 @@ describe('SshRelaySession recovery race fencing', () => {
     })
     await session.reconnect(deps.mockConn)
     const closeCount = vi.mocked(closeSshPtyOutputGeneration).mock.calls.length
+    const muxDisposeCount = muxDisposeMock.mock.calls.length
 
     emitSourceFrame({
       targetId,
@@ -432,11 +488,9 @@ describe('SshRelaySession recovery race fencing', () => {
     })
 
     expect(acceptOutputDataMock).not.toHaveBeenCalled()
-    expect(closeSshPtyOutputGeneration).toHaveBeenCalledTimes(closeCount + 1)
-    expect(closeSshPtyOutputGeneration).toHaveBeenLastCalledWith(
-      23,
-      'ssh_source_frame_stale_or_non_contiguous'
-    )
+    expect(closeSshPtyOutputGeneration).toHaveBeenCalledTimes(closeCount)
+    expect(muxDisposeMock).toHaveBeenCalledTimes(muxDisposeCount)
+    await vi.waitFor(() => expect(attachForReconnectMock).toHaveBeenCalledTimes(2))
   })
 
   it('drops late frames from a token after its cancellation proof is validated', async () => {
@@ -503,38 +557,23 @@ describe('SshRelaySession recovery race fencing', () => {
       commit: vi.fn(),
       rollback: vi.fn(),
       transferToRecovery: vi.fn((sink: (payload: unknown) => void) => {
-        sink({
-          id: `ssh:${targetId}@@pty-1`,
-          data: 'x'.repeat(2 * 1024 * 1024 + 1),
-          providerGeneration: 23,
-          ptyIncarnation: 'incarnation-1',
-          sequenceChars: 4,
-          source: {
-            relayPtyId: 'pty-1',
-            spanId: 'new-token:4:8',
-            clientGeneration: 2,
-            ownerGeneration: 2,
-            deliveryToken: 'new-token',
-            sourceStartSu: 4,
-            sourceEndSu: 8
-          }
-        })
-        sink({
-          id: `ssh:${targetId}@@pty-1`,
-          data: 'later',
-          providerGeneration: 23,
-          ptyIncarnation: 'incarnation-1',
-          sequenceChars: 4,
-          source: {
-            relayPtyId: 'pty-1',
-            spanId: 'new-token:8:12',
-            clientGeneration: 2,
-            ownerGeneration: 2,
-            deliveryToken: 'new-token',
-            sourceStartSu: 8,
-            sourceEndSu: 12
-          }
-        })
+        for (const [data, sourceStartSu] of [
+          ['x'.repeat(2 * 1024 * 1024 + 1), 4],
+          ['later', 8]
+        ] as const) {
+          emitSourceFrame(
+            {
+              targetId,
+              token: 'new-token',
+              clientGeneration: 2,
+              ownerGeneration: 2,
+              sourceStartSu,
+              sourceEndSu: sourceStartSu + 4,
+              data
+            },
+            sink
+          )
+        }
         return recoveryActivationLease
       })
     }
@@ -775,8 +814,10 @@ describe('SshRelaySession recovery race fencing', () => {
     expect(muxRequestMock.mock.calls.filter(([method]) => method === 'pty.cancelDelivery')).toEqual(
       []
     )
-    expect(deps.mockStore.markSshRemotePtyLease).toHaveBeenCalledTimes(1)
-    expect(deps.mockStore.markSshRemotePtyLease).toHaveBeenCalledWith(targetId, 'pty-1', 'attached')
+    expect(deps.mockStore.markSshRemotePtyLeasesAttachedAsync).toHaveBeenCalledOnce()
+    expect(deps.mockStore.markSshRemotePtyLeasesAttachedAsync).toHaveBeenCalledWith(targetId, [
+      'pty-1'
+    ])
     expect(setPtyOwnership).toHaveBeenCalledTimes(1)
     expect(staleLease.transferToRecovery).toHaveBeenCalledOnce()
     expect(staleLease.commit).not.toHaveBeenCalled()

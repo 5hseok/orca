@@ -3,7 +3,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import type { Repo, RepoFormatOnSaveSettings } from '../../../../shared/types'
+import type { Repo, RepoFormatOnSaveSettings } from '../../../../shared/repo-types'
 import { RepositoryFormatOnSaveSection } from './RepositoryFormatOnSaveSection'
 
 let container: HTMLDivElement
@@ -19,12 +19,12 @@ const baseRepo: Repo = {
   kind: 'git'
 }
 
-function render(repo: Repo = baseRepo): void {
+function render(repo: Repo = baseRepo, searchQuery = ''): void {
   act(() => {
     root.render(
       React.createElement(RepositoryFormatOnSaveSection, {
         repo,
-        forceVisible: true,
+        searchQuery,
         onUpdateFormatOnSave
       })
     )
@@ -65,6 +65,16 @@ afterEach(() => {
 })
 
 describe('RepositoryFormatOnSaveSection', () => {
+  it('hides itself when the settings search excludes it', () => {
+    render(baseRepo, 'zzz-no-such-setting')
+    expect(container.textContent).toBe('')
+  })
+
+  it('stays visible for a matching settings search', () => {
+    render(baseRepo, 'formatter')
+    expect(container.textContent).toContain('Format on Save')
+  })
+
   it('tells the user why the toggle cannot be turned on yet', () => {
     render()
     expect(container.textContent).toContain('Set a formatter command below to turn this on.')

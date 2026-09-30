@@ -1,9 +1,10 @@
 import { posix, resolve } from 'node:path'
-import type { Repo } from '../../shared/types'
+import type { Repo } from '../../shared/repo-types'
 import type { Store } from '../persistence'
-import { listRepoWorktrees } from '../repo-worktrees'
+import { listRepoWorktreeGraph } from '../repo-worktrees'
 import { getLocalProjectWorktreeGitOptions } from '../project-runtime-git-options'
-import { resolveRegisteredWorktreePath } from './filesystem-auth'
+import { getRepoSshConnectionId } from '../../shared/execution-host'
+import { resolveRegisteredWorktreePath } from './registered-worktree-roots-cache'
 
 /**
  * Authorize a caller-supplied worktree path against one repo.
@@ -20,9 +21,9 @@ export async function resolveRepoOwnedWorktreePath(
   if (!worktreePath) {
     return repo.path
   }
-  if (repo.connectionId) {
+  if (getRepoSshConnectionId(repo)) {
     const remoteWorktreePath = normalizeRemoteWorktreePath(worktreePath)
-    const repoWorktrees = await listRepoWorktrees(repo)
+    const repoWorktrees = await listRepoWorktreeGraph(repo)
     if (
       !repoWorktrees.some(
         (worktree) => normalizeRemoteWorktreePath(worktree.path) === remoteWorktreePath
@@ -36,8 +37,8 @@ export async function resolveRepoOwnedWorktreePath(
   const localGitOptions = getLocalProjectWorktreeGitOptions(store, repo)
   const repoWorktrees =
     Object.keys(localGitOptions).length > 0
-      ? await listRepoWorktrees(repo, localGitOptions)
-      : await listRepoWorktrees(repo)
+      ? await listRepoWorktreeGraph(repo, localGitOptions)
+      : await listRepoWorktreeGraph(repo)
   if (!repoWorktrees.some((worktree) => resolve(worktree.path) === resolvedWorktreePath)) {
     throw new Error('Access denied: worktree does not belong to repository')
   }

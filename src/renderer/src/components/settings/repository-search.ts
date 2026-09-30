@@ -1,4 +1,4 @@
-import type { Repo } from '../../../../shared/types'
+import type { Repo } from '../../../../shared/repo-types'
 import { isFolderRepo } from '../../../../shared/repo-kind'
 import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import type { SettingsSearchEntry } from './settings-search'
@@ -77,6 +77,40 @@ export function getRepositoryPaneSearchEntries(
         )
       ]
     },
+    ...(!isFolder
+      ? [
+          {
+            title: translate(
+              'auto.components.settings.repository.search.githubAccount',
+              'GitHub Account'
+            ),
+            description: translate(
+              'auto.components.settings.repository.search.githubAccountDescription',
+              'Bind a keyring gh login for this project’s GitHub API calls.'
+            ),
+            keywords: [
+              repo.displayName,
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.9dc60d7f6d',
+                'github'
+              ),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.githubAccountKeyword',
+                'github account'
+              ),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.ghAccount',
+                'gh account'
+              ),
+              ...translateSearchKeyword(
+                'auto.components.settings.repository.search.login',
+                'login'
+              ),
+              ...translateSearchKeyword('auto.components.settings.repository.search.token', 'token')
+            ]
+          }
+        ]
+      : []),
     ...(repo.upstream && !isFolder
       ? [
           {
@@ -164,6 +198,9 @@ export function getRepositoryPaneSearchEntries(
           }
         ]),
     ...(isFolder ? [] : getRepositoryGitWorktreeSearchEntries(repo)),
+    // Why: format on save applies to folder workspaces too — it only needs a
+    // save and a root to run in, not a git worktree.
+    ...getRepositoryFormatOnSaveSearchEntries(repo),
     {
       title: translate('auto.components.settings.repository.search.c5266c2c9d', 'Remove Project'),
       description: translate(
@@ -186,44 +223,6 @@ export function getRepositoryPaneSearchEntries(
         )
       ]
     },
-    {
-      title: translate('auto.components.settings.repository.search.b24f00294a', 'Project Icon'),
-      description: translate(
-        'auto.components.settings.repository.search.a1f3a2bd47',
-        'Project icon and color used in the sidebar and tabs.'
-      ),
-      keywords: [
-        repo.displayName,
-        ...translateSearchKeyword(
-          'auto.components.settings.repository.search.6438a94c63',
-          'project icon'
-        ),
-        ...translateSearchKeyword(
-          'auto.components.settings.repository.search.b2546efab5',
-          'repository icon'
-        ),
-        ...translateSearchKeyword('auto.components.settings.repository.search.8d045419b1', 'color'),
-        ...translateSearchKeyword('auto.components.settings.repository.search.6d8de2f090', 'hex'),
-        ...translateSearchKeyword('auto.components.settings.repository.search.c1075178cf', 'badge'),
-        ...translateSearchKeyword(
-          'auto.components.settings.repository.search.cb4b4de666',
-          'avatar'
-        ),
-        ...translateSearchKeyword(
-          'auto.components.settings.repository.search.9dc60d7f6d',
-          'github'
-        ),
-        ...translateSearchKeyword('auto.components.settings.repository.search.1e73e840ff', 'emoji'),
-        ...translateSearchKeyword(
-          'auto.components.settings.repository.search.27733eb6c1',
-          'favicon'
-        )
-      ]
-    },
-    ...(isFolder ? [] : getRepositoryGitWorktreeSearchEntries(repo)),
-    // Why: format on save applies to folder workspaces too — it only needs a
-    // save and a root to run in, not a git worktree.
-    ...getRepositoryFormatOnSaveSearchEntries(repo),
     ...(isFolder
       ? []
       : [...getRepositoryGitAuthorSearchEntries(repo), ...getRepositoryGitHooksSearchEntries(repo)])

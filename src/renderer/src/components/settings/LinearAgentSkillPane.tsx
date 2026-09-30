@@ -83,13 +83,11 @@ export function LinearAgentSkillPane(): React.JSX.Element {
       )}
       terminalWorktreeId="settings-linear-skill-terminal"
       terminalShellOverride={skillSetup.terminalShellOverride}
+      terminalRuntime={skillSetup.terminalRuntime}
       installed={skillSetup.skillInstalled}
       loading={skillSetup.skillLoading}
       error={skillSetup.error}
       installDisabled={skillSetup.installDisabled}
-      preInstallNotice={skillSetup.preInstallNotice}
-      getPrerequisiteStatus={skillSetup.getPrerequisiteStatus}
-      onBeforeOpenTerminal={skillSetup.onBeforeOpenTerminal}
       onRecheck={skillSetup.refreshSkill}
       freshnessSkillName={skillSetup.freshnessSkillName}
     />
@@ -106,12 +104,13 @@ export function LinearAgentSkillPane(): React.JSX.Element {
       className="space-y-6 py-2"
     >
       <LinearAgentSkillGuide
-        status={{
+        readiness={{
           connected: linearConnected,
-          connectionChecking,
+          checking: connectionChecking,
           skillInstalled: skillSetup.skillInstalled,
           skillChecking: skillSetup.skillChecking,
-          visibleInTasks
+          skillUnverifiable: skillSetup.skillUnverifiable,
+          visible: visibleInTasks
         }}
         onOpenTaskSources={openTaskSources}
         onManageLinearAccess={

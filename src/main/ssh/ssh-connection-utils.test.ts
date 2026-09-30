@@ -1,15 +1,6 @@
-import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { join } from 'node:path'
 import { BaseAgent, utils, type ParsedKey } from 'ssh2'
-
-const { spawnMock } = vi.hoisted(() => ({
-  spawnMock: vi.fn()
-}))
-
-vi.mock('child_process', () => ({
-  spawn: spawnMock
-}))
 
 vi.mock('os', () => ({
   homedir: () => '/home/testuser'
@@ -38,52 +29,11 @@ import {
   shellEscape,
   findDefaultKeyFile,
   buildConnectConfig,
-  resolveAgentSocket,
-  resolveEffectiveProxy,
-  CONNECT_TIMEOUT_MS,
-  INITIAL_RETRY_ATTEMPTS,
-  INITIAL_RETRY_DELAY_MS,
-  RECONNECT_BACKOFF_MS,
-  spawnProxyCommand
+  resolveAgentSocket
 } from './ssh-connection-utils'
+import { resolveEffectiveProxy } from './ssh-proxy-command'
 import type { SshTarget } from '../../shared/ssh-types'
 import type { SshResolvedConfig } from './ssh-config-parser'
-
-type MockProxyProcess = EventEmitter & {
-  stdin: EventEmitter & { write: ReturnType<typeof vi.fn> }
-  stdout: EventEmitter
-  stderr: EventEmitter
-}
-
-function createMockProxyProcess(): MockProxyProcess {
-  const proc = new EventEmitter() as MockProxyProcess
-  proc.stdin = Object.assign(new EventEmitter(), {
-    write: vi.fn((_chunk, cb?: (error?: Error | null) => void) => cb?.())
-  })
-  proc.stdout = new EventEmitter()
-  proc.stderr = new EventEmitter()
-  return proc
-}
-
-// ── Constants ────────────────────────────────────────────────────────
-
-describe('SSH connection constants', () => {
-  it('CONNECT_TIMEOUT_MS is 30 seconds (matches VS Code)', () => {
-    expect(CONNECT_TIMEOUT_MS).toBe(30_000)
-  })
-
-  it('INITIAL_RETRY_ATTEMPTS is 5', () => {
-    expect(INITIAL_RETRY_ATTEMPTS).toBe(5)
-  })
-
-  it('INITIAL_RETRY_DELAY_MS is 2 seconds', () => {
-    expect(INITIAL_RETRY_DELAY_MS).toBe(2000)
-  })
-
-  it('RECONNECT_BACKOFF_MS has 9 entries', () => {
-    expect(RECONNECT_BACKOFF_MS).toHaveLength(9)
-  })
-})
 
 // ── isTransientError ─────────────────────────────────────────────────
 
@@ -134,6 +84,15 @@ describe('isTransientError', () => {
 
   it('returns true for ECONNRESET in message', () => {
     expect(isTransientError(new Error('read ECONNRESET'))).toBe(true)
+  })
+
+  it('returns true for the bounded SSH authentication watchdog', () => {
+    const timeout = Object.assign(new Error('Timed out while waiting for SSH authentication'), {
+      level: 'client-timeout'
+    })
+
+    expect(isTransientError(timeout)).toBe(true)
+    expect(isTransientError(new Error('Timed out while waiting for SSH authentication'))).toBe(true)
   })
 
   it('returns false for auth errors', () => {
@@ -233,8 +192,20 @@ describe('isAuthError', () => {
     )
   })
 
+  it.each([
+    'Permission denied (publickey).',
+    'Permission denied (publickey,password).',
+    'Permission denied, please try again.'
+  ])('detects OpenSSH credential rejection: %s', (message) => {
+    expect(isAuthError(new Error(message))).toBe(true)
+  })
+
   it('returns false for transient errors', () => {
     expect(isAuthError(new Error('connect ETIMEDOUT'))).toBe(false)
+  })
+
+  it('does not classify a local filesystem permission failure as authentication', () => {
+    expect(isAuthError(new Error('Permission denied (os error 13)'))).toBe(false)
   })
 })
 
@@ -313,7 +284,7 @@ describe('findDefaultKeyFile', () => {
     expect(result!.contents).toEqual(Buffer.from('key-contents'))
   })
 
-  it('probes keys in VS Code order: ed25519, rsa, ecdsa, dsa, xmss', () => {
+  it('probes regular and FIDO2 keys in stable default order', () => {
     const checkedPaths: string[] = []
     mockExistsSync.mockImplementation((path: unknown) => {
       checkedPaths.push(String(path))
@@ -329,6 +300,34 @@ describe('findDefaultKeyFile', () => {
       testHomePath('.ssh', 'id_dsa'),
       testHomePath('.ssh', 'id_xmss')
     ])
+  })
+
+  it('keeps a regular default ahead of a malformed FIDO2 default', () => {
+    mockExistsSync.mockImplementation((path: unknown) => {
+      return (
+        path === testHomePath('.ssh', 'id_rsa') || path === testHomePath('.ssh', 'id_ed25519_sk')
+      )
+    })
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      if (String(path) === testHomePath('.ssh', 'id_ed25519_sk')) {
+        throw new Error('malformed FIDO2 key')
+      }
+      return Buffer.from('rsa-key')
+    })
+
+    expect(findDefaultKeyFile()).toEqual({
+      path: '~/.ssh/id_rsa',
+      contents: Buffer.from('rsa-key')
+    })
+  })
+
+  it('leaves FIDO2 defaults out of the ssh2 private-key fallback', () => {
+    mockExistsSync.mockImplementation((path: unknown) => {
+      return path === testHomePath('.ssh', 'id_ed25519_sk')
+    })
+
+    expect(findDefaultKeyFile()).toBeUndefined()
+    expect(mockReadFileSync).not.toHaveBeenCalled()
   })
 
   it('skips unreadable key files and tries next', () => {
@@ -371,6 +370,11 @@ function makeResolved(overrides?: Partial<SshResolvedConfig>): SshResolvedConfig
     proxyUseFdpass: false,
     controlMaster: 'no',
     controlPersist: 'no',
+    userKnownHostsFiles: [],
+    globalKnownHostsFiles: [],
+    strictHostKeyChecking: 'ask',
+    hashKnownHosts: false,
+    updateHostKeys: 'no',
     ...overrides
   }
 }
@@ -484,6 +488,11 @@ describe('buildConnectConfig', () => {
   it('sets keepaliveInterval to 15s', () => {
     const config = buildConnectConfig(makeTarget(), null)
     expect(config.keepaliveInterval).toBe(15_000)
+  })
+
+  it('enables keyboard-interactive auth so MFA challenges can be answered', () => {
+    const config = buildConnectConfig(makeTarget(), null)
+    expect(config.tryKeyboard).toBe(true)
   })
 
   it('uses agent auth when no explicit key and SSH_AUTH_SOCK is set', () => {
@@ -761,37 +770,5 @@ describe('resolveEffectiveProxy', () => {
 
   it('returns undefined when no proxy is configured', () => {
     expect(resolveEffectiveProxy(makeTarget(), null)).toBeUndefined()
-  })
-})
-
-// ── spawnProxyCommand ───────────────────────────────────────────────
-
-describe('spawnProxyCommand', () => {
-  beforeEach(() => {
-    spawnMock.mockReset()
-  })
-
-  it('removes proxy process listeners when the socket is destroyed', () => {
-    const proc = createMockProxyProcess()
-    spawnMock.mockReturnValue(proc)
-
-    const { sock } = spawnProxyCommand(
-      { kind: 'jump-host', jumpHost: 'bastion.example.com' },
-      'target.example.com',
-      22,
-      'deploy'
-    )
-
-    expect(proc.stdout.listenerCount('data')).toBe(1)
-    expect(proc.stdout.listenerCount('end')).toBe(1)
-    expect(proc.stdin.listenerCount('error')).toBe(1)
-    expect(proc.listenerCount('error')).toBe(1)
-
-    sock.destroy()
-
-    expect(proc.stdout.listenerCount('data')).toBe(0)
-    expect(proc.stdout.listenerCount('end')).toBe(0)
-    expect(proc.stdin.listenerCount('error')).toBe(0)
-    expect(proc.listenerCount('error')).toBe(0)
   })
 })

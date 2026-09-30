@@ -14,7 +14,11 @@ export {
   settingsForRuntimeOwner,
   type RuntimeClientTarget
 } from './runtime-client-target'
-export { RuntimeRpcCallError, unwrapRuntimeRpcResult } from './runtime-rpc-result'
+export {
+  hasRuntimeRpcErrorCode,
+  RuntimeRpcCallError,
+  unwrapRuntimeRpcResult
+} from './runtime-rpc-result'
 
 const RUNTIME_COMPATIBILITY_CACHE_MAX = 32
 const RECENT_RUNTIME_COMPATIBILITY_FAILURE_TTL_MS = 60_000
@@ -50,6 +54,7 @@ export async function callRuntimeRpc<TResult>(
     skipCompatibilityCheck?: boolean
     signal?: AbortSignal
     expectedEnvironmentPairingRevision?: number
+    expectedEnvironmentRuntimeId?: string
   } = {}
 ): Promise<TResult> {
   const expectedEnvironmentPairingRevision =
@@ -84,12 +89,13 @@ export async function callRuntimeRpc<TResult>(
           params: nextParams,
           timeoutMs: options.timeoutMs,
           signal: options.signal,
-          expectedEnvironmentPairingRevision
+          expectedEnvironmentPairingRevision,
+          expectedEnvironmentRuntimeId: options.expectedEnvironmentRuntimeId
         })
   return unwrapRuntimeRpcResult<TResult>(response as RuntimeRpcResponse<TResult>)
 }
 
-async function ensureRuntimeEnvironmentCompatible(
+export async function ensureRuntimeEnvironmentCompatible(
   environmentId: string,
   options: {
     timeoutMs?: number
@@ -321,8 +327,7 @@ export async function assertRuntimeEnvironmentCapability(
   message: string,
   timeoutMs?: number
 ): Promise<void> {
-  const status = await getRuntimeEnvironmentStatus(environmentId, timeoutMs)
-  if (!status.capabilities?.includes(capability)) {
+  if (!(await runtimeEnvironmentSupportsCapability(environmentId, capability, timeoutMs))) {
     throw new Error(message)
   }
 }

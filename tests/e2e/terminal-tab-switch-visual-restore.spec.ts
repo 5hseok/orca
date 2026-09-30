@@ -60,7 +60,6 @@ type SchedulerDebugWindow = Window & {
 type HiddenOutputDebugSnapshot = {
   hiddenRendererSkipCount: number
   hiddenRendererSkippedChars: number
-  hiddenRendererMode2031ReplyCount: number
 }
 
 type HiddenOutputRecoveryWindow = Window & {
@@ -161,7 +160,7 @@ async function createAgentMarkedTerminalTab(
         }
       })
       state.setActiveTab(tab.id)
-      state.setActiveTabType('terminal')
+      state.setActiveTabType('terminal', window.__store?.getState().activeWorktreeId ?? null)
       return tab.id
     },
     { worktreeId, agent, command }
@@ -183,7 +182,7 @@ async function activateTerminalTab(page: Page, tabId: string): Promise<void> {
       throw new Error('Store unavailable')
     }
     store.getState().setActiveTab(id)
-    store.getState().setActiveTabType('terminal')
+    store.getState().setActiveTabType('terminal', store.getState().activeWorktreeId)
   }, tabId)
   await expect
     .poll(
@@ -795,7 +794,9 @@ test.describe('Terminal tab switch visual restore', () => {
       .toContain(marker)
   })
 
-  test('keeps returned tab glyphs intact across tab switches', async ({ orcaPage }, testInfo) => {
+  test('@headful keeps returned tab glyphs intact across tab switches', async ({
+    orcaPage
+  }, testInfo) => {
     // Why: screenshot equality catches WebGL atlas corruption on the tab being
     // resumed, not just stale cols/rows geometry checks.
     await waitForSessionReady(orcaPage)

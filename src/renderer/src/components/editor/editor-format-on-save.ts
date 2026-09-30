@@ -2,7 +2,7 @@ import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
 import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import type { OpenFile } from '@/store/slices/editor'
-import type { Worktree } from '../../../../shared/types'
+import type { Worktree } from '../../../../shared/worktree/types'
 import type { FormatOnSaveResult } from '../../../../shared/format-on-save-command'
 
 export type FormatSavedFileRequest = {

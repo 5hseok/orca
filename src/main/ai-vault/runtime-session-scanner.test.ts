@@ -68,6 +68,21 @@ describe('runtime AI Vault session scanner', () => {
     )
   })
 
+  it('surfaces project scope truncation from the runtime transport bound', async () => {
+    const scopePaths = Array.from({ length: 80 }, (_, index) => `/srv/repo-${index}`)
+
+    const scanResult = await scanRuntimeAiVaultSessions('/user-data', 'env-1', {
+      scopePaths
+    })
+
+    expect(scanResult.issues).toContainEqual(
+      expect.objectContaining({
+        kind: 'scope',
+        message: expect.stringContaining('first 64 project paths')
+      })
+    )
+  })
+
   it('stamps sessions and issues returned for a different execution host', async () => {
     mocks.callRuntimeEnvironment.mockResolvedValueOnce({
       ok: true,
@@ -97,17 +112,6 @@ describe('runtime AI Vault session scanner', () => {
         executionHostId: 'runtime:env-1',
         agent: 'codex',
         path: '/sessions/session-1.jsonl'
-      })
-    ])
-  })
-
-  it('stamps accepted sessions with the requested runtime host', async () => {
-    const scanResult = await scanRuntimeAiVaultSessions('/user-data', 'env-1', {})
-
-    expect(scanResult.sessions).toEqual([
-      expect.objectContaining({
-        id: 'runtime:env-1:codex:session-1:/sessions/session-1.jsonl',
-        executionHostId: 'runtime:env-1'
       })
     ])
   })

@@ -1,4 +1,4 @@
-import type { RepoFormatOnSaveSettings } from './types'
+import type { RepoFormatOnSaveSettings } from './repo-types'
 import { normalizeRuntimePathSeparators } from './cross-platform-path'
 import { escapeRegex } from './string-utils'
 
