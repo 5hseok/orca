@@ -15,7 +15,10 @@ import {
 } from '../source-control/hosted-review-creation'
 import { createStackedHostedReview } from '../source-control/stacked-hosted-review-creation'
 import { getHostedReviewForBranch } from '../source-control/hosted-review'
-import { normalizeRemoteWorktreePath, resolveRepoOwnedWorktreePath } from './repo-owned-worktree-path'
+import {
+  normalizeRemoteWorktreePath,
+  resolveRepoOwnedWorktreePath
+} from './repo-owned-worktree-path'
 import { getLocalProjectGhExecOptions } from '../project-runtime-git-options'
 import { getWorktreeSharedLinkPaths } from '../git/worktree-shared-directories'
 import { getRepoExecutionHostId, getRepoSshConnectionId } from '../../shared/execution-host'
@@ -45,8 +48,7 @@ function assertRegisteredRepoForBranch(args: HostedReviewForBranchArgs, store: S
     // Which host holds the files, not which this client may dial: a remote path is POSIX and
     // `resolve()` would rewrite it, and a row can name its SSH owner in either spelling.
     const samePath = getRepoSshConnectionId(candidate)
-      ? normalizeRemoteWorktreePath(candidate.path) ===
-        normalizeRemoteWorktreePath(args.repoPath)
+      ? normalizeRemoteWorktreePath(candidate.path) === normalizeRemoteWorktreePath(args.repoPath)
       : resolve(candidate.path) === resolve(args.repoPath)
     return (
       candidate.id === args.repoId &&
