@@ -9,9 +9,33 @@ import { getMountedTerminalTabBufferEstimates } from '@/lib/pane-manager/pane-ma
 import { canWatcherCoverParkedTerminalTab } from './terminal-pane/terminal-parked-tab-watchers'
 import { selectSleepingRecordParkExemptTabIds } from './terminal-pane/sleeping-record-park-exemption'
 import { getTerminalPaneSplitMountLeaseTabIds } from './terminal-pane/terminal-pane-split-request-routing'
+import { captureParkedTerminalBuffers } from './terminal-pane/parked-terminal-buffer-capture'
 import { haveSameIdSet } from './terminal-workspace-model'
 import type { collectTerminalParkingPassCandidates } from './terminal-parking-pass-candidates'
 import type { TerminalParkingFoundation } from './use-terminal-parking-foundation'
+
+// Why: retention parks run after the ordinary captures and cover only tabs they skipped, so this
+// is the last moment a remote tab's xterm — its only client-side copy — can be serialized. A tab
+// whose capture is incomplete stays mounted so the recheck pass retries it.
+export function withholdUncapturedRetentionParks(
+  selectedTabIds: ReadonlySet<string>,
+  alreadyParkedTabIds: ReadonlySet<string>,
+  worktreeIdByTabId: ReadonlyMap<string, string>
+): Set<string> {
+  const repos = useAppStore.getState().repos ?? []
+  const parked = new Set<string>()
+  for (const tabId of selectedTabIds) {
+    const worktreeId = worktreeIdByTabId.get(tabId)
+    if (
+      alreadyParkedTabIds.has(tabId) ||
+      worktreeId === undefined ||
+      captureParkedTerminalBuffers({ worktreeId, tabIds: [tabId], repos, localOnly: true })
+    ) {
+      parked.add(tabId)
+    }
+  }
+  return parked
+}
 
 // Why: per-tab retention budget across all worktrees, so hidden tabs of any worktree can be
 // parked once the warm set exceeds its tab count / buffer-bytes cap.
@@ -37,6 +61,7 @@ export function runHiddenTabRetentionPass(
     unifiedTabsByWorktree,
     workspaceSurfaceIds
   } = controller
+  const worktreeIdByTabId = new Map<string, string>()
   const globalRetentionEnabled = terminalParkingEnabled && terminalRetentionBudgetEnabled
   const allTerminalTabIds = new Set<string>()
   for (const worktreeId of workspaceSurfaceIds) {
@@ -82,6 +107,7 @@ export function runHiddenTabRetentionPass(
     const sleepingTabIds = selectSleepingRecordParkExemptTabIds(useAppStore.getState(), worktreeId)
     const exemptTabIds = selectEvictionExemptTerminalTabIds(worktreeId, tabs)
     for (const tab of tabs) {
+      worktreeIdByTabId.set(tab.id, worktreeId)
       const isVisible =
         isWorktreeVisible &&
         (visibleTerminalTabIds.has(tab.id) ||
@@ -123,11 +149,19 @@ export function runHiddenTabRetentionPass(
       globalCandidates.push({ tabId: tab.id, hiddenSinceMs, estimatedBufferBytes })
     }
   }
-  for (const tabId of selectHiddenTerminalTabsBeyondRetentionBudget({
-    candidates: globalCandidates,
-    nowMs: pass.nowMs,
-    enabled: globalRetentionEnabled
-  })) {
+  const budgetParkedTabIds = withholdUncapturedRetentionParks(
+    selectHiddenTerminalTabsBeyondRetentionBudget({
+      candidates: globalCandidates,
+      nowMs: pass.nowMs,
+      enabled: globalRetentionEnabled,
+      ...(pass.overrides.coldParkDelayMs !== undefined
+        ? { coldParkDelayMs: pass.overrides.coldParkDelayMs }
+        : {})
+    }),
+    retentionParkedTerminalTabIds,
+    worktreeIdByTabId
+  )
+  for (const tabId of budgetParkedTabIds) {
     nextRetentionParkedTabIds.add(tabId)
   }
   setRetentionParkedTerminalTabIds((current) =>

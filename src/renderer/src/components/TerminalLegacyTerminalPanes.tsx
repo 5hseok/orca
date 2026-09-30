@@ -80,7 +80,8 @@ export function TerminalLegacyTerminalPanes({
                 })
                 const isActivityPortalTab = activityTerminalPortal !== null
                 if (
-                  (shouldColdParkTerminalPanes || retentionParkedTerminalTabIds.has(tab.id)) &&
+                  (shouldColdParkTerminalPanes ||
+                    (retentionParkedTerminalTabIds.has(tab.id) && !isActiveTerminalTab)) &&
                   !isActivityPortalTab &&
                   !evictionExemptTerminalTabIds.has(tab.id)
                 ) {

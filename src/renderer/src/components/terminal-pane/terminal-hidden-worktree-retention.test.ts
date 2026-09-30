@@ -335,7 +335,7 @@ describe('selectHiddenTerminalTabsBeyondRetentionBudget', () => {
     estimatedBufferBytes
   })
 
-  it('parks oldest tabs when either count or byte budget is exceeded', () => {
+  it('parks the oldest tab once the byte budget is exceeded', () => {
     expect(
       selectHiddenTerminalTabsBeyondRetentionBudget({
         candidates: [candidate('old', 4_000, 200), candidate('new', 2_000, 200)],
@@ -347,6 +347,39 @@ describe('selectHiddenTerminalTabsBeyondRetentionBudget', () => {
         retentionBytes: 300
       })
     ).toEqual(new Set(['old']))
+  })
+
+  it('parks the oldest tabs once the count cap is exceeded', () => {
+    expect(
+      selectHiddenTerminalTabsBeyondRetentionBudget({
+        candidates: [
+          candidate('oldest', 5_000, 1),
+          candidate('older', 4_000, 1),
+          candidate('newer', 3_000, 1),
+          candidate('newest', 2_000, 1)
+        ],
+        nowMs,
+        enabled: true,
+        coldParkDelayMs: 1,
+        retentionTtlMs: 60_000,
+        retentionLimit: 2,
+        retentionBytes: 1_000
+      })
+    ).toEqual(new Set(['oldest', 'older']))
+  })
+
+  it('parks nothing while the budget is disabled', () => {
+    expect(
+      selectHiddenTerminalTabsBeyondRetentionBudget({
+        candidates: [candidate('expired', 60_000, 1_000)],
+        nowMs,
+        enabled: false,
+        coldParkDelayMs: 1,
+        retentionTtlMs: 60_000,
+        retentionLimit: 0,
+        retentionBytes: 1
+      })
+    ).toEqual(new Set())
   })
 
   it('parks every eligible tab past the absolute TTL', () => {
