@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import type { Dirent } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import {
   getHistoryRoot,
@@ -41,7 +42,6 @@ type GcRootScan = {
   totalDirs: number
   orphaned: number
   pruned: number
-  totalSizeKB: number
   /** Every fish data dir a meta.json in this root names, for the orphan sweep. */
   fishHistoryDirs: Set<string>
 }
@@ -49,31 +49,22 @@ type GcRootScan = {
 /** Inspect one history directory, tombstoning it when its worktree is gone. */
 async function gcScanEntry(
   root: string,
-  entry: string,
+  entry: Dirent,
   liveWorktreeIds: Set<string>,
   now: number,
   result: GcRootScan
 ): Promise<void> {
-  const entryPath = join(root, entry)
+  const entryPath = join(root, entry.name)
   try {
-    const stats = await stat(entryPath)
-    if (!stats.isDirectory()) {
+    // Why stat only for links: a dirent describes the link itself, and the pre-dirent walk
+    // stat'd every entry, so a symlink to a history directory was and stays a directory here.
+    const isDirectory = entry.isSymbolicLink()
+      ? (await stat(entryPath)).isDirectory()
+      : entry.isDirectory()
+    if (!isDirectory) {
       return
     }
     result.totalDirs++
-
-    // Estimate directory size from meta.json + history files.
-    // Why a local accumulator: `result.totalSizeKB += <expression containing await>`
-    // reads the field before suspending and writes back a stale sum once workers interleave.
-    let dirSizeKB = 0
-    try {
-      for (const file of await readdir(entryPath)) {
-        dirSizeKB += Math.ceil((await stat(join(entryPath, file))).size / 1024)
-      }
-    } catch {
-      // Skip size estimation on error, keeping whatever was measured first.
-    }
-    result.totalSizeKB += dirSizeKB
 
     // A missing, truncated, oversized or malformed meta.json reads back as null, and a
     // null meta is never pruned — an entry whose ownership we cannot establish is kept.
@@ -119,13 +110,14 @@ async function gcScanRoot(
     totalDirs: 0,
     orphaned: 0,
     pruned: 0,
-    totalSizeKB: 0,
     fishHistoryDirs: new Set<string>()
   }
 
-  let entries: string[]
+  let entries: Dirent[]
   try {
-    entries = await readdir(root)
+    // Why withFileTypes: the root listing already carries each entry's type, so asking for it
+    // here removes one stat per history directory from the startup pass.
+    entries = await readdir(root, { withFileTypes: true })
   } catch {
     // Absent or unreadable root: nothing to collect.
     return result
@@ -133,7 +125,7 @@ async function gcScanRoot(
 
   const now = Date.now()
   // Why: pending-delete is a tombstone queue drained asynchronously, not a live worktree hash.
-  const frontier = entries.filter((entry) => entry !== PENDING_DELETE_DIR_NAME)
+  const frontier = entries.filter((entry) => entry.name !== PENDING_DELETE_DIR_NAME)
 
   await forEachWithConcurrency(
     frontier,
@@ -156,7 +148,7 @@ async function executeHistoryGc(liveWorktreeIds: Set<string>, signal: AbortSigna
     // Why: finish tombstones left by quit mid-rm before scanning live worktree hashes.
     // Safe ahead of the guard below: these entries were already condemned by a
     // completed GC, and leaving them renamed-but-present strands disk forever.
-    schedulePendingHistoryTreeRemovals(getHistoryRoot())
+    await schedulePendingHistoryTreeRemovals(getHistoryRoot())
     // Why refuse rather than treat every entry as orphaned: an empty live set is
     // what a store that fell back to default state looks like, and it cannot be
     // told apart from a user who genuinely has no worktrees — who also has no
@@ -171,18 +163,17 @@ async function executeHistoryGc(liveWorktreeIds: Set<string>, signal: AbortSigna
     const main = await gcScanRoot(getHistoryRoot(), liveWorktreeIds, signal)
 
     // Also scan WSL history directories (each distro has its own subdirectory).
-    const wslTotals = { totalDirs: 0, orphaned: 0, pruned: 0, totalSizeKB: 0 }
+    const wslTotals = { totalDirs: 0, orphaned: 0, pruned: 0 }
     const liveFishHistoryDirs = new Set(main.fishHistoryDirs)
     for (const distroRoot of listWslHistoryRoots()) {
       if (signal.aborted) {
         break
       }
-      schedulePendingHistoryTreeRemovals(distroRoot)
+      await schedulePendingHistoryTreeRemovals(distroRoot)
       const r = await gcScanRoot(distroRoot, liveWorktreeIds, signal)
       wslTotals.totalDirs += r.totalDirs
       wslTotals.orphaned += r.orphaned
       wslTotals.pruned += r.pruned
-      wslTotals.totalSizeKB += r.totalSizeKB
       for (const dir of r.fishHistoryDirs) {
         liveFishHistoryDirs.add(dir)
       }
@@ -214,11 +205,8 @@ async function executeHistoryGc(liveWorktreeIds: Set<string>, signal: AbortSigna
     const totalDirs = main.totalDirs + wslTotals.totalDirs
     const orphaned = main.orphaned + wslTotals.orphaned
     const pruned = main.pruned + wslTotals.pruned
-    const totalSizeKB = main.totalSizeKB + wslTotals.totalSizeKB
 
-    console.log(
-      `[pty:history:gc] totalDirs=${totalDirs} orphaned=${orphaned} pruned=${pruned} totalSizeKB=${totalSizeKB}`
-    )
+    console.log(`[pty:history:gc] totalDirs=${totalDirs} orphaned=${orphaned} pruned=${pruned}`)
   } catch (err) {
     console.warn(`[pty:history:gc] GC failed: ${err instanceof Error ? err.message : String(err)}`)
   }

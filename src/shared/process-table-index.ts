@@ -1,3 +1,5 @@
+import type { ProcessTableRow } from './process-table-snapshot'
+
 /**
  * Correlation indexes over a process-table capture, generic over the row shape so the POSIX
  * `ps` snapshot and the Windows process table share one pass instead of parallel ones.
@@ -19,6 +21,9 @@ export type ProcessTableIndexOf<Row extends ProcessIdentityRow> = {
   childrenByPpid: ReadonlyMap<number, readonly Row[]>
   stats?: ProcessTableIndexStats
 }
+
+/** POSIX process-table index shape used by foreground-process resolvers. */
+export type ProcessTableIndex = ProcessTableIndexOf<ProcessTableRow>
 
 /**
  * Build the correlation indexes in one linear pass over a capture. Only the
@@ -65,12 +70,24 @@ export function collectDescendantsFromIndex<Row extends ProcessIdentityRow>(
   rootPid: number
 ): (Row & { depth: number })[] {
   const descendants: (Row & { depth: number })[] = []
-  const stack = (index.childrenByPpid.get(rootPid) ?? []).map((row) => ({ row, depth: 1 }))
+  // PID reuse can make a process snapshot cyclic; queue each PID at most once.
+  const visited = new Set<number>([rootPid])
+  const stack: { row: Row; depth: number }[] = []
+  const pushUnvisited = (row: Row, depth: number): void => {
+    if (visited.has(row.pid)) {
+      return
+    }
+    visited.add(row.pid)
+    stack.push({ row, depth })
+  }
+  for (const child of index.childrenByPpid.get(rootPid) ?? []) {
+    pushUnvisited(child, 1)
+  }
   while (stack.length > 0) {
     const { row, depth } = stack.pop()!
     descendants.push({ ...row, depth })
     for (const child of index.childrenByPpid.get(row.pid) ?? []) {
-      stack.push({ row: child, depth: depth + 1 })
+      pushUnvisited(child, depth + 1)
     }
   }
   return descendants
