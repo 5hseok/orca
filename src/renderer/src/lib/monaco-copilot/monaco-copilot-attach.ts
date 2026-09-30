@@ -1,7 +1,9 @@
-import type { editor } from 'monaco-editor'
+import type { IDisposable, editor } from 'monaco-editor'
 import { monaco } from '@/lib/monaco-setup'
 import {
   closeCopilotDocumentForModel,
+  isWithinCopilotSizeLimit,
+  onCopilotModelWithinSizeLimit,
   openCopilotDocumentForModel,
   type CopilotDocumentParams
 } from './monaco-copilot-documents'
@@ -12,22 +14,38 @@ import { ensureCopilotInlineProvider } from './monaco-copilot-inline-provider'
 export function attachMonacoCopilotDocument(
   params: CopilotDocumentParams & { model: editor.ITextModel }
 ): () => void {
-  const modelUri = params.model.uri.toString()
+  const { model } = params
+  const modelUri = model.uri.toString()
   let closed = false
   let opened = false
-  void openCopilotDocumentForModel(params).then((entry) => {
-    if (!entry) {
+  let sizeWatch: IDisposable | null = null
+
+  const tryOpen = (): void => {
+    if (closed || model.isDisposed()) {
       return
     }
-    if (closed) {
-      closeCopilotDocumentForModel(modelUri)
+    if (!isWithinCopilotSizeLimit(model)) {
+      // Why: an oversized model gets no content listener; wait for it to shrink instead of staying detached.
+      sizeWatch = onCopilotModelWithinSizeLimit(model, tryOpen)
       return
     }
-    opened = true
-    ensureCopilotInlineProvider(monaco)
-  })
+    void openCopilotDocumentForModel(params).then((entry) => {
+      if (!entry) {
+        return
+      }
+      if (closed) {
+        closeCopilotDocumentForModel(modelUri)
+        return
+      }
+      opened = true
+      ensureCopilotInlineProvider(monaco)
+    })
+  }
+  tryOpen()
+
   return () => {
     closed = true
+    sizeWatch?.dispose()
     if (opened) {
       closeCopilotDocumentForModel(modelUri)
     }

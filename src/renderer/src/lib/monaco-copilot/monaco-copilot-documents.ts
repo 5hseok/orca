@@ -6,6 +6,7 @@ import { COPILOT_MAX_DOCUMENT_CHARS } from '../../../../shared/copilot-inline-co
 const CHANGE_DEBOUNCE_MS = 75
 
 export type CopilotDocumentEntry = {
+  modelUri: string
   fileUri: string
   filePath: string
   rootPath: string
@@ -29,6 +30,20 @@ const entriesByModelUri = new Map<string, CopilotDocumentEntry>()
 
 export function isWithinCopilotSizeLimit(model: editor.ITextModel): boolean {
   return model.getValueLength() <= COPILOT_MAX_DOCUMENT_CHARS
+}
+
+/** Calls `onEligible` once when an oversized model shrinks back under the limit. */
+export function onCopilotModelWithinSizeLimit(
+  model: editor.ITextModel,
+  onEligible: () => void
+): IDisposable {
+  const listener = model.onDidChangeContent(() => {
+    if (isWithinCopilotSizeLimit(model)) {
+      listener.dispose()
+      onEligible()
+    }
+  })
+  return listener
 }
 
 function sendChangeNow(entry: CopilotDocumentEntry): void {
@@ -81,6 +96,7 @@ export async function openCopilotDocumentForModel(
     return raced
   }
   const entry: CopilotDocumentEntry = {
+    modelUri,
     fileUri,
     filePath,
     rootPath,
@@ -111,12 +127,16 @@ export async function reopenCopilotDocument(entry: CopilotDocumentEntry): Promis
   }
   entry.reopening = true
   try {
-    await window.api.copilotCompletion.openDocument({
+    const { fileUri } = await window.api.copilotCompletion.openDocument({
       filePath: entry.filePath,
       rootPath: entry.rootPath,
       languageId: entry.languageId,
       text: entry.model.getValue()
     })
+    // Why: the editor may have closed mid-reopen; that close was a no-op in main, so release the fresh open here.
+    if (fileUri && entriesByModelUri.get(entry.modelUri) !== entry) {
+      void window.api.copilotCompletion.closeDocument({ fileUri }).catch(() => {})
+    }
   } catch {
     // The next request retries.
   } finally {
