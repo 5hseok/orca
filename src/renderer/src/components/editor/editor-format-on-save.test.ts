@@ -5,7 +5,8 @@ vi.mock('sonner', () => ({ toast: { error: (...args: unknown[]) => toastError(..
 vi.mock('@/i18n/i18n', () => ({ translate: (_key: string, fallback: string) => fallback }))
 vi.mock('@/runtime/runtime-file-client', () => ({ readRuntimeFileContent: vi.fn() }))
 
-import { formatSavedFile } from './editor-format-on-save'
+import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
+import { formatSavedFile, maybeFormatSavedFile } from './editor-format-on-save'
 
 beforeEach(() => {
   toastError.mockReset()
@@ -49,7 +50,8 @@ describe('formatSavedFile', () => {
     await expect(
       formatSavedFile(
         request({
-          runFormat: async () => ({ status: 'failed', message: 'SyntaxError: line 3' })
+          runFormat: async () => ({ status: 'failed', message: 'SyntaxError: line 3' }),
+          readSavedContent: async () => 'const a=1'
         })
       )
     ).resolves.toBeNull()
@@ -63,7 +65,10 @@ describe('formatSavedFile', () => {
   it('truncates a runaway formatter error so the toast stays readable', async () => {
     await expect(
       formatSavedFile(
-        request({ runFormat: async () => ({ status: 'failed', message: 'x'.repeat(1000) }) })
+        request({
+          runFormat: async () => ({ status: 'failed', message: 'x'.repeat(1000) }),
+          readSavedContent: async () => 'const a=1'
+        })
       )
     ).resolves.toBeNull()
 
@@ -93,10 +98,43 @@ describe('formatSavedFile', () => {
         request({
           runFormat: async () => {
             throw new Error('ipc down')
-          }
+          },
+          readSavedContent: async () => 'const a=1'
         })
       )
     ).resolves.toBeNull()
+  })
+
+  it('rereads the file when a failing formatter wrote before it exited', async () => {
+    await expect(
+      formatSavedFile(
+        request({ runFormat: async () => ({ status: 'failed', message: 'lint step failed' }) })
+      )
+    ).resolves.toBe('const a = 1')
+    expect(toastError).toHaveBeenCalled()
+  })
+
+  it('rereads the file when the format channel throws after the formatter may have run', async () => {
+    await expect(
+      formatSavedFile(
+        request({
+          runFormat: async () => {
+            throw new Error('ipc down')
+          }
+        })
+      )
+    ).resolves.toBe('const a = 1')
+  })
+
+  it('does not reread when the formatter never ran', async () => {
+    const readSavedContent = vi.fn(async () => 'changed')
+    await formatSavedFile(
+      request({
+        runFormat: async () => ({ status: 'skipped', reason: 'not-included' }),
+        readSavedContent
+      })
+    )
+    expect(readSavedContent).not.toHaveBeenCalled()
   })
 
   it('keeps the save successful when re-reading the formatted file fails', async () => {
@@ -110,5 +148,38 @@ describe('formatSavedFile', () => {
         })
       )
     ).resolves.toBeNull()
+  })
+})
+
+describe('maybeFormatSavedFile', () => {
+  it('reads the formatted file through the SSH connection that ran the formatter', async () => {
+    vi.mocked(readRuntimeFileContent).mockResolvedValue({ content: 'formatted' } as never)
+    vi.stubGlobal('window', {
+      api: { editor: { formatOnSave: vi.fn().mockResolvedValue({ status: 'completed' }) } }
+    })
+
+    await expect(
+      maybeFormatSavedFile({
+        file: {
+          filePath: '/srv/repo/a.ts',
+          relativePath: 'a.ts',
+          worktreeId: 'wt-1'
+        } as never,
+        worktree: { path: '/srv/repo', repoId: 'repo-1' } as never,
+        fileContext: {
+          settings: null,
+          worktreeId: 'wt-1',
+          worktreePath: '/srv/repo',
+          connectionId: 'ssh-1',
+          expectedExecutionHostId: 'ssh:ssh-1'
+        },
+        savedContent: 'raw'
+      })
+    ).resolves.toBe('formatted')
+
+    expect(readRuntimeFileContent).toHaveBeenCalledWith(
+      expect.objectContaining({ connectionId: 'ssh-1', filePath: '/srv/repo/a.ts' })
+    )
+    vi.unstubAllGlobals()
   })
 })

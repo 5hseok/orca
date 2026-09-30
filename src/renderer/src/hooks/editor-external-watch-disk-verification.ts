@@ -10,6 +10,7 @@ import { getDiskBaselineSignature } from '@/components/editor/diff-content-signa
 import {
   clearSelfWrite,
   getRecentSelfWrite,
+  isDiskContentExpectedBySelfWrite,
   type RecentSelfWrite
 } from '@/components/editor/editor-self-write-registry'
 import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
@@ -106,6 +107,10 @@ export function scheduleEditorChangedOnDiskMark(
   }
   const absolutePath = joinPath(notification.worktreePath, notification.relativePath)
   const recentSelfWrite = getRecentSelfWrite(absolutePath, target.runtimeEnvironmentId)
+  if (recentSelfWrite?.formatterPending) {
+    // Why: the formatter's rewrite is Orca's own; the save queue rebaselines once it exits.
+    return
+  }
   // Why: the fs event may be the echo of Orca's own save — verify disk really differs from our last write before showing a "changed on disk" banner.
   if (!recentSelfWrite || recentSelfWrite.content === null) {
     markTabsChangedOnDisk(fileIds, target.connectionId)
@@ -119,7 +124,15 @@ export function scheduleEditorChangedOnDiskMark(
     connectionId: target.connectionId
   })
     .then((result) => {
-      if (result.isBinary || result.content !== recentSelfWrite.content) {
+      if (
+        result.isBinary ||
+        (result.content !== recentSelfWrite.content &&
+          !isDiskContentExpectedBySelfWrite(
+            absolutePath,
+            target.runtimeEnvironmentId,
+            result.content
+          ))
+      ) {
         markTabsChangedOnDisk(fileIds, target.connectionId)
       }
     })
@@ -249,6 +262,9 @@ export function scheduleSelfWriteAwareEditorExternalReload(
   file: OpenFile,
   recentSelfWrite: RecentSelfWrite
 ): void {
+  if (recentSelfWrite.formatterPending) {
+    return
+  }
   if (recentSelfWrite.content === null) {
     scheduleDebouncedEditorExternalReload(notification)
     return
@@ -264,10 +280,11 @@ export function scheduleSelfWriteAwareEditorExternalReload(
     expectedExternalSshTargetId: file.externalSshTargetId
   })
     .then((result) => {
-      if (
-        (result.isBinary || result.content !== recentSelfWrite.content) &&
-        hasCleanExternalReloadTarget(notification)
-      ) {
+      const matchesSelfWrite =
+        !result.isBinary &&
+        (result.content === recentSelfWrite.content ||
+          isDiskContentExpectedBySelfWrite(file.filePath, runtimeEnvironmentId, result.content))
+      if (!matchesSelfWrite && hasCleanExternalReloadTarget(notification)) {
         clearSelfWrite(file.filePath, runtimeEnvironmentId)
         scheduleDebouncedEditorExternalReload(notification)
       }

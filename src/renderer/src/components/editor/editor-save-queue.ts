@@ -11,10 +11,11 @@ import {
   ORCA_EDITOR_FILE_SAVED_EVENT,
   type EditorFileSavedDetail
 } from './editor-autosave'
-import { maybeFormatSavedFile } from './editor-format-on-save'
+import { maybeFormatSavedFile, willFormatSavedFile } from './editor-format-on-save'
 import { flushPendingEditorChange } from './editor-pending-flush'
 import {
   clearSelfWrite,
+  recordFormatterPendingSelfWrite,
   recordSelfWrite,
   SELF_WRITE_REMOTE_TTL_MS
 } from './editor-self-write-registry'
@@ -102,13 +103,15 @@ export function createEditorSaveQueue(store: AppStoreApi): EditorSaveQueue {
         const fileContext = getEditorFileOperationContext(state, liveFile, worktree?.path ?? null)
         const connectionId = fileContext.connectionId
         // Why: stamp before writing so useEditorExternalWatch ignores our own fs:changed echo (editor-self-write-registry).
+        const selfWriteTtl =
+          connectionId || liveFile.runtimeEnvironmentId?.trim()
+            ? SELF_WRITE_REMOTE_TTL_MS
+            : undefined
         recordSelfWrite(
           liveFile.filePath,
           contentToSave,
           liveFile.runtimeEnvironmentId,
-          connectionId || liveFile.runtimeEnvironmentId?.trim()
-            ? SELF_WRITE_REMOTE_TTL_MS
-            : undefined
+          selfWriteTtl
         )
         try {
           await writeRuntimeFile(fileContext, liveFile.filePath, contentToSave)
@@ -118,12 +121,34 @@ export function createEditorSaveQueue(store: AppStoreApi): EditorSaveQueue {
           throw error
         }
 
-        const formattedContent = await maybeFormatSavedFile({
-          file: liveFile,
-          worktree,
-          fileContext,
-          savedContent: contentToSave
-        })
+        const repo = worktree
+          ? state.repos.find((candidate) => candidate.id === worktree.repoId)
+          : undefined
+        const mayFormat = willFormatSavedFile(liveFile, worktree, repo)
+        if (mayFormat) {
+          // Why: the formatter rewrites the file before this await returns, so its echo must
+          // already be recognised as ours — the formatted bytes are only known afterwards.
+          recordFormatterPendingSelfWrite(liveFile.filePath, liveFile.runtimeEnvironmentId)
+        }
+        let formattedContent: string | null = null
+        try {
+          formattedContent = await maybeFormatSavedFile({
+            file: liveFile,
+            worktree,
+            fileContext,
+            savedContent: contentToSave
+          })
+        } finally {
+          // Why: a stale renderer copy of the repo config can still have formatted; the rewrite needs its stamp either way.
+          if (mayFormat || formattedContent !== null) {
+            recordSelfWrite(
+              liveFile.filePath,
+              formattedContent ?? contentToSave,
+              liveFile.runtimeEnvironmentId,
+              selfWriteTtl
+            )
+          }
+        }
 
         if ((saveGeneration.get(file.id) ?? 0) !== queuedGeneration) {
           return
@@ -133,18 +158,6 @@ export function createEditorSaveQueue(store: AppStoreApi): EditorSaveQueue {
         const currentDraft = nextState.editorDrafts[file.id]
         const stillDirty = currentDraft !== undefined && currentDraft !== contentToSave
         const diskContent = formattedContent ?? contentToSave
-        // Why: the formatter rewrote the file after our stamp, so re-stamp the new
-        // bytes or the watcher reports Orca's own formatting as an external edit.
-        if (formattedContent !== null) {
-          recordSelfWrite(
-            liveFile.filePath,
-            formattedContent,
-            liveFile.runtimeEnvironmentId,
-            connectionId || liveFile.runtimeEnvironmentId?.trim()
-              ? SELF_WRITE_REMOTE_TTL_MS
-              : undefined
-          )
-        }
         nextState.markFileDirty(file.id, stillDirty)
         if (!stillDirty) {
           nextState.clearEditorDraft(file.id)

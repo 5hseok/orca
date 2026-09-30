@@ -8,7 +8,12 @@ import {
   type EditorFileSavedDetail
 } from './editor-autosave'
 import { createEditorStore, stubEditorWindow } from './editor-autosave-controller-test-fixture'
-import { __clearSelfWriteRegistryForTests, hasRecentSelfWrite } from './editor-self-write-registry'
+import {
+  __clearSelfWriteRegistryForTests,
+  getRecentSelfWrite,
+  hasRecentSelfWrite,
+  isDiskContentExpectedBySelfWrite
+} from './editor-self-write-registry'
 
 const UNFORMATTED = 'const a=1'
 const FORMATTED = 'const a = 1\n'
@@ -43,6 +48,14 @@ beforeEach(() => {
   readFile = vi.fn().mockResolvedValue({ content: FORMATTED })
   writeFile = stubEditorWindow({ formatOnSave, readFile })
   store = createEditorStore()
+  store.setState({
+    repos: [
+      {
+        id: 'repo-1',
+        formatOnSave: { enabled: true, command: 'prettier --write ${file}', include: ['**/*.ts'] }
+      }
+    ]
+  } as never)
   openEditableFile()
   detach = attachEditorAutosaveController(store)
   window.addEventListener(ORCA_EDITOR_FILE_SAVED_EVENT, ((
@@ -123,10 +136,95 @@ describe('format on save through the editor save queue', () => {
 
   it('still reports the save as successful when the formatter fails', async () => {
     formatOnSave.mockResolvedValue({ status: 'failed', message: 'SyntaxError' })
+    readFile.mockResolvedValue({ content: UNFORMATTED })
     store.getState().setEditorDraft(FILE_ID, UNFORMATTED)
 
     await expect(requestEditorFileSave({ fileId: FILE_ID })).resolves.toBeUndefined()
     expect(savedContents()).toEqual([UNFORMATTED])
-    expect(readFile).not.toHaveBeenCalled()
+  })
+
+  it('adopts what a failing formatter wrote before it exited', async () => {
+    formatOnSave.mockResolvedValue({ status: 'failed', message: 'lint step failed' })
+    store.getState().setEditorDraft(FILE_ID, UNFORMATTED)
+
+    await requestEditorFileSave({ fileId: FILE_ID })
+    expect(savedContents()).toEqual([FORMATTED])
+  })
+
+  it('treats the formatter echo as its own while the formatter is still running', async () => {
+    let releaseFormat: ((value: { status: string }) => void) | undefined
+    let markFormatStarted: (() => void) | undefined
+    const formatStarted = new Promise<void>((resolve) => {
+      markFormatStarted = resolve
+    })
+    formatOnSave.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseFormat = resolve as (value: { status: string }) => void
+          markFormatStarted?.()
+        })
+    )
+
+    store.getState().setEditorDraft(FILE_ID, UNFORMATTED)
+    const save = requestEditorFileSave({ fileId: FILE_ID })
+    await formatStarted
+
+    // Why: the formatter's bytes are unknown until it exits, so the stamp must already accept any content.
+    expect(getRecentSelfWrite(FILE_ID, undefined)).toEqual({
+      content: null,
+      formatterPending: true
+    })
+    expect(isDiskContentExpectedBySelfWrite(FILE_ID, undefined, FORMATTED)).toBe(true)
+
+    releaseFormat?.({ status: 'completed' })
+    await save
+    expect(getRecentSelfWrite(FILE_ID, undefined)).toEqual({ content: FORMATTED })
+  })
+
+  it('does not install the accept-anything stamp when the repo has no formatter configured', async () => {
+    store.setState({ repos: [{ id: 'repo-1' }] } as never)
+    let pendingSeenDuringFormat: boolean | undefined
+    formatOnSave.mockImplementation(async () => {
+      pendingSeenDuringFormat = getRecentSelfWrite(FILE_ID, undefined)?.formatterPending
+      return { status: 'skipped', reason: 'not-configured' }
+    })
+    store.getState().setEditorDraft(FILE_ID, UNFORMATTED)
+    await requestEditorFileSave({ fileId: FILE_ID })
+
+    // Why: a genuine external write during the IPC round trip must still be detectable.
+    expect(pendingSeenDuringFormat).toBeUndefined()
+    expect(getRecentSelfWrite(FILE_ID, undefined)).toEqual({ content: UNFORMATTED })
+  })
+
+  it('does not install the accept-anything stamp for a file the include list excludes', async () => {
+    store.setState({
+      repos: [
+        {
+          id: 'repo-1',
+          formatOnSave: {
+            enabled: true,
+            command: 'prettier --write ${file}',
+            include: ['**/*.css']
+          }
+        }
+      ]
+    } as never)
+    let pendingSeenDuringFormat: boolean | undefined
+    formatOnSave.mockImplementation(async () => {
+      pendingSeenDuringFormat = getRecentSelfWrite(FILE_ID, undefined)?.formatterPending
+      return { status: 'skipped', reason: 'not-included' }
+    })
+    store.getState().setEditorDraft(FILE_ID, UNFORMATTED)
+    await requestEditorFileSave({ fileId: FILE_ID })
+
+    expect(pendingSeenDuringFormat).toBeUndefined()
+  })
+
+  it('restores the plain stamp when nothing was formatted', async () => {
+    formatOnSave.mockResolvedValue({ status: 'skipped', reason: 'not-configured' })
+    store.getState().setEditorDraft(FILE_ID, UNFORMATTED)
+    await requestEditorFileSave({ fileId: FILE_ID })
+
+    expect(getRecentSelfWrite(FILE_ID, undefined)).toEqual({ content: UNFORMATTED })
   })
 })

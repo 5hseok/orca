@@ -3,7 +3,13 @@ import { translate } from '@/i18n/i18n'
 import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import type { OpenFile } from '@/store/slices/editor'
 import type { Worktree } from '../../../../shared/worktree/types'
-import type { FormatOnSaveResult } from '../../../../shared/format-on-save-command'
+import {
+  isFormatOnSaveConfigured,
+  matchesFormatOnSaveInclude,
+  normalizeRepoFormatOnSaveSettings,
+  type FormatOnSaveResult
+} from '../../../../shared/format-on-save-command'
+import type { Repo } from '../../../../shared/repo-types'
 
 export type FormatSavedFileRequest = {
   repoId: string
@@ -36,20 +42,29 @@ export async function formatSavedFile({
     result = await runFormat({ repoId, worktreePath, filePath })
   } catch (error) {
     // Why: the file is already on disk; a broken format channel must not turn a
-    // successful save into a failed one.
+    // successful save into a failed one. The outcome is unknown, so still reread.
     console.error('[editor] format on save failed', error)
-    return null
+    return readFormattedContent(readSavedContent, savedContent)
   }
 
   if (result.status === 'failed') {
     notifyFormatFailure(result.message)
-    return null
+    // Why: a formatter can write and then exit non-zero (a later lint step, a timeout kill),
+    // so the disk bytes may no longer be the ones just saved.
+    return readFormattedContent(readSavedContent, savedContent)
   }
 
   if (result.status !== 'completed') {
     return null
   }
 
+  return readFormattedContent(readSavedContent, savedContent)
+}
+
+async function readFormattedContent(
+  readSavedContent: () => Promise<string | null>,
+  savedContent: string
+): Promise<string | null> {
   try {
     const formatted = await readSavedContent()
     if (formatted === null || formatted === savedContent) {
@@ -80,6 +95,34 @@ type MaybeFormatSavedFileArgs = {
 }
 
 /**
+ * Whether a save can reach the formatter at all. Runtime environments have no
+ * non-interactive exec channel, so they skip the IPC round trip; SSH-backed
+ * repos do have one and are handled in the main process.
+ */
+export function canFormatSavedFile(
+  file: Pick<OpenFile, 'runtimeEnvironmentId'>,
+  worktree: Worktree | null | undefined
+): boolean {
+  return Boolean(worktree?.path) && !file.runtimeEnvironmentId
+}
+
+/** Whether the repo's own config says this save will run a formatter. */
+export function willFormatSavedFile(
+  file: Pick<OpenFile, 'runtimeEnvironmentId' | 'relativePath'>,
+  worktree: Worktree | null | undefined,
+  repo: Pick<Repo, 'formatOnSave'> | undefined
+): boolean {
+  if (!canFormatSavedFile(file, worktree)) {
+    return false
+  }
+  const settings = normalizeRepoFormatOnSaveSettings(repo?.formatOnSave)
+  return (
+    isFormatOnSaveConfigured(settings) &&
+    matchesFormatOnSaveInclude(file.relativePath, settings.include)
+  )
+}
+
+/**
  * Editor-side entry point: decides whether this save is even formattable, then
  * defers to the main process, which owns the configured command.
  */
@@ -89,10 +132,7 @@ export async function maybeFormatSavedFile({
   fileContext,
   savedContent
 }: MaybeFormatSavedFileArgs): Promise<string | null> {
-  // Why: runtime environments have no non-interactive exec channel, so skip them
-  // before paying for an IPC round trip per save. SSH-backed repos do have one
-  // and are handled in the main process.
-  if (!worktree?.path || file.runtimeEnvironmentId) {
+  if (!worktree?.path || !canFormatSavedFile(file, worktree)) {
     return null
   }
 
@@ -107,7 +147,9 @@ export async function maybeFormatSavedFile({
         settings: fileContext.settings,
         filePath: file.filePath,
         relativePath: file.relativePath,
-        worktreeId: file.worktreeId
+        worktreeId: file.worktreeId,
+        // Why: an SSH file lives on the host that ran the formatter; a local read would miss it.
+        connectionId: fileContext.connectionId
       })
       return typeof result.content === 'string' ? result.content : null
     }

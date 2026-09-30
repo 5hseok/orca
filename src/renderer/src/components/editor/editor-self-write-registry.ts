@@ -19,8 +19,14 @@ const SELF_WRITE_TTL_MS = 750
 export const SELF_WRITE_REMOTE_TTL_MS = 3000
 const SELF_WRITE_MAX_STAMPS = 256
 
+// Why: a formatter can rewrite the file for as long as its own timeout, and its
+// output is unknown until it exits, so its echoes cannot be matched by content.
+export const SELF_WRITE_FORMATTER_PENDING_TTL_MS = 30_000
+
 export type RecentSelfWrite = {
   content: string | null
+  /** A format-on-save run may still rewrite the file; any content on disk is Orca's own. */
+  formatterPending?: boolean
 }
 
 type SelfWriteStamp = RecentSelfWrite & {
@@ -70,6 +76,22 @@ export function recordSelfWrite(
   enforceSelfWriteStampLimit()
 }
 
+export function recordFormatterPendingSelfWrite(
+  absolutePath: string,
+  runtimeEnvironmentId?: string | null
+): void {
+  const now = Date.now()
+  pruneExpiredSelfWrites(now)
+  const key = selfWriteKey(absolutePath, runtimeEnvironmentId)
+  stamps.delete(key)
+  stamps.set(key, {
+    content: null,
+    formatterPending: true,
+    expiresAt: now + SELF_WRITE_FORMATTER_PENDING_TTL_MS
+  })
+  enforceSelfWriteStampLimit()
+}
+
 export function clearSelfWrite(absolutePath: string, runtimeEnvironmentId?: string | null): void {
   stamps.delete(selfWriteKey(absolutePath, runtimeEnvironmentId))
 }
@@ -87,7 +109,25 @@ export function getRecentSelfWrite(
     stamps.delete(key)
     return null
   }
-  return { content: stamp.content }
+  return stamp.formatterPending
+    ? { content: stamp.content, formatterPending: true }
+    : { content: stamp.content }
+}
+
+/**
+ * Judged against the stamp as it is now, not as it was when a verification read
+ * began: a read that straddles the formatter's rewrite must not flag Orca's own output.
+ */
+export function isDiskContentExpectedBySelfWrite(
+  absolutePath: string,
+  runtimeEnvironmentId: string | null | undefined,
+  diskContent: string | null | undefined
+): boolean {
+  const stamp = getRecentSelfWrite(absolutePath, runtimeEnvironmentId)
+  if (!stamp) {
+    return false
+  }
+  return stamp.formatterPending === true || (diskContent != null && stamp.content === diskContent)
 }
 
 export function hasRecentSelfWrite(
