@@ -126,6 +126,9 @@ export type UiCommandEventApi = {
   onCloseActiveTab: (callback: (payload?: CloseActiveTabPayload) => void) => () => void
   onCloseFloatingItem: (callback: (payload: { sourceId: string }) => void) => () => void
   onSelectFloatingIndex: (callback: (payload: { index: number }) => void) => () => void
+  onMoveActiveTabToSplit?: (
+    callback: (direction: 'left' | 'right' | 'up' | 'down') => void
+  ) => () => void
   onSwitchTab: (callback: (direction: 1 | -1) => void) => () => void
   onSwitchTabAcrossAllTypes: (callback: (direction: 1 | -1) => void) => () => void
   onSwitchRecentTab: (callback: () => void) => () => void

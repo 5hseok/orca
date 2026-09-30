@@ -167,6 +167,12 @@ export function forwardGuestShortcutInput(
       // layouts (guest focus doesn't reach the group's focus-capture), silently dropping the close.
       renderer.send('ui:closeActiveTab', { sourceId: browserTabId })
     }
+  } else if (
+    !isFloatingGuest &&
+    keybindingMatchesAction('tab.moveToSplitRight', input, process.platform, keybindings)
+  ) {
+    // Why: the guest's key events never reach the renderer window handler that owns this chord.
+    renderer.send('ui:moveActiveTabToSplit', 'right')
   } else if (keybindingMatchesAction('tab.nextSameType', input, process.platform, keybindings)) {
     renderer.send('ui:switchTab', 1)
   } else if (

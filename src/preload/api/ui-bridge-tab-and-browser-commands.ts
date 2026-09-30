@@ -128,6 +128,22 @@ export const uiTabAndBrowserCommandsApi = {
     ipcRenderer.on('ui:selectFloatingIndex', listener)
     return () => ipcRenderer.removeListener('ui:selectFloatingIndex', listener)
   },
+  onMoveActiveTabToSplit: (
+    callback: (direction: 'left' | 'right' | 'up' | 'down') => void
+  ): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, direction: unknown): void => {
+      if (
+        direction === 'left' ||
+        direction === 'right' ||
+        direction === 'up' ||
+        direction === 'down'
+      ) {
+        callback(direction)
+      }
+    }
+    ipcRenderer.on('ui:moveActiveTabToSplit', listener)
+    return () => ipcRenderer.removeListener('ui:moveActiveTabToSplit', listener)
+  },
   onSwitchTab: (callback: (direction: 1 | -1) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, direction: 1 | -1) => callback(direction)
     ipcRenderer.on('ui:switchTab', listener)
