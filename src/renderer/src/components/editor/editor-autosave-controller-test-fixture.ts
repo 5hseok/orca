@@ -5,6 +5,39 @@ import { vi } from 'vitest'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { createEditorSlice } from '@/store/slices/editor'
 import type { AppState } from '@/store'
+import { makeWorktree } from '@/store/slices/store-test-helpers'
+
+export type FakeEditorDisk = {
+  files: Map<string, string>
+  fs: {
+    writeFile: ReturnType<typeof vi.fn>
+    deletePath: ReturnType<typeof vi.fn>
+    stat: ReturnType<typeof vi.fn>
+  }
+}
+
+/** In-memory stand-in for window.api.fs, so tests assert what is actually on disk. */
+export function createFakeEditorDisk(initialFiles: Record<string, string> = {}): FakeEditorDisk {
+  const files = new Map(Object.entries(initialFiles))
+  return {
+    files,
+    fs: {
+      writeFile: vi.fn(async ({ filePath, content }: { filePath: string; content: string }) => {
+        files.set(filePath, content)
+      }),
+      deletePath: vi.fn(async ({ targetPath }: { targetPath: string }) => {
+        files.delete(targetPath)
+      }),
+      stat: vi.fn(async ({ filePath }: { filePath: string }) => {
+        const content = files.get(filePath)
+        if (content === undefined) {
+          throw new Error(`ENOENT: no such file ${filePath}`)
+        }
+        return { size: content.length, isDirectory: false, mtime: 0 }
+      })
+    }
+  }
+}
 
 export type EditorWindowStub = {
   addEventListener: Window['addEventListener']
@@ -13,24 +46,17 @@ export type EditorWindowStub = {
   setTimeout: Window['setTimeout']
   clearTimeout: Window['clearTimeout']
   api: {
-    fs: {
-      writeFile: ReturnType<typeof vi.fn>
-      readFile: ReturnType<typeof vi.fn>
-    }
-    editor: {
-      formatOnSave: ReturnType<typeof vi.fn>
-    }
+    fs: FakeEditorDisk['fs'] & { readFile: ReturnType<typeof vi.fn> }
+    editor: { formatOnSave: ReturnType<typeof vi.fn> }
   }
 }
 
-/** Stubs the global window with an isolated event target and fs bridge;
- *  returns the writeFile mock for assertions. Format-on-save is stubbed as
- *  "nothing configured" so suites that don't care about it stay unaffected. */
-export function stubEditorWindow(overrides?: {
-  readFile?: ReturnType<typeof vi.fn>
-  formatOnSave?: ReturnType<typeof vi.fn>
-}): ReturnType<typeof vi.fn> {
-  const writeFile = vi.fn().mockResolvedValue(undefined)
+/** Stubs the global window with an isolated event target backed by `disk`.
+ *  Format-on-save is stubbed as "nothing configured" so unrelated suites stay unaffected. */
+export function stubEditorWindowWithDisk(
+  disk: FakeEditorDisk = createFakeEditorDisk(),
+  overrides?: { readFile?: ReturnType<typeof vi.fn>; formatOnSave?: ReturnType<typeof vi.fn> }
+): FakeEditorDisk {
   const readFile = overrides?.readFile ?? vi.fn().mockResolvedValue({ content: '' })
   const formatOnSave =
     overrides?.formatOnSave ??
@@ -42,17 +68,18 @@ export function stubEditorWindow(overrides?: {
     dispatchEvent: eventTarget.dispatchEvent.bind(eventTarget),
     setTimeout: globalThis.setTimeout.bind(globalThis),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
-    api: {
-      fs: {
-        writeFile,
-        readFile
-      },
-      editor: {
-        formatOnSave
-      }
-    }
+    api: { fs: { ...disk.fs, readFile }, editor: { formatOnSave } }
   } satisfies EditorWindowStub)
-  return writeFile
+  return disk
+}
+
+/** Stubs the global window with an isolated event target and fs bridge;
+ *  returns the writeFile mock for assertions. */
+export function stubEditorWindow(overrides?: {
+  readFile?: ReturnType<typeof vi.fn>
+  formatOnSave?: ReturnType<typeof vi.fn>
+}): ReturnType<typeof vi.fn> {
+  return stubEditorWindowWithDisk(createFakeEditorDisk(), overrides).fs.writeFile
 }
 
 export function createEditorStore(): StoreApi<AppState> {
@@ -75,4 +102,27 @@ export function createEditorStore(): StoreApi<AppState> {
     },
     ...createEditorSlice(...(args as Parameters<typeof createEditorSlice>))
   })) as unknown as StoreApi<AppState>
+}
+
+/** Store with a local worktree at /repo and an open, untouched untitled note at /repo/`fileName`. */
+export function createUntitledNoteStore(fileName: string): StoreApi<AppState> {
+  const store = createEditorStore()
+  store.setState({
+    worktreesByRepo: {
+      'repo-1': [makeWorktree({ id: 'wt-1', repoId: 'repo-1', path: '/repo', hostId: 'local' })]
+    },
+    browserTabsByWorktree: {},
+    tabsByWorktree: {},
+    activeBrowserTabIdByWorktree: {},
+    unifiedTabsByWorktree: {}
+  })
+  store.getState().openFile({
+    filePath: `/repo/${fileName}`,
+    relativePath: fileName,
+    worktreeId: 'wt-1',
+    language: 'markdown',
+    mode: 'edit',
+    isUntitled: true
+  })
+  return store
 }
