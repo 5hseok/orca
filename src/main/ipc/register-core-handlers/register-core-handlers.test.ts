@@ -46,6 +46,7 @@ const {
   setAgentBrowserBridgeRefMock,
   setTrustedBrowserRendererWebContentsIdMock,
   registerFilesystemWatcherHandlersMock,
+  registerCopilotInlineCompletionHandlersMock,
   registerAppHandlersMock,
   registerLinearHandlersMock,
   registerJiraHandlersMock,
@@ -113,6 +114,7 @@ const {
   setAgentBrowserBridgeRefMock: vi.fn(),
   setTrustedBrowserRendererWebContentsIdMock: vi.fn(),
   registerFilesystemWatcherHandlersMock: vi.fn(),
+  registerCopilotInlineCompletionHandlersMock: vi.fn(),
   registerAppHandlersMock: vi.fn(),
   registerLinearHandlersMock: vi.fn(),
   registerJiraHandlersMock: vi.fn(),
@@ -292,6 +294,10 @@ vi.mock('../filesystem-watcher', () => ({
   registerFilesystemWatcherHandlers: registerFilesystemWatcherHandlersMock
 }))
 
+vi.mock('../copilot-inline-completion', () => ({
+  registerCopilotInlineCompletionHandlers: registerCopilotInlineCompletionHandlersMock
+}))
+
 vi.mock('../rate-limits', () => ({
   registerRateLimitHandlers: registerRateLimitHandlersMock
 }))
@@ -449,6 +455,7 @@ describe('registerCoreHandlers', () => {
     setAgentBrowserBridgeRefMock.mockReset()
     setTrustedBrowserRendererWebContentsIdMock.mockReset()
     registerFilesystemWatcherHandlersMock.mockReset()
+    registerCopilotInlineCompletionHandlersMock.mockReset()
     registerAppHandlersMock.mockReset()
     registerLinearHandlersMock.mockReset()
     registerJiraHandlersMock.mockReset()
@@ -596,6 +603,7 @@ describe('registerCoreHandlers', () => {
     expect(setTrustedUIRendererWebContentsIdMock).toHaveBeenCalledWith(null)
     expect(registerBrowserHandlersMock).toHaveBeenCalled()
     expect(registerFilesystemWatcherHandlersMock).toHaveBeenCalled()
+    expect(registerCopilotInlineCompletionHandlersMock).toHaveBeenCalledWith(store)
     expect(registerSpeechHandlersMock).toHaveBeenCalledWith(store)
 
     await expect(
