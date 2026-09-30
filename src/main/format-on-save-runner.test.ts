@@ -116,6 +116,30 @@ describe('runFormatOnSave', () => {
     expect(runProcessMock).not.toHaveBeenCalled()
   })
 
+  it('refuses a dot-dot path that textually starts inside the worktree', async () => {
+    await expect(
+      runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: '/repo',
+        absoluteFilePath: '/repo/../elsewhere/a.ts'
+      })
+    ).resolves.toEqual({ status: 'skipped', reason: 'outside-worktree' })
+    expect(runProcessMock).not.toHaveBeenCalled()
+  })
+
+  it('fails without spawning when a path cannot be quoted safely for the remote shell', async () => {
+    const remoteExec = vi.fn()
+    await expect(
+      runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: 'C:\\repo',
+        absoluteFilePath: 'C:\\repo\\src\\%USERNAME%.ts',
+        remoteExec
+      })
+    ).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('cmd.exe') })
+    expect(remoteExec).not.toHaveBeenCalled()
+  })
+
   it('runs the command in the worktree root with the saved path substituted', async () => {
     await runFormatOnSave({
       settings: enabledSettings,
@@ -208,6 +232,7 @@ describe('runFormatOnSave', () => {
       worktreePath: '/repo',
       absoluteFilePath: '/repo/src/a.ts'
     })
+    await vi.waitFor(() => expect(runProcessMock).toHaveBeenCalled())
 
     await expect(
       runFormatOnSave({
@@ -283,6 +308,7 @@ describe('runFormatOnSave', () => {
       absoluteFilePath: '/repo/src/a.ts'
     })
     // Why: the shell alone dying leaves `npx prettier` running to overwrite a later save.
+    await vi.waitFor(() => expect(runProcessMock).toHaveBeenCalled())
     expect(spawnedSpec()).toMatchObject({
       timeoutMs: FORMAT_ON_SAVE_TIMEOUT_MS,
       terminationBarrier: true
@@ -302,6 +328,7 @@ describe('runFormatOnSave', () => {
       worktreePath: '/repo',
       absoluteFilePath: '/repo/src/a.ts'
     })
+    await vi.waitFor(() => expect(runProcessMock).toHaveBeenCalled())
 
     await expect(
       runFormatOnSave({
@@ -349,6 +376,7 @@ describe('runFormatOnSave', () => {
       worktreePath: 'C:\\repo',
       absoluteFilePath: 'C:\\repo\\src\\a.ts'
     })
+    await vi.waitFor(() => expect(runProcessMock).toHaveBeenCalled())
 
     await expect(
       runFormatOnSave({

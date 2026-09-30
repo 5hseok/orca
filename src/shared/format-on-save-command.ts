@@ -1,15 +1,17 @@
 import type { RepoFormatOnSaveSettings } from './repo-types'
 import { normalizeRuntimePathSeparators } from './cross-platform-path'
 import { escapeRegex } from './string-utils'
+import { expandCommandTokens } from './format-on-save-command-expansion'
 
 /** Shown in Settings as placeholders; these are command/glob syntax, not UI copy. */
 export const SUGGESTED_FORMAT_ON_SAVE_INCLUDE = '**/*.{ts,tsx,js,jsx,json,css,md}'
 export const SUGGESTED_FORMAT_ON_SAVE_COMMAND = 'npx prettier --write ${file}'
 
-export const FORMAT_ON_SAVE_FILE_TOKEN = '${file}'
-export const FORMAT_ON_SAVE_RELATIVE_FILE_TOKEN = '${relativeFile}'
-// Why: relativeFile first so the shared `${file}` prefix cannot win the match.
-const FORMAT_ON_SAVE_TOKEN_PATTERN = /\$\{relativeFile\}|\$\{file\}/g
+export {
+  FORMAT_ON_SAVE_FILE_TOKEN,
+  FORMAT_ON_SAVE_RELATIVE_FILE_TOKEN,
+  FormatOnSaveCommandError
+} from './format-on-save-command-expansion'
 
 export type FormatOnSaveSkipReason =
   | 'not-configured'
@@ -46,12 +48,36 @@ export function normalizeRepoFormatOnSaveSettings(value: unknown): RepoFormatOnS
   }
 }
 
-/** Settings shows the globs as one comma-separated line; newlines are accepted for pasted lists. */
+/**
+ * Settings shows the globs as one comma-separated line; newlines are accepted for pasted lists.
+ * Commas inside a `{a,b}` group belong to the glob, so only top-level ones split.
+ */
 export function parseFormatOnSaveIncludeInput(value: string): string[] {
-  return value
-    .split(/[\n,]/)
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0)
+  const entries: string[] = []
+  let current = ''
+  let braceDepth = 0
+
+  for (const char of value) {
+    if (char === '\n') {
+      // Why: a line is always a boundary, so a stray `{` cannot swallow the lines after it.
+      braceDepth = 0
+      entries.push(current)
+      current = ''
+    } else if (char === ',' && braceDepth === 0) {
+      entries.push(current)
+      current = ''
+    } else {
+      if (char === '{') {
+        braceDepth++
+      } else if (char === '}' && braceDepth > 0) {
+        braceDepth--
+      }
+      current += char
+    }
+  }
+  entries.push(current)
+
+  return entries.map((entry) => entry.trim()).filter((entry) => entry.length > 0)
 }
 
 export function formatOnSaveIncludeToInput(include: string[]): string {
@@ -154,8 +180,9 @@ type FormatOnSaveCommandExpansion = {
 }
 
 /**
- * Substitutes the path tokens with shell-quoted values. A command without any
- * token is left alone — some formatters take the whole project.
+ * Substitutes the path tokens with values quoted for the shell context they sit
+ * in. A command without any token is left alone — some formatters take the whole
+ * project. Throws FormatOnSaveCommandError for a path that cannot be quoted safely.
  */
 export function expandFormatOnSaveCommand({
   command,
@@ -163,24 +190,5 @@ export function expandFormatOnSaveCommand({
   relativePath,
   platform
 }: FormatOnSaveCommandExpansion): string {
-  const quotedAbsolute = quoteForShell(absolutePath, platform)
-  const quotedRelative = quoteForShell(relativePath, platform)
-
-  // Why: one pass. Substituting sequentially lets the second pass rescan a path
-  // the first pass inserted, so a filename containing the literal text `${file}`
-  // would splice a second quoted path inside the first one and break the quoting
-  // this function exists to guarantee. Filenames come from cloned repositories.
-  return command.replace(FORMAT_ON_SAVE_TOKEN_PATTERN, (token) =>
-    token === FORMAT_ON_SAVE_RELATIVE_FILE_TOKEN ? quotedRelative : quotedAbsolute
-  )
-}
-
-export function quoteForShell(value: string, platform: NodeJS.Platform): string {
-  if (platform === 'win32') {
-    // Why: doubling `"` matches how cmd.exe unquotes, and a lone `%` only
-    // expands as part of a defined `%VAR%` pair.
-    return `"${value.split('"').join('""')}"`
-  }
-
-  return `'${value.split("'").join(`'\\''`)}'`
+  return expandCommandTokens(command, { file: absolutePath, relativeFile: relativePath }, platform)
 }

@@ -10,10 +10,9 @@ import { FORMAT_ON_SAVE_TIMEOUT_MS } from './format-on-save-timeout'
 export { FORMAT_ON_SAVE_TIMEOUT_MS }
 import {
   isWindowsAbsolutePathLike,
-  normalizeRuntimePathForComparison,
-  normalizeRuntimePathSeparators,
-  relativePathInsideRoot
+  normalizeRuntimePathForComparison
 } from '../shared/cross-platform-path'
+import { resolveFormatTarget } from './format-on-save-file-containment'
 import { stableInFlightKey } from '../shared/in-flight-promise-dedupe'
 import type { RepoFormatOnSaveSettings } from '../shared/repo-types'
 
@@ -53,7 +52,7 @@ const inFlightPaths = new Set<string>()
 export async function runFormatOnSave({
   settings,
   worktreePath,
-  absoluteFilePath,
+  absoluteFilePath: requestedFilePath,
   remoteExec,
   hostScope
 }: FormatOnSaveRequest): Promise<FormatOnSaveResult> {
@@ -61,11 +60,16 @@ export async function runFormatOnSave({
     return { status: 'skipped', reason: 'not-configured' }
   }
 
-  const relativePath = getWorktreeRelativePath(worktreePath, absoluteFilePath)
-  if (relativePath === null) {
+  const target = await resolveFormatTarget({
+    worktreePath,
+    absoluteFilePath: requestedFilePath,
+    isRemote: remoteExec !== undefined
+  })
+  if (target === null) {
     // Why: the command runs with the worktree as cwd, so a file outside it has no meaningful ${relativeFile}.
     return { status: 'skipped', reason: 'outside-worktree' }
   }
+  const { absolutePath: absoluteFilePath, relativePath } = target
 
   if (!matchesFormatOnSaveInclude(relativePath, settings.include)) {
     return { status: 'skipped', reason: 'not-included' }
@@ -119,12 +123,17 @@ async function executeRemoteFormatCommand({
   // Windows SSH host is detected the same way the worktree hooks detect it —
   // from the shape of the remote path.
   const isWindowsRemote = isWindowsAbsolutePathLike(worktreePath)
-  const expanded = expandFormatOnSaveCommand({
-    command,
-    absolutePath: absoluteFilePath,
-    relativePath,
-    platform: isWindowsRemote ? 'win32' : 'linux'
-  })
+  let expanded: string
+  try {
+    expanded = expandFormatOnSaveCommand({
+      command,
+      absolutePath: absoluteFilePath,
+      relativePath,
+      platform: isWindowsRemote ? 'win32' : 'linux'
+    })
+  } catch (error) {
+    return { status: 'failed', message: error instanceof Error ? error.message : String(error) }
+  }
 
   let result: RemoteFormatExecResult
   try {
@@ -158,21 +167,6 @@ async function executeRemoteFormatCommand({
     (candidate) => candidate && candidate.length > 0
   )
   return { status: 'failed', message: message ?? 'Formatter failed.' }
-}
-
-export function getWorktreeRelativePath(
-  worktreePath: string,
-  absoluteFilePath: string
-): string | null {
-  // Why: node's `path.relative` resolves against the host platform, so a WSL UNC
-  // worktree only parses correctly on Windows. This comparison is platform-free,
-  // which also lets CI cover the WSL branch.
-  const relativePath = relativePathInsideRoot(worktreePath, absoluteFilePath)
-  if (!relativePath) {
-    return null
-  }
-
-  return normalizeRuntimePathSeparators(relativePath)
 }
 
 export function _resetFormatOnSaveInFlightForTests(): void {

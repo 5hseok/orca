@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FormatOnSaveCommandError,
+  SUGGESTED_FORMAT_ON_SAVE_INCLUDE,
   expandFormatOnSaveCommand,
   formatOnSaveIncludeToInput,
   parseFormatOnSaveIncludeInput,
   isFormatOnSaveConfigured,
   matchesFormatOnSaveInclude,
-  normalizeRepoFormatOnSaveSettings,
-  quoteForShell
+  normalizeRepoFormatOnSaveSettings
 } from './format-on-save-command'
+import { quoteForShell } from './format-on-save-command-expansion'
 
 describe('format-on-save settings normalization', () => {
   it('treats an enabled config with a blank command as off', () => {
@@ -84,7 +86,7 @@ describe('format-on-save command expansion', () => {
         relativePath: 'src/a.ts',
         platform: 'darwin'
       })
-    ).toBe("prettier --write '/repo/src/a.ts' # 'src/a.ts'")
+    ).toBe("prettier --write '/repo/src/a.ts' # ${relativeFile}")
   })
 
   it('leaves a token-free command untouched', () => {
@@ -152,6 +154,63 @@ describe('format-on-save command expansion', () => {
   })
 })
 
+describe('format-on-save command expansion quoting context', () => {
+  const expand = (command: string, absolutePath: string, platform: NodeJS.Platform = 'linux') =>
+    expandFormatOnSaveCommand({ command, absolutePath, relativePath: absolutePath, platform })
+
+  it('escapes for double quotes instead of adding single quotes inside them', () => {
+    expect(expand('fmt "${file}"', '/r/$(touch x)`id`"\\.ts')).toBe(
+      'fmt "/r/\\$(touch x)\\`id\\`\\"\\\\.ts"'
+    )
+  })
+
+  it('closes and reopens the quote when the token sits inside single quotes', () => {
+    expect(expand("fmt 'a${file}b'", "/r/it's.ts")).toBe("fmt 'a''/r/it'\\''s.ts''b'")
+  })
+
+  it('quotes a token inside command substitution independently of the outer quotes', () => {
+    expect(expand('echo "$(cat ${file})"', '/r/a b.ts')).toBe('echo "$(cat \'/r/a b.ts\')"')
+  })
+
+  it('leaves an escaped dollar unexpanded', () => {
+    expect(expand('echo \\${file}', '/r/a.ts')).toBe('echo \\${file}')
+  })
+
+  it('does not expand tokens in a shell comment, where a newline in the name would end the comment', () => {
+    expect(expand('fmt # ${file}', '/r/a\nrm -rf x.ts')).toBe('fmt # ${file}')
+    expect(expand('fmt a#b ${file}', '/r/a.ts')).toBe("fmt a#b '/r/a.ts'")
+  })
+
+  it('refuses tokens where quoting is not modelled', () => {
+    expect(() => expand('echo `cat ${file}`', '/r/a.ts')).toThrow(FormatOnSaveCommandError)
+    expect(() => expand("echo $'${file}'", '/r/a.ts')).toThrow(FormatOnSaveCommandError)
+    expect(() => expand('cat <<EOF\n${file}\nEOF', '/r/a.ts')).toThrow(FormatOnSaveCommandError)
+  })
+
+  it('keeps a relative path that starts with a dash from being read as an option', () => {
+    expect(
+      expandFormatOnSaveCommand({
+        command: 'fmt ${relativeFile}',
+        absolutePath: '/r/--config=x.js',
+        relativePath: '--config=x.js',
+        platform: 'linux'
+      })
+    ).toBe("fmt './--config=x.js'")
+  })
+
+  it('refuses a windows path cmd.exe would expand or misparse', () => {
+    expect(() => expand('fmt ${file}', 'C:\\r\\%USERNAME%.ts', 'win32')).toThrow(
+      FormatOnSaveCommandError
+    )
+    expect(() => expand('fmt ${file}', 'C:\\r\\a"b.ts', 'win32')).toThrow(FormatOnSaveCommandError)
+  })
+
+  it('does not add a second pair of quotes to a windows token already in quotes', () => {
+    expect(expand('fmt "${file}"', 'C:\\r\\a b.ts', 'win32')).toBe('fmt "C:\\r\\a b.ts"')
+    expect(expand('fmt ${file}', 'C:\\r\\a b&c.ts', 'win32')).toBe('fmt "C:\\r\\a b&c.ts"')
+  })
+})
+
 describe('format-on-save include input', () => {
   it('splits on commas and newlines and drops empty entries', () => {
     expect(parseFormatOnSaveIncludeInput('**/*.ts, **/*.md,\n\n  **/*.css  ,')).toEqual([
@@ -164,6 +223,26 @@ describe('format-on-save include input', () => {
   it('round-trips through the settings input', () => {
     const include = ['**/*.ts', '**/*.md']
     expect(parseFormatOnSaveIncludeInput(formatOnSaveIncludeToInput(include))).toEqual(include)
+  })
+
+  it('keeps commas inside brace groups, including the suggested pattern', () => {
+    expect(parseFormatOnSaveIncludeInput(SUGGESTED_FORMAT_ON_SAVE_INCLUDE)).toEqual([
+      SUGGESTED_FORMAT_ON_SAVE_INCLUDE
+    ])
+    expect(parseFormatOnSaveIncludeInput('src/**/*.{ts,tsx}, *.md\n**/*.{css,scss}')).toEqual([
+      'src/**/*.{ts,tsx}',
+      '*.md',
+      '**/*.{css,scss}'
+    ])
+  })
+
+  it('round-trips a brace pattern through the settings input', () => {
+    const include = ['**/*.{ts,tsx}', '**/*.md']
+    expect(parseFormatOnSaveIncludeInput(formatOnSaveIncludeToInput(include))).toEqual(include)
+  })
+
+  it('does not let an unclosed brace swallow later lines', () => {
+    expect(parseFormatOnSaveIncludeInput('*.{ts\n*.md, *.css')).toEqual(['*.{ts', '*.md', '*.css'])
   })
 
   it('reads an empty field as no restriction', () => {
