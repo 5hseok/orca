@@ -60,18 +60,43 @@ export function SourceControlPanelDialogs({
   }
 
   const applyCompareBaseRefWrite = (write: SourceControlCompareBaseRefWrite): boolean => {
-    if (write.worktreeUpdate) {
-      void updateWorktreeMeta(write.worktreeUpdate.worktreeId, {
-        baseRef: write.worktreeUpdate.baseRef
-      })
+    if (!write.worktreeUpdate) {
+      return false
     }
-    if (write.repoUpdate) {
-      void updateRepo(write.repoUpdate.repoId, {
-        worktreeBaseRef: write.repoUpdate.worktreeBaseRef
-      })
-    }
-    return Boolean(write.worktreeUpdate || write.repoUpdate)
+    void updateWorktreeMeta(write.worktreeUpdate.worktreeId, {
+      baseRef: write.worktreeUpdate.baseRef
+    })
+    return true
   }
+
+  // Why awaited: the project pin is shared by every workspace, so success must not be claimed before the write lands.
+  const applyProjectBaseRefWrite = async (
+    write: SourceControlCompareBaseRefWrite,
+    successMessage: string | null
+  ): Promise<void> => {
+    if (!write.repoUpdate) {
+      return
+    }
+    const saved = await updateRepo(write.repoUpdate.repoId, {
+      worktreeBaseRef: write.repoUpdate.worktreeBaseRef
+    })
+    if (!saved) {
+      toast.error(
+        translate(
+          'auto.components.right.sidebar.SourceControl.e03eb08e1e',
+          'Could not save the project default'
+        )
+      )
+      return
+    }
+    if (successMessage) {
+      toast.success(successMessage)
+    }
+    closeAndRefreshCompare()
+  }
+
+  const clearsProjectDefault =
+    !baseRefOwnedByWorktree && Boolean(activeRepo.worktreeBaseRef?.trim())
 
   return (
     <SourceControlDialogLayer
@@ -88,7 +113,6 @@ export function SourceControlPanelDialogs({
       onBaseRefDialogOpenChange={setBaseRefDialogOpen}
       baseRefRepoId={activeRepo.id}
       pickerBaseRef={pickerBaseRef}
-      baseRefOwnedByWorktree={baseRefOwnedByWorktree}
       onSelectBaseRef={(ref) => {
         if (
           !applyCompareBaseRefWrite(
@@ -103,39 +127,52 @@ export function SourceControlPanelDialogs({
         }
         closeAndRefreshCompare()
       }}
-      onUsePrimaryBaseRef={() => {
-        if (
-          !applyCompareBaseRefWrite(
-            planSourceControlCompareBaseRefWrite({
-              action: 'use-project-default',
-              worktreeId: activeWorktreeId
-            })
-          )
-        ) {
-          return
-        }
-        closeAndRefreshCompare()
-      }}
-      onSetAsProjectDefault={() => {
-        if (
-          !applyCompareBaseRefWrite(
-            planSourceControlCompareBaseRefWrite({
-              action: 'set-project-default',
-              repoId: activeRepo.id,
-              ref: pickerBaseRef
-            })
-          )
-        ) {
-          return
-        }
-        toast.success(
+      onUsePrimaryBaseRef={
+        baseRefOwnedByWorktree
+          ? () => {
+              if (
+                applyCompareBaseRefWrite(
+                  planSourceControlCompareBaseRefWrite({
+                    action: 'use-project-default',
+                    worktreeId: activeWorktreeId
+                  })
+                )
+              ) {
+                closeAndRefreshCompare()
+              }
+            }
+          : clearsProjectDefault
+            ? () =>
+                void applyProjectBaseRefWrite(
+                  planSourceControlCompareBaseRefWrite({
+                    action: 'clear-project-default',
+                    repoId: activeRepo.id
+                  }),
+                  null
+                )
+            : undefined
+      }
+      usePrimaryBaseRefLabel={
+        baseRefOwnedByWorktree
+          ? translate(
+              'auto.components.right.sidebar.SourceControl.3138a3323d',
+              'Use project default'
+            )
+          : undefined
+      }
+      onSetAsProjectDefault={() =>
+        void applyProjectBaseRefWrite(
+          planSourceControlCompareBaseRefWrite({
+            action: 'set-project-default',
+            repoId: activeRepo.id,
+            ref: pickerBaseRef
+          }),
           translate(
-            'auto.components.right.sidebar.SourceControl.4c8f1e2a90',
+            'auto.components.right.sidebar.SourceControl.032b4cd034',
             'Saved as project default'
           )
         )
-        closeAndRefreshCompare()
-      }}
+      }
       sourceControlAiActionsVisible={sourceControlAiActionsVisible}
       resolveConflictsComposerOpen={resolveConflictsComposerOpen}
       onResolveConflictsComposerOpenChange={setResolveConflictsComposerOpen}

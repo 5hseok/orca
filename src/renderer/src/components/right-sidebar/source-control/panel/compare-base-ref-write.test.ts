@@ -56,4 +56,10 @@ describe('planSourceControlCompareBaseRefWrite', () => {
       })
     ).toEqual({})
   })
+
+  it('clears only the repo pin when dropping the project default', () => {
+    expect(
+      planSourceControlCompareBaseRefWrite({ action: 'clear-project-default', repoId: 'repo' })
+    ).toEqual({ repoUpdate: { repoId: 'repo', worktreeBaseRef: undefined } })
+  })
 })

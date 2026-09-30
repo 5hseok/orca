@@ -1,6 +1,6 @@
 export type SourceControlCompareBaseRefWrite = {
   worktreeUpdate?: { worktreeId: string; baseRef: string | undefined }
-  repoUpdate?: { repoId: string; worktreeBaseRef: string }
+  repoUpdate?: { repoId: string; worktreeBaseRef: string | undefined }
 }
 
 /**
@@ -13,6 +13,7 @@ export function planSourceControlCompareBaseRefWrite(
     | { action: 'select'; worktreeId: string | null; ref: string }
     | { action: 'use-project-default'; worktreeId: string | null }
     | { action: 'set-project-default'; repoId: string; ref: string | null | undefined }
+    | { action: 'clear-project-default'; repoId: string }
 ): SourceControlCompareBaseRefWrite {
   if (input.action === 'select') {
     const ref = input.ref.trim()
@@ -26,6 +27,9 @@ export function planSourceControlCompareBaseRefWrite(
       return {}
     }
     return { worktreeUpdate: { worktreeId: input.worktreeId, baseRef: undefined } }
+  }
+  if (input.action === 'clear-project-default') {
+    return { repoUpdate: { repoId: input.repoId, worktreeBaseRef: undefined } }
   }
   const ref = input.ref?.trim()
   if (!ref) {

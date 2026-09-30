@@ -35,9 +35,9 @@ export function SourceControlDialogLayer({
   onBaseRefDialogOpenChange,
   baseRefRepoId,
   pickerBaseRef,
-  baseRefOwnedByWorktree,
   onSelectBaseRef,
   onUsePrimaryBaseRef,
+  usePrimaryBaseRefLabel,
   onSetAsProjectDefault,
   sourceControlAiActionsVisible,
   resolveConflictsComposerOpen,
@@ -79,9 +79,9 @@ export function SourceControlDialogLayer({
   onBaseRefDialogOpenChange: (open: boolean) => void
   baseRefRepoId: string
   pickerBaseRef: BaseRefPickerProps['currentBaseRef']
-  baseRefOwnedByWorktree: boolean
   onSelectBaseRef: BaseRefPickerProps['onSelect']
-  onUsePrimaryBaseRef: NonNullable<BaseRefPickerProps['onUsePrimary']>
+  onUsePrimaryBaseRef: BaseRefPickerProps['onUsePrimary']
+  usePrimaryBaseRefLabel: BaseRefPickerProps['usePrimaryLabel']
   onSetAsProjectDefault: () => void
   sourceControlAiActionsVisible: boolean
   resolveConflictsComposerOpen: boolean
@@ -176,7 +176,8 @@ export function SourceControlDialogLayer({
               repoId={baseRefRepoId}
               currentBaseRef={pickerBaseRef}
               onSelect={onSelectBaseRef}
-              onUsePrimary={baseRefOwnedByWorktree ? onUsePrimaryBaseRef : undefined}
+              onUsePrimary={onUsePrimaryBaseRef}
+              usePrimaryLabel={usePrimaryBaseRefLabel}
             />
           </div>
           <DialogFooter className="shrink-0 sm:justify-start">
