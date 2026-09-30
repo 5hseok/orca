@@ -143,8 +143,9 @@ export function connectCopilotServer(
   child.on('error', (error) => close(error))
   child.on('exit', () => close(new Error('Copilot server exited')))
   child.stdin.on('error', () => close(new Error('Copilot server pipe closed')))
-  // Why: stdout/stderr pipe errors are otherwise uncaught exceptions in main.
+  // Why: spawnProcess leaves stream `error` events to the caller; an unhandled one is an uncaught exception in main.
   child.stdout.on('error', () => {})
+  child.stderr.on('error', () => {})
 
   const connection: CopilotServerConnection = {
     ready: Promise.resolve(),

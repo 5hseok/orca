@@ -15,6 +15,8 @@ export type CopilotStatus = {
   busy: boolean
   /** GitHub login once checkStatus reports a signed-in user. */
   user: string | null
+  /** True after a device-flow sign-in ended without a signed-in user; cleared when sign-in restarts. */
+  signInFailed: boolean
 }
 
 export type CopilotOpenDocumentArgs = {

@@ -1,28 +1,25 @@
-import { basename } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import {
   COPILOT_MAX_DOCUMENT_CHARS,
   type CopilotInlineCompletionArgs,
   type CopilotInlineCompletionResult,
   type CopilotOpenDocumentArgs,
   type CopilotOpenDocumentResult,
+  type CopilotSignInResult,
   type CopilotStatus
 } from '../../shared/copilot-inline-completion-types'
 import { connectCopilotServer, type CopilotServerConnection } from './copilot-server-connection'
 import type { CopilotServerProcess } from './copilot-server-process'
+import { createCopilotOpenDocuments } from './copilot-open-documents'
 import { createCopilotSignIn } from './copilot-sign-in'
 
 import {
   buildCopilotInitializeParams,
   isHttpsUrl,
-  parseCopilotStatusNotification,
-  toCopilotDocumentLanguageId
+  parseCopilotStatusNotification
 } from './copilot-protocol'
 
 // Why: keep a doc-less server briefly for tab switches, but don't hold a node process open indefinitely.
 const IDLE_SHUTDOWN_MS = 3 * 60_000
-
-type OpenDocumentState = { version: number; refCount: number }
 
 export type CopilotLanguageServerDeps = {
   editorVersion: string
@@ -35,13 +32,22 @@ export type CopilotLanguageServerDeps = {
 }
 
 export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
-  let status: CopilotStatus = { installed: false, kind: null, message: '', busy: false, user: null }
+  let status: CopilotStatus = {
+    installed: false,
+    kind: null,
+    message: '',
+    busy: false,
+    user: null,
+    signInFailed: false
+  }
   // null until the first checkStatus answer; false keeps the server unspawned (inert).
   let authenticated: boolean | null = null
   let connectionPromise: Promise<CopilotServerConnection | null> | null = null
   let activeConnection: CopilotServerConnection | null = null
-  const documents = new Map<string, OpenDocumentState>()
-  const workspaceRoots = new Set<string>()
+  let authCheck: Promise<void> | null = null
+  // Set once an open found checkStatus unanswered; the next open retries it instead of respawning.
+  let authUnverified = false
+  const openDocuments = createCopilotOpenDocuments()
   let idleTimer: NodeJS.Timeout | null = null
 
   function updateStatus(patch: Partial<CopilotStatus>): void {
@@ -57,7 +63,7 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
   }
 
   function disposeIfIdle(): void {
-    if (documents.size === 0 && !signInFlow.isActive()) {
+    if (openDocuments.count() === 0 && !signInFlow.isActive()) {
       activeConnection?.dispose()
     }
   }
@@ -84,6 +90,14 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
     } catch {
       // Status stays whatever didChangeStatus last reported.
     }
+  }
+
+  // Why: concurrent opens share one checkStatus instead of each racing its own.
+  function recheckAuth(connection: CopilotServerConnection): Promise<void> {
+    authCheck ??= refreshAuth(connection).finally(() => {
+      authCheck = null
+    })
+    return authCheck
   }
 
   function handleNotification(method: string, params: unknown): void {
@@ -120,8 +134,8 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
     }
     activeConnection = null
     connectionPromise = null
-    documents.clear()
-    workspaceRoots.clear()
+    authUnverified = false
+    openDocuments.clear()
     clearIdleTimer()
   }
 
@@ -183,9 +197,10 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
     ensureConnection,
     refreshAuth,
     currentUser: () => status.user,
+    onFinishFailed: () => updateStatus({ signInFailed: true }),
     // Why: a server nothing uses (no documents, not signed in) should not linger after the flow ends.
     onSettled: () => {
-      if (documents.size > 0) {
+      if (openDocuments.count() > 0) {
         return
       }
       if (authenticated) {
@@ -204,6 +219,13 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
     return status
   }
 
+  async function signIn(): Promise<CopilotSignInResult> {
+    if (status.signInFailed) {
+      updateStatus({ signInFailed: false })
+    }
+    return signInFlow.signIn()
+  }
+
   async function openDocument(args: CopilotOpenDocumentArgs): Promise<CopilotOpenDocumentResult> {
     const none: CopilotOpenDocumentResult = { fileUri: null }
     if (authenticated === false || args.text.length > COPILOT_MAX_DOCUMENT_CHARS) {
@@ -213,72 +235,38 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
     if (!connection) {
       return none
     }
+    if (authenticated === null && authUnverified) {
+      await recheckAuth(connection)
+    }
+    if (connection.isDisposed()) {
+      return none
+    }
+    if (authenticated === null) {
+      // Why: an unanswered checkStatus is not "signed out"; keep the server so opens don't respawn it in a loop.
+      authUnverified = true
+      return none
+    }
     if (!authenticated) {
       // Why: not signed in means nothing may run; drop the process spawned to find that out.
       disposeIfIdle()
       return none
     }
     clearIdleTimer()
-    const rootUri = pathToFileURL(args.rootPath).toString()
-    if (!workspaceRoots.has(rootUri)) {
-      workspaceRoots.add(rootUri)
-      connection.notify('workspace/didChangeWorkspaceFolders', {
-        event: { added: [{ uri: rootUri, name: basename(args.rootPath) }], removed: [] }
-      })
-    }
-    const fileUri = pathToFileURL(args.filePath).toString()
-    const existing = documents.get(fileUri)
-    if (existing) {
-      existing.refCount++
-      // Why: a second surface can open the same file with different text; last writer wins.
-      sendDidChange(connection, fileUri, existing, args.text)
-    } else {
-      documents.set(fileUri, { version: 1, refCount: 1 })
-      connection.notify('textDocument/didOpen', {
-        textDocument: {
-          uri: fileUri,
-          languageId: toCopilotDocumentLanguageId(args.languageId, args.filePath),
-          version: 1,
-          text: args.text
-        }
-      })
-    }
-    return { fileUri }
-  }
-
-  function sendDidChange(
-    connection: CopilotServerConnection,
-    fileUri: string,
-    document: OpenDocumentState,
-    text: string
-  ): void {
-    document.version++
-    connection.notify('textDocument/didChange', {
-      textDocument: { uri: fileUri, version: document.version },
-      contentChanges: [{ text }]
-    })
+    return { fileUri: openDocuments.open(connection, args) }
   }
 
   function changeDocument(fileUri: string, text: string): void {
-    const document = documents.get(fileUri)
-    if (!activeConnection || !document || text.length > COPILOT_MAX_DOCUMENT_CHARS) {
-      return
+    if (activeConnection && text.length <= COPILOT_MAX_DOCUMENT_CHARS) {
+      openDocuments.change(activeConnection, fileUri, text)
     }
-    sendDidChange(activeConnection, fileUri, document, text)
   }
 
   function closeDocument(fileUri: string): void {
-    const document = documents.get(fileUri)
-    if (!activeConnection || !document) {
-      return
-    }
-    document.refCount--
-    if (document.refCount > 0) {
-      return
-    }
-    documents.delete(fileUri)
-    activeConnection.notify('textDocument/didClose', { textDocument: { uri: fileUri } })
-    if (documents.size === 0) {
+    if (
+      activeConnection &&
+      openDocuments.close(activeConnection, fileUri) &&
+      openDocuments.count() === 0
+    ) {
       scheduleIdleShutdown()
     }
   }
@@ -286,13 +274,13 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
   async function inlineCompletion(
     args: CopilotInlineCompletionArgs
   ): Promise<CopilotInlineCompletionResult> {
-    const document = documents.get(args.fileUri)
-    if (!activeConnection || !document) {
+    const version = openDocuments.versionOf(args.fileUri)
+    if (!activeConnection || version === null) {
       return { opened: false, result: null }
     }
     const result = await activeConnection.request('textDocument/inlineCompletion', {
       // Why: the server drops requests whose version differs from what it holds, and only main knows it.
-      textDocument: { uri: args.fileUri, version: document.version },
+      textDocument: { uri: args.fileUri, version },
       position: args.position,
       // LSP InlineCompletionTriggerKind: Invoked = 1, Automatic = 2.
       context: { triggerKind: args.trigger === 'explicit' ? 1 : 2 },
@@ -312,7 +300,7 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
     changeDocument,
     closeDocument,
     inlineCompletion,
-    signIn: signInFlow.signIn,
+    signIn,
     dispose
   }
 }

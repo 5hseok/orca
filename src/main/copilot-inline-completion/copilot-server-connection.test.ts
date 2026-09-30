@@ -78,4 +78,12 @@ describe('connectCopilotServer', () => {
     expect(connection.isDisposed()).toBe(true)
     expect(onClosed).toHaveBeenCalledTimes(1)
   })
+
+  it('survives stdout and stderr pipe errors instead of throwing in main', async () => {
+    const { fake, connection } = connectToFake()
+    await connection.ready
+    expect(() => fake.child.stdout.emit('error', new Error('EPIPE'))).not.toThrow()
+    expect(() => fake.child.stderr.emit('error', new Error('EPIPE'))).not.toThrow()
+    expect(connection.isDisposed()).toBe(false)
+  })
 })

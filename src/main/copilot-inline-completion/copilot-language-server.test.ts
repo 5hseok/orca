@@ -111,6 +111,33 @@ describe('createCopilotLanguageServer', () => {
     expect(spawnServer).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the server and retries when checkStatus fails instead of respawning per open', async () => {
+    const { fake, copilot, spawnServer } = createCopilotWithFakeServer({})
+    const first = copilot.openDocument(openArgs)
+    const firstCheck = await fake.waitFor((m) => m.method === 'checkStatus')
+    fake.replyError(firstCheck.id as number, 'boom')
+    await expect(first).resolves.toEqual({ fileUri: null })
+    expect(fake.child.kill).not.toHaveBeenCalled()
+    fake.setAutoReply('checkStatus', { status: 'OK', user: 'octocat' })
+    await expect(copilot.openDocument(openArgs)).resolves.toEqual({ fileUri })
+    expect(spawnServer).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares one checkStatus retry between concurrent opens', async () => {
+    const { fake, copilot } = createCopilotWithFakeServer({})
+    const first = copilot.openDocument(openArgs)
+    const startupCheck = await fake.waitFor((m) => m.method === 'checkStatus')
+    fake.replyError(startupCheck.id as number, 'boom')
+    await expect(first).resolves.toEqual({ fileUri: null })
+    fake.setAutoReply('checkStatus', { status: 'OK', user: 'octocat' })
+    const opens = await Promise.all([
+      copilot.openDocument(openArgs),
+      copilot.openDocument(openArgs)
+    ])
+    expect(opens).toEqual([{ fileUri }, { fileUri }])
+    expect(fake.received.filter((m) => m.method === 'checkStatus')).toHaveLength(2)
+  })
+
   it('refuses documents over the size limit', async () => {
     const { copilot, spawnServer } = createCopilotWithFakeServer()
     const result = await copilot.openDocument({ ...openArgs, text: 'x'.repeat(1_000_001) })
@@ -203,6 +230,32 @@ describe('createCopilotLanguageServer', () => {
     fake.setAutoReply('checkStatus', { status: 'OK', user: 'octocat' })
     fake.reply(execute.id as number, null)
     await vi.waitFor(() => expect(copilot.getStatus()).resolves.toMatchObject({ user: 'octocat' }))
+  })
+
+  it('reports a failed device flow on status and clears it when sign-in restarts', async () => {
+    const { fake, copilot, statuses } = createCopilotWithFakeServer(SIGNED_OUT)
+    const pending = copilot.signIn()
+    const signIn = await fake.waitFor((message) => message.method === 'signIn')
+    fake.reply(signIn.id as number, { userCode: 'ABCD-EFGH', command: { command: 'finish' } })
+    await pending
+    const execute = await fake.waitFor((message) => message.method === 'workspace/executeCommand')
+    fake.replyError(execute.id as number, 'device flow expired')
+    await vi.waitFor(() => expect(statuses.at(-1)?.signInFailed).toBe(true))
+    void copilot.signIn()
+    await vi.waitFor(() => expect(statuses.at(-1)?.signInFailed).toBe(false))
+  })
+
+  it('does not report a failure when the login landed despite a failed finish request', async () => {
+    const { fake, copilot, statuses } = createCopilotWithFakeServer(SIGNED_OUT)
+    const pending = copilot.signIn()
+    const signIn = await fake.waitFor((message) => message.method === 'signIn')
+    fake.reply(signIn.id as number, { userCode: 'ABCD-EFGH', command: { command: 'finish' } })
+    await pending
+    const execute = await fake.waitFor((message) => message.method === 'workspace/executeCommand')
+    fake.setAutoReply('checkStatus', { status: 'OK', user: 'octocat' })
+    fake.replyError(execute.id as number, 'timed out')
+    await vi.waitFor(() => expect(statuses.at(-1)?.user).toBe('octocat'))
+    expect(statuses.some((s) => s.signInFailed)).toBe(false)
   })
 
   it('opens only https pages requested through window/showDocument during sign-in', async () => {

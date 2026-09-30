@@ -11,6 +11,8 @@ export type CopilotSignInDeps = {
   ensureConnection: () => Promise<CopilotServerConnection | null>
   refreshAuth: (connection: CopilotServerConnection) => Promise<void>
   currentUser: () => string | null
+  /** Runs when the browser step failed, timed out, or ended without a signed-in user. */
+  onFinishFailed: () => void
   /** Runs when a flow ends, so the owner can drop a server nothing else uses. */
   onSettled: () => void
 }
@@ -61,7 +63,16 @@ export function createCopilotSignIn(deps: CopilotSignInDeps) {
           )
         : openAndConfirm(connection, response)
       handedOffToFinish = true
-      const finished = (): void => void deps.refreshAuth(connection).finally(settle)
+      // Why: the resulting login decides success; a timed-out finish request can still end signed in.
+      const finished = (): void =>
+        void deps
+          .refreshAuth(connection)
+          .finally(() => {
+            if (!deps.currentUser()) {
+              deps.onFinishFailed()
+            }
+          })
+          .finally(settle)
       void finish.then(finished, finished)
       return {
         state: 'pending',

@@ -46,6 +46,9 @@ export function createFakeCopilotServer(autoReplies: Record<string, unknown> = {
     reply(id: number | string, result: unknown): void {
       stdout.write(encodeContentLengthMessage({ jsonrpc: '2.0', id, result }))
     },
+    replyError(id: number | string, message: string): void {
+      stdout.write(encodeContentLengthMessage({ jsonrpc: '2.0', id, error: { message } }))
+    },
     notify(method: string, params: unknown): void {
       stdout.write(encodeContentLengthMessage({ jsonrpc: '2.0', method, params }))
     },
