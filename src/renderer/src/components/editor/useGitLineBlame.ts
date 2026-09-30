@@ -13,10 +13,11 @@ import {
   splitWorktreeIdForFilesystem
 } from '../../../../shared/worktree/id'
 import {
-  blameLineByNumber,
+  indexBlameLinesByNumber,
   type GitBlameContentsSource,
-  type GitBlameResult
+  type GitBlameLineIndex
 } from '../../../../shared/git-blame'
+import { enqueueGitBlameRequest } from '@/lib/git-blame-request-queue'
 import {
   buildGitLineBlameWidgetModel,
   GIT_LINE_BLAME_INLINE_CLASS
@@ -45,7 +46,7 @@ export function useGitLineBlame(args: {
   const head = useAppStore((state) =>
     worktreeId ? (state.gitStatusHeadByWorktree[worktreeId] ?? null) : null
   )
-  const blameRef = useRef<GitBlameResult | null>(null)
+  const blameRef = useRef<GitBlameLineIndex | null>(null)
   const lineRef = useRef(1)
 
   useEffect(() => {
@@ -82,7 +83,7 @@ export function useGitLineBlame(args: {
 
     const renderLine = (lineNumber: number): void => {
       lineRef.current = lineNumber
-      const blameLine = blameLineByNumber(blameRef.current?.lines ?? [], lineNumber)
+      const blameLine = blameRef.current?.get(lineNumber) ?? null
       const model = editorInstance.getModel()
       if (!blameLine || !model) {
         hide()
@@ -120,6 +121,16 @@ export function useGitLineBlame(args: {
     let cancelled = false
     let fetchGeneration = 0
     let debounce: ReturnType<typeof setTimeout> | null = null
+    let queued: { cancel: () => void } | null = null
+    const dropPendingFetch = (): void => {
+      fetchGeneration += 1
+      if (debounce) {
+        clearTimeout(debounce)
+        debounce = null
+      }
+      queued?.cancel()
+      queued = null
+    }
     const load = (): void => {
       if (debounce) {
         clearTimeout(debounce)
@@ -134,35 +145,43 @@ export function useGitLineBlame(args: {
         }
         const repoId = worktree?.repoId ?? getRepoIdFromWorktreeId(worktreeId)
         const repo = state.repos.find((entry) => entry.id === repoId) ?? null
+        queued?.cancel()
         const generation = ++fetchGeneration
-        const modelVersion = editorInstance.getModel()?.getAlternativeVersionId()
-        void getRuntimeGitBlame(
-          {
-            settings: getRepoOwnerRoutedSettings(state.settings, repo),
-            worktreeId,
-            worktreePath,
-            connectionId: getConnectionId(worktreeId) ?? undefined
-          },
-          relativePath,
-          revision,
-          contentsSource
+        const model = editorInstance.getModel()
+        const modelVersion = model?.getAlternativeVersionId()
+        const request = enqueueGitBlameRequest(() =>
+          getRuntimeGitBlame(
+            {
+              settings: getRepoOwnerRoutedSettings(state.settings, repo),
+              worktreeId,
+              worktreePath,
+              connectionId: getConnectionId(worktreeId) ?? undefined
+            },
+            relativePath,
+            revision,
+            contentsSource
+          )
         )
+        queued = request
+        void request.promise
           .then((result) => {
             if (
+              !result ||
               cancelled ||
               generation !== fetchGeneration ||
-              editorInstance.getModel()?.getAlternativeVersionId() !== modelVersion
+              editorInstance.getModel() !== model ||
+              model?.getAlternativeVersionId() !== modelVersion
             ) {
               return
             }
-            blameRef.current = result
+            blameRef.current = indexBlameLinesByNumber(result.lines)
             renderLine(lineRef.current)
           })
           .catch(() => {
             if (cancelled || generation !== fetchGeneration) {
               return
             }
-            blameRef.current = { status: 'unavailable', lines: [] }
+            blameRef.current = null
             hide()
           })
       }, BLAME_FETCH_DEBOUNCE_MS)
@@ -171,7 +190,7 @@ export function useGitLineBlame(args: {
     const onAnnotationMouseDown = (event: MouseEvent): void => {
       event.preventDefault()
       event.stopPropagation()
-      const blameLine = blameLineByNumber(blameRef.current?.lines ?? [], lineRef.current)
+      const blameLine = blameRef.current?.get(lineRef.current) ?? null
       if (!blameLine) {
         return
       }
@@ -185,11 +204,20 @@ export function useGitLineBlame(args: {
     })
     const contentSub = editorInstance.onDidChangeModelContent(() => {
       // Why: cached blame no longer matches the model, so drop it and drop any in-flight result.
-      fetchGeneration += 1
+      dropPendingFetch()
       blameRef.current = null
       hide()
       // Why: read-only panes (index/revision models) refresh without saving, so re-blame them; editable buffers wait for save.
       if (editorInstance.getOption(monaco.editor.EditorOption.readOnly)) {
+        load()
+      }
+    })
+    // Why: combined diff sections swap models on refresh without remounting the editor.
+    const modelSub = editorInstance.onDidChangeModel(() => {
+      dropPendingFetch()
+      blameRef.current = null
+      hide()
+      if (editorInstance.getModel()) {
         load()
       }
     })
@@ -199,12 +227,11 @@ export function useGitLineBlame(args: {
 
     return () => {
       cancelled = true
-      if (debounce) {
-        clearTimeout(debounce)
-      }
+      dropPendingFetch()
       node.removeEventListener('mousedown', onAnnotationMouseDown)
       cursorSub.dispose()
       contentSub.dispose()
+      modelSub.dispose()
       configSub.dispose()
       editorInstance.removeContentWidget(widget)
     }

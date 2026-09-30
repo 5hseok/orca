@@ -126,7 +126,7 @@ export function CombinedDiffSectionList({
                   originalContentsSource={blameRevisions.originalContentsSource}
                   modifiedBlameRevision={blameRevisions.modifiedRevision}
                   modifiedContentsSource={blameRevisions.modifiedContentsSource}
-                  modifiedBufferDirty={file.isDirty && section.area === 'unstaged'}
+                  modifiedBufferDirty={section.dirty && section.area === 'unstaged'}
                   loadSection={loadSection}
                   loadDeferredSection={loadDeferredSection}
                   retrySection={retrySection}

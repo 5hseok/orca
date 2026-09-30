@@ -111,11 +111,10 @@ export function parseBlamePorcelain(stdout: string): GitBlameLine[] {
   return lines
 }
 
-export function blameLineByNumber(
-  lines: readonly GitBlameLine[],
-  lineNumber: number
-): GitBlameLine | null {
-  return lines.find((line) => line.line === lineNumber) ?? null
+export type GitBlameLineIndex = ReadonlyMap<number, GitBlameLine>
+
+export function indexBlameLinesByNumber(lines: readonly GitBlameLine[]): GitBlameLineIndex {
+  return new Map(lines.map((line) => [line.line, line]))
 }
 
 export function formatBlameRelativeTime(epochSeconds: number, nowMs: number = Date.now()): string {

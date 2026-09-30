@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
-  blameLineByNumber,
   buildGitBlameArgv,
   buildGitShowIndexArgv,
   formatBlameAnnotation,
   formatBlameRelativeTime,
   GIT_BLAME_HEAD_REVISION,
   GIT_BLAME_INDEX_CONTENTS,
+  indexBlameLinesByNumber,
   isUncommittedBlameOid,
   parseBlamePorcelain,
   parseGitBlameRevision
@@ -60,8 +60,9 @@ describe('parseBlamePorcelain', () => {
       }
     ])
     expect(isUncommittedBlameOid(lines[2]?.commitOid ?? '')).toBe(true)
-    expect(blameLineByNumber(lines, 2)?.author).toBe('Ada Lovelace')
-    expect(blameLineByNumber(lines, 99)).toBeNull()
+    const index = indexBlameLinesByNumber(lines)
+    expect(index.get(2)?.author).toBe('Ada Lovelace')
+    expect(index.get(99)).toBeUndefined()
   })
 })
 
