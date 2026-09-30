@@ -105,4 +105,54 @@ describe('AgentExecHandler Windows command spawning', () => {
       expect(spawnMock).not.toHaveBeenCalled()
     })
   })
+
+  it('hands a cmd.exe /d /s /c script over verbatim so inner quotes survive', async () => {
+    await withPlatform('win32', async () => {
+      const child = createFakeChild()
+      spawnMock.mockReturnValue(child as never)
+      const handlers = createHandlers()
+
+      const pending = handlers.get('agent.execNonInteractive')!(
+        {
+          binary: 'cmd.exe',
+          args: ['/d', '/s', '/c', 'prettier --write "C:\\repo\\a b.ts"'],
+          cwd: 'C:\\repo',
+          stdin: null,
+          timeoutMs: 5_000
+        },
+        requestContext()
+      )
+      child.emit('close', 0)
+
+      await expect(pending).resolves.toMatchObject({ exitCode: 0 })
+      expect(spawnMock).toHaveBeenCalledWith(
+        'cmd.exe',
+        ['/d', '/s', '/c', '"prettier --write "C:\\repo\\a b.ts""'],
+        expect.objectContaining({ windowsVerbatimArguments: true })
+      )
+    })
+  })
+
+  it('leaves non-cmd binaries on the default argument quoting', async () => {
+    await withPlatform('win32', async () => {
+      const child = createFakeChild()
+      spawnMock.mockReturnValue(child as never)
+      const handlers = createHandlers()
+
+      const pending = handlers.get('agent.execNonInteractive')!(
+        {
+          binary: 'node.exe',
+          args: ['-e', 'console.log("x")'],
+          cwd: 'C:\\repo',
+          stdin: null,
+          timeoutMs: 5_000
+        },
+        requestContext()
+      )
+      child.emit('close', 0)
+      await pending
+
+      expect(spawnMock.mock.calls[0][2]).not.toHaveProperty('windowsVerbatimArguments')
+    })
+  })
 })
