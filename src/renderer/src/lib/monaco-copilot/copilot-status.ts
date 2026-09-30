@@ -57,9 +57,12 @@ export function ensureCopilotStatusSubscription(): void {
   window.addEventListener('focus', () => refreshInstalledStatus(api))
 }
 
-export function setCopilotStatus(next: CopilotStatus): void {
-  status = next
-  emit()
+/** Merges into the live status so a concurrent push (e.g. main clearing `signInFailed`) isn't overwritten. */
+export function patchCopilotStatus(patch: Partial<CopilotStatus>): void {
+  if (status) {
+    status = { ...status, ...patch }
+    emit()
+  }
 }
 
 function subscribe(listener: () => void): () => void {

@@ -51,4 +51,43 @@ describe('attachMonacoCopilotDocument', () => {
     expect(listenerCount()).toBe(0)
     expect(api.openDocument).not.toHaveBeenCalled()
   })
+
+  it('retries a rejected open a bounded number of times while attached', async () => {
+    vi.useFakeTimers()
+    try {
+      api.openDocument.mockResolvedValue({ fileUri: null })
+      const { model } = createFakeCopilotModel('a')
+      const detach = attachMonacoCopilotDocument({ model, ...params })
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(api.openDocument).toHaveBeenCalledTimes(2)
+      api.openDocument.mockResolvedValue({ fileUri: 'file:///repo/a.ts' })
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(api.openDocument).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(api.openDocument).toHaveBeenCalledTimes(3)
+      detach()
+      expect(api.closeDocument).toHaveBeenCalledWith({ fileUri: 'file:///repo/a.ts' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives up after the retry budget and cancels pending retries on detach', async () => {
+    vi.useFakeTimers()
+    try {
+      api.openDocument.mockResolvedValue({ fileUri: null })
+      const { model } = createFakeCopilotModel('a')
+      const detach = attachMonacoCopilotDocument({ model, ...params })
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(api.openDocument).toHaveBeenCalledTimes(4)
+      const second = attachMonacoCopilotDocument({ model, ...params })
+      await vi.advanceTimersByTimeAsync(0)
+      second()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(api.openDocument).toHaveBeenCalledTimes(5)
+      detach()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

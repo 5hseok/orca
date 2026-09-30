@@ -71,4 +71,18 @@ describe('copilot status store', () => {
     env.push({ ...INSTALLED, signInFailed: true })
     expect(toastError).toHaveBeenCalledTimes(2)
   })
+
+  it('patches the live status instead of restoring a stale snapshot', async () => {
+    const env = setup({ ...INSTALLED, signInFailed: true })
+    const store = await loadStatusModule()
+    store.ensureCopilotStatusSubscription()
+    env.push({ ...INSTALLED, signInFailed: true })
+    env.push({ ...INSTALLED, signInFailed: false })
+    store.patchCopilotStatus({ user: 'octocat', kind: 'Normal' })
+    expect(store.getInstalledCopilotStatus()).toMatchObject({
+      user: 'octocat',
+      kind: 'Normal',
+      signInFailed: false
+    })
+  })
 })

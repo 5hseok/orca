@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
-import { setCopilotStatus, useCopilotStatus } from '@/lib/monaco-copilot/copilot-status'
+import { patchCopilotStatus, useCopilotStatus } from '@/lib/monaco-copilot/copilot-status'
 import { STATUS_BAR_CONTEXT_MENU_EXEMPT_PROPS } from './status-bar-context-menu-policy'
 
 function showSignInFailed(): void {
@@ -59,7 +59,7 @@ export function CopilotStatusSegment({
           { duration: 60_000 }
         )
       } else if (result.state === 'alreadySignedIn') {
-        setCopilotStatus({ ...status, user: result.user, kind: 'Normal' })
+        patchCopilotStatus({ user: result.user, kind: 'Normal' })
       } else {
         showSignInFailed()
       }
