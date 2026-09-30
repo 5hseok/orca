@@ -6,6 +6,15 @@ import { translate } from '@/i18n/i18n'
 import { setCopilotStatus, useCopilotStatus } from '@/lib/monaco-copilot/copilot-status'
 import { STATUS_BAR_CONTEXT_MENU_EXEMPT_PROPS } from './status-bar-context-menu-policy'
 
+function showSignInFailed(): void {
+  toast.error(
+    translate(
+      'auto.components.status.bar.CopilotStatusSegment.signInFailed',
+      'Copilot sign-in failed'
+    )
+  )
+}
+
 /** Copilot ghost-text indicator, shown only when copilot-language-server is
  *  installed; click signs in while no authenticated user is reported. */
 export function CopilotStatusSegment({
@@ -22,8 +31,8 @@ export function CopilotStatusSegment({
   const dotClass =
     signedIn && status.kind !== 'Inactive'
       ? status.kind === 'Warning'
-        ? 'bg-amber-500'
-        : 'bg-emerald-500'
+        ? 'bg-status-warning'
+        : 'bg-status-success'
       : 'bg-muted-foreground/40'
   const badge = translate('auto.components.status.bar.CopilotStatusSegment.badge', 'Copilot')
   const tooltip = signedIn
@@ -51,14 +60,11 @@ export function CopilotStatusSegment({
         )
       } else if (result.state === 'alreadySignedIn') {
         setCopilotStatus({ ...status, user: result.user, kind: 'Normal' })
+      } else {
+        showSignInFailed()
       }
     } catch {
-      toast.error(
-        translate(
-          'auto.components.status.bar.CopilotStatusSegment.signInFailed',
-          'Copilot sign-in failed'
-        )
-      )
+      showSignInFailed()
     } finally {
       setSigningIn(false)
     }

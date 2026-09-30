@@ -1,5 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react'
+import type { CopilotCompletionApi } from '../../../../preload/api/copilot-completion-api'
 import type { CopilotStatus } from '../../../../shared/copilot-inline-completion-types'
+import { toast } from 'sonner'
+import { translate } from '@/i18n/i18n'
 import { isPairedWebClientWindow } from '@/lib/desktop-window-chrome'
 
 /** Copilot server status for the status bar and editor attachment. */
@@ -13,26 +16,45 @@ function emit(): void {
   }
 }
 
-function ensureStatusSubscription(): void {
+/** Asks main whether the server is installed; runs while none is known so a mid-session install shows up. */
+function refreshInstalledStatus(api: CopilotCompletionApi): void {
+  if (status?.installed) {
+    return
+  }
+  void api
+    .status()
+    .then((next) => {
+      // Why: a pushed status may have landed while this was in flight, and it always reports installed.
+      if (!status?.installed) {
+        status = next
+        emit()
+      }
+    })
+    .catch(() => {})
+}
+
+export function ensureCopilotStatusSubscription(): void {
   // Why: the paired web client has no Copilot bridge; its API stub answers every call with undefined.
   const api = isPairedWebClientWindow() ? undefined : window.api?.copilotCompletion
   if (unsubscribeStatus || !api?.onStatus) {
     return
   }
   unsubscribeStatus = api.onStatus((next) => {
+    const signInJustFailed = next.signInFailed && !status?.signInFailed
     status = next
     emit()
+    if (signInJustFailed) {
+      toast.error(
+        translate(
+          'auto.components.status.bar.CopilotStatusSegment.signInFailed',
+          'Copilot sign-in failed'
+        )
+      )
+    }
   })
-  void api
-    .status()
-    .then((initial) => {
-      // Why: a pushed status may have landed while this was in flight.
-      if (!status) {
-        status = initial
-        emit()
-      }
-    })
-    .catch(() => {})
+  refreshInstalledStatus(api)
+  // Why: installing the server mid-session has no event; main re-probes PATH at most once a minute, so focus is a cheap trigger.
+  window.addEventListener('focus', () => refreshInstalledStatus(api))
 }
 
 export function setCopilotStatus(next: CopilotStatus): void {
@@ -47,7 +69,11 @@ function subscribe(listener: () => void): () => void {
 
 /** Status whenever the server is installed, independent of the active tab, so
  *  sign-in stays reachable before any file is opened. Null when not installed. */
+export function getInstalledCopilotStatus(): CopilotStatus | null {
+  return status?.installed ? status : null
+}
+
 export function useCopilotStatus(): CopilotStatus | null {
-  useEffect(ensureStatusSubscription, [])
-  return useSyncExternalStore(subscribe, () => (status?.installed ? status : null))
+  useEffect(ensureCopilotStatusSubscription, [])
+  return useSyncExternalStore(subscribe, getInstalledCopilotStatus)
 }
