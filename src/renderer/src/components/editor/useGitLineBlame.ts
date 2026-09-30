@@ -184,14 +184,14 @@ export function useGitLineBlame(args: {
       renderLine(event.position.lineNumber)
     })
     const contentSub = editorInstance.onDidChangeModelContent(() => {
-      if (!editorInstance.getOption(monaco.editor.EditorOption.readOnly)) {
-        // Why: disk blame line numbers no longer match an unsaved buffer.
-        fetchGeneration += 1
-        blameRef.current = null
-        hide()
-        return
+      // Why: cached blame no longer matches the model, so drop it and drop any in-flight result.
+      fetchGeneration += 1
+      blameRef.current = null
+      hide()
+      // Why: read-only panes (index/revision models) refresh without saving, so re-blame them; editable buffers wait for save.
+      if (editorInstance.getOption(monaco.editor.EditorOption.readOnly)) {
+        load()
       }
-      renderLine(lineRef.current)
     })
     const configSub = editorInstance.onDidChangeConfiguration(() => {
       renderLine(lineRef.current)
