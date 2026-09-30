@@ -41,20 +41,23 @@ export function RepositoryFormatOnSaveSection({
   const executionHost = parseExecutionHostId(getRepoExecutionHostId(repo))
   const isRuntimeHost = executionHost?.kind === 'runtime'
 
+  const includeInput = formatOnSaveIncludeToInput(settings.include)
   const [commandDraft, setCommandDraft] = useState(settings.command)
-  const [includeDraft, setIncludeDraft] = useState(formatOnSaveIncludeToInput(settings.include))
-  const [committedSettings, setCommittedSettings] = useState(settings)
+  const [includeDraft, setIncludeDraft] = useState(includeInput)
+  const [committedCommand, setCommittedCommand] = useState(settings.command)
+  const [committedInclude, setCommittedInclude] = useState(includeInput)
 
   // Why: the repo record can change outside this pane (another window, a sync);
-  // reconcile before paint so the inputs never show a stale command.
-  if (
-    committedSettings.command !== settings.command ||
-    formatOnSaveIncludeToInput(committedSettings.include) !==
-      formatOnSaveIncludeToInput(settings.include)
-  ) {
-    setCommittedSettings(settings)
+  // reconcile before paint so the inputs never show a stale value. Each field
+  // resets only when its own stored value moved, so an unfinished edit in the
+  // other one survives.
+  if (committedCommand !== settings.command) {
+    setCommittedCommand(settings.command)
     setCommandDraft(settings.command)
-    setIncludeDraft(formatOnSaveIncludeToInput(settings.include))
+  }
+  if (committedInclude !== includeInput) {
+    setCommittedInclude(includeInput)
+    setIncludeDraft(includeInput)
   }
 
   const hasCommand = settings.command.trim().length > 0

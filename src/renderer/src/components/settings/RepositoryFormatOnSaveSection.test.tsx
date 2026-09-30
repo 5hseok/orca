@@ -4,6 +4,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Repo, RepoFormatOnSaveSettings } from '../../../../shared/repo-types'
+import { SUGGESTED_FORMAT_ON_SAVE_INCLUDE } from '../../../../shared/format-on-save-command'
 import { RepositoryFormatOnSaveSection } from './RepositoryFormatOnSaveSection'
 
 let container: HTMLDivElement
@@ -39,13 +40,18 @@ function input(id: string): HTMLInputElement {
   return element
 }
 
-function typeAndBlur(id: string, value: string): void {
+function type(id: string, value: string): HTMLInputElement {
   const element = input(id)
   act(() => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
     setter?.call(element, value)
     element.dispatchEvent(new Event('input', { bubbles: true }))
   })
+  return element
+}
+
+function typeAndBlur(id: string, value: string): void {
+  const element = type(id, value)
   act(() => {
     // Why: React delegates blur through the bubbling focusout event.
     element.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
@@ -164,6 +170,43 @@ describe('RepositoryFormatOnSaveSection', () => {
     typeAndBlur('format-on-save-include', '**/*.ts')
 
     expect(onUpdateFormatOnSave).not.toHaveBeenCalled()
+  })
+
+  it('keeps an unfinished include edit when only the stored command changes', () => {
+    const formatOnSave = { enabled: true, command: 'prettier --write ${file}', include: [] }
+    render({ ...baseRepo, formatOnSave })
+    type('format-on-save-include', '**/*.{ts,tsx')
+
+    render({
+      ...baseRepo,
+      formatOnSave: { ...formatOnSave, command: 'biome format --write ${file}' }
+    })
+
+    expect(input('format-on-save-include').value).toBe('**/*.{ts,tsx')
+    expect(input('format-on-save-command').value).toBe('biome format --write ${file}')
+  })
+
+  it('keeps an unfinished command edit when only the stored include list changes', () => {
+    const formatOnSave = { enabled: true, command: 'prettier --write ${file}', include: [] }
+    render({ ...baseRepo, formatOnSave })
+    type('format-on-save-command', 'prettier --check ${file}')
+
+    render({ ...baseRepo, formatOnSave: { ...formatOnSave, include: ['**/*.ts'] } })
+
+    expect(input('format-on-save-command').value).toBe('prettier --check ${file}')
+    expect(input('format-on-save-include').value).toBe('**/*.ts')
+  })
+
+  it('shows the suggested brace pattern without splitting it', () => {
+    render({
+      ...baseRepo,
+      formatOnSave: { enabled: true, command: 'prettier --write ${file}', include: [] }
+    })
+    typeAndBlur('format-on-save-include', SUGGESTED_FORMAT_ON_SAVE_INCLUDE)
+
+    expect(onUpdateFormatOnSave).toHaveBeenCalledWith(
+      expect.objectContaining({ include: [SUGGESTED_FORMAT_ON_SAVE_INCLUDE] })
+    )
   })
 
   it('says nothing extra for an SSH project, which formats through the relay', () => {
