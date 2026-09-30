@@ -25,6 +25,16 @@ describe('resolveSidebarSlotLayout', () => {
     })
   })
 
+  it('falls back to the left default for an unknown saved position', () => {
+    expect(
+      resolveSidebarSlotLayout({
+        workspaceSidebarPosition: 'sideways' as never,
+        platform: 'linux',
+        isWebClient: false
+      })
+    ).toMatchObject({ leftOccupant: 'workspace', rightOccupant: 'activity' })
+  })
+
   it('swaps both occupants when the workspace list moves right', () => {
     const layout = resolveSidebarSlotLayout({
       workspaceSidebarPosition: 'right',

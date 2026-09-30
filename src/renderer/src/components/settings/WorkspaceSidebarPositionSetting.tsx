@@ -1,6 +1,7 @@
 import type React from 'react'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import type { WorkspaceSidebarPosition } from '../../../../shared/ui-chrome-types'
+import { normalizeWorkspaceSidebarPosition } from '../../../../shared/workspace-sidebar-position'
 import { translate } from '@/i18n/i18n'
 import { SettingsRow, SettingsSegmentedControl } from './SettingsFormControls'
 
@@ -28,7 +29,7 @@ export function WorkspaceSidebarPositionSetting({
       control={
         <SettingsSegmentedControl<WorkspaceSidebarPosition>
           size="sm"
-          value={settings.workspaceSidebarPosition ?? 'left'}
+          value={normalizeWorkspaceSidebarPosition(settings.workspaceSidebarPosition)}
           onChange={(workspaceSidebarPosition) => updateSettings({ workspaceSidebarPosition })}
           ariaLabel={title}
           options={[

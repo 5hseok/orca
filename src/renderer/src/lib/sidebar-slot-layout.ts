@@ -1,4 +1,5 @@
 import type { WorkspaceSidebarPosition } from '../../../shared/ui-chrome-types'
+import { normalizeWorkspaceSidebarPosition } from '../../../shared/workspace-sidebar-position'
 import { shouldRenderDesktopWindowChrome } from './desktop-window-chrome'
 
 /** Workspace list vs the activity/explorer panel — the two sidebars that can swap edges. */
@@ -64,7 +65,8 @@ export function resolveSidebarSlotChrome({
 }
 
 export function resolveSidebarSlotLayout(input: SidebarSlotLayoutInput): SidebarSlotLayout {
-  const workspaceOnLeft = input.workspaceSidebarPosition === 'left'
+  const workspaceOnLeft =
+    normalizeWorkspaceSidebarPosition(input.workspaceSidebarPosition) === 'left'
   const leftOccupant: SidebarSlotOccupant = workspaceOnLeft ? 'workspace' : 'activity'
   const rightOccupant: SidebarSlotOccupant = workspaceOnLeft ? 'activity' : 'workspace'
   const windowControlsEdge = resolveWindowControlsEdge(input)

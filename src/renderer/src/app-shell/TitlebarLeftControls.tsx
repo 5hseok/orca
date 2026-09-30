@@ -28,15 +28,23 @@ export function WorkspaceSidebarToggle({ edge }: { edge: 'left' | 'right' }): Re
         <button
           className="sidebar-toggle"
           onClick={toggleSidebar}
-          aria-label={translate('auto.App.e4b9e7dff7', 'Toggle sidebar')}
+          aria-label={
+            edge === 'right'
+              ? translate('auto.App.9e0b441a91', 'Toggle right sidebar')
+              : translate('auto.App.e4b9e7dff7', 'Toggle sidebar')
+          }
         >
           {edge === 'left' ? <PanelLeft size={16} /> : <PanelRight size={16} />}
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={6}>
-        {translate('auto.App.ce37cf5279', 'Toggle sidebar ({{value0}})', {
-          value0: leftSidebarShortcutLabel
-        })}
+        {edge === 'right'
+          ? translate('auto.App.c184e056de', 'Toggle right sidebar ({{value0}})', {
+              value0: leftSidebarShortcutLabel
+            })
+          : translate('auto.App.ce37cf5279', 'Toggle sidebar ({{value0}})', {
+              value0: leftSidebarShortcutLabel
+            })}
       </TooltipContent>
     </Tooltip>
   )
