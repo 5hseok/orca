@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { EventEmitter } from 'node:events'
+import type { ProcessResult, ProcessSpec } from '../shared/child-process/run-process'
+import type { WslResult, WslSpec } from './wsl/wsl-runner'
 
-const spawnMock = vi.fn()
-const execFileMock = vi.fn()
+const runProcessMock = vi.fn<(spec: ProcessSpec) => Promise<ProcessResult>>()
+const runWslProcessMock = vi.fn<(spec: WslSpec) => Promise<WslResult>>()
 
-vi.mock('node:child_process', () => ({
-  spawn: (...args: unknown[]) => spawnMock(...args),
-  execFile: (...args: unknown[]) => execFileMock(...args)
+vi.mock('../shared/child-process/run-process', () => ({
+  runProcess: (spec: ProcessSpec) => runProcessMock(spec)
+}))
+
+vi.mock('./wsl/wsl-runner', () => ({
+  runWslProcess: (spec: WslSpec) => runWslProcessMock(spec)
 }))
 
 vi.mock('./wsl', () => ({
@@ -29,8 +33,6 @@ const enabledSettings: RepoFormatOnSaveSettings = {
   include: ['**/*.ts']
 }
 
-type ExecCallback = (error: Error | null, stdout: string, stderr: string) => void
-
 const IS_WINDOWS_HOST = process.platform === 'win32'
 
 /** Quotes a path the way the runner does on whichever host the suite runs on. */
@@ -38,61 +40,42 @@ function hostQuoted(value: string): string {
   return IS_WINDOWS_HOST ? `"${value}"` : `'${value}'`
 }
 
-class FakeChildProcess extends EventEmitter {
-  stdout = new EventEmitter()
-  stderr = new EventEmitter()
-  pid: number | undefined = 4242
-  kill = vi.fn()
+function processResult(overrides: Partial<ProcessResult> = {}): ProcessResult {
+  return { code: 0, signal: null, stdout: '', stderr: '', timedOut: false, ...overrides }
 }
 
-let lastChild: FakeChildProcess | null = null
-
-/** Drives the spawned child to a close, mirroring the real event order. */
-function spawnResolvesWith(code: number | null, stdout = '', stderr = ''): void {
-  spawnMock.mockImplementation(() => {
-    const child = new FakeChildProcess()
-    lastChild = child
-    queueMicrotask(() => {
-      if (stdout) {
-        child.stdout.emit('data', stdout)
-      }
-      if (stderr) {
-        child.stderr.emit('data', stderr)
-      }
-      child.emit('close', code)
-    })
-    return child
-  })
+function runProcessResolvesWith(code: number | null, stdout = '', stderr = ''): void {
+  runProcessMock.mockResolvedValue(processResult({ code, stdout, stderr }))
 }
 
-/** Spawns a child that never closes until the returned callback runs. */
-function spawnPending(): () => void {
-  let release: (() => void) | undefined
-  spawnMock.mockImplementation(() => {
-    const child = new FakeChildProcess()
-    lastChild = child
-    release = () => child.emit('close', 0)
-    return child
-  })
-  return () => release?.()
+/** A run that stays open until the returned callback settles it. */
+function runProcessPending(): (result?: Partial<ProcessResult>) => void {
+  let release: ((result: ProcessResult) => void) | undefined
+  runProcessMock.mockImplementation(
+    () =>
+      new Promise<ProcessResult>((resolve) => {
+        release = resolve
+      })
+  )
+  return (result) => release?.(processResult(result))
+}
+
+function spawnedSpec(callIndex = 0): ProcessSpec {
+  return runProcessMock.mock.calls[callIndex][0]
 }
 
 function spawnedCommand(callIndex = 0): string {
-  const args = spawnMock.mock.calls[callIndex][1] as string[]
-  return args.at(-1) ?? ''
-}
-
-function resolveExecWith(error: Error | null, stdout = '', stderr = ''): void {
-  spawnResolvesWith(error ? 1 : 0, stdout, error && !stderr && !stdout ? error.message : stderr)
+  const command = spawnedSpec(callIndex).args?.at(-1) ?? ''
+  // Why: the Windows shell line wraps the whole command in the quotes `/s` strips.
+  return IS_WINDOWS_HOST ? command.slice(1, -1) : command
 }
 
 beforeEach(() => {
-  spawnMock.mockReset()
-  execFileMock.mockReset()
-  lastChild = null
+  runProcessMock.mockReset()
+  runWslProcessMock.mockReset()
   _resetFormatOnSaveInFlightForTests()
   vi.mocked(parseWslPath).mockReturnValue(null)
-  spawnResolvesWith(0)
+  runProcessResolvesWith(0)
 })
 
 afterEach(() => {
@@ -108,7 +91,7 @@ describe('runFormatOnSave', () => {
         absoluteFilePath: '/repo/src/a.ts'
       })
     ).resolves.toEqual({ status: 'skipped', reason: 'not-configured' })
-    expect(spawnMock).not.toHaveBeenCalled()
+    expect(runProcessMock).not.toHaveBeenCalled()
   })
 
   it('skips files the include globs do not cover', async () => {
@@ -119,7 +102,7 @@ describe('runFormatOnSave', () => {
         absoluteFilePath: '/repo/src/a.css'
       })
     ).resolves.toEqual({ status: 'skipped', reason: 'not-included' })
-    expect(spawnMock).not.toHaveBeenCalled()
+    expect(runProcessMock).not.toHaveBeenCalled()
   })
 
   it('refuses to format a file outside the worktree', async () => {
@@ -130,7 +113,7 @@ describe('runFormatOnSave', () => {
         absoluteFilePath: '/elsewhere/src/a.ts'
       })
     ).resolves.toEqual({ status: 'skipped', reason: 'outside-worktree' })
-    expect(spawnMock).not.toHaveBeenCalled()
+    expect(runProcessMock).not.toHaveBeenCalled()
   })
 
   it('runs the command in the worktree root with the saved path substituted', async () => {
@@ -143,11 +126,31 @@ describe('runFormatOnSave', () => {
     // Why: quoting follows the host shell, so derive the expectation instead of
     // hardcoding POSIX quotes — this suite also runs on Windows CI.
     expect(spawnedCommand()).toBe(`prettier --write ${hostQuoted('/repo/src/a.ts')}`)
-    expect((spawnMock.mock.calls[0][2] as { cwd: string }).cwd).toBe('/repo')
+    expect(spawnedSpec().cwd).toBe('/repo')
+  })
+
+  it('hands cmd.exe the whole command line verbatim on Windows', async () => {
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    try {
+      await runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: 'C:\\repo',
+        absoluteFilePath: 'C:\\repo\\src\\a.ts'
+      })
+    } finally {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    }
+
+    expect(spawnedSpec()).toMatchObject({
+      args: ['/d', '/s', '/c', '"prettier --write "C:\\repo\\src\\a.ts""'],
+      windowsVerbatimArguments: true,
+      cwd: 'C:\\repo'
+    })
   })
 
   it('reports the formatter stderr when the command exits non-zero', async () => {
-    resolveExecWith(new Error('Command failed'), '', 'SyntaxError: Unexpected token (3:1)')
+    runProcessResolvesWith(1, '', 'SyntaxError: Unexpected token (3:1)')
 
     await expect(
       runFormatOnSave({
@@ -161,8 +164,8 @@ describe('runFormatOnSave', () => {
     })
   })
 
-  it('falls back to the process error when the formatter prints nothing', async () => {
-    resolveExecWith(new Error('spawn prettier ENOENT'))
+  it('reports the process error when the formatter cannot be started', async () => {
+    runProcessMock.mockRejectedValue(new Error('spawn /bin/bash ENOENT'))
 
     await expect(
       runFormatOnSave({
@@ -170,11 +173,35 @@ describe('runFormatOnSave', () => {
         worktreePath: '/repo',
         absoluteFilePath: '/repo/src/a.ts'
       })
-    ).resolves.toEqual({ status: 'failed', message: 'spawn prettier ENOENT' })
+    ).resolves.toEqual({ status: 'failed', message: 'spawn /bin/bash ENOENT' })
+  })
+
+  it('names the exit code when a failing formatter prints nothing', async () => {
+    runProcessResolvesWith(2)
+
+    await expect(
+      runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: '/repo',
+        absoluteFilePath: '/repo/src/a.ts'
+      })
+    ).resolves.toEqual({ status: 'failed', message: 'Formatter exited with code 2.' })
+  })
+
+  it('falls back to stdout when the formatter reports its error there', async () => {
+    runProcessResolvesWith(1, 'error on stdout', '  ')
+
+    await expect(
+      runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: '/repo',
+        absoluteFilePath: '/repo/src/a.ts'
+      })
+    ).resolves.toEqual({ status: 'failed', message: 'error on stdout' })
   })
 
   it('skips a second run while the same file is still being formatted', async () => {
-    const release = spawnPending()
+    const release = runProcessPending()
 
     const first = runFormatOnSave({
       settings: enabledSettings,
@@ -192,18 +219,18 @@ describe('runFormatOnSave', () => {
 
     release()
     await expect(first).resolves.toEqual({ status: 'completed' })
-    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(runProcessMock).toHaveBeenCalledTimes(1)
   })
 
   it('frees the in-flight slot after a failed run so the next save can format', async () => {
-    resolveExecWith(new Error('Command failed'), '', 'boom')
+    runProcessResolvesWith(1, '', 'boom')
     await runFormatOnSave({
       settings: enabledSettings,
       worktreePath: '/repo',
       absoluteFilePath: '/repo/src/a.ts'
     })
 
-    resolveExecWith(null)
+    runProcessResolvesWith(0)
     await expect(
       runFormatOnSave({
         settings: enabledSettings,
@@ -214,7 +241,6 @@ describe('runFormatOnSave', () => {
   })
 
   it('keeps posix paths case-sensitive so two real files never share a slot', async () => {
-    spawnResolvesWith(0)
     const anyFile = { ...enabledSettings, include: [] }
 
     await runFormatOnSave({
@@ -228,14 +254,67 @@ describe('runFormatOnSave', () => {
       absoluteFilePath: '/repo/src/A.TS'
     })
 
-    expect(spawnMock).toHaveBeenCalledTimes(2)
+    expect(runProcessMock).toHaveBeenCalledTimes(2)
   })
 
   it('does not report a chatty but successful formatter as failed', async () => {
     // Why: `black --verbose` and `prettier --loglevel debug` succeed while
     // printing megabytes; output volume must not turn into an error.
-    spawnResolvesWith(0, 'x'.repeat(4 * 1024 * 1024), 'y'.repeat(4 * 1024 * 1024))
+    runProcessMock.mockResolvedValue(
+      processResult({ stdout: 'x'.repeat(1024), stderr: 'y'.repeat(1024), outputTruncated: true })
+    )
 
+    await expect(
+      runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: '/repo',
+        absoluteFilePath: '/repo/src/a.ts'
+      })
+    ).resolves.toEqual({ status: 'completed' })
+    expect(spawnedSpec().maxOutputBytes).toBe(1024 * 1024)
+  })
+
+  it('kills the whole process tree and reports a timeout', async () => {
+    const release = runProcessPending()
+
+    const pending = runFormatOnSave({
+      settings: enabledSettings,
+      worktreePath: '/repo',
+      absoluteFilePath: '/repo/src/a.ts'
+    })
+    // Why: the shell alone dying leaves `npx prettier` running to overwrite a later save.
+    expect(spawnedSpec()).toMatchObject({
+      timeoutMs: FORMAT_ON_SAVE_TIMEOUT_MS,
+      terminationBarrier: true
+    })
+
+    release({ code: null, signal: 'SIGKILL', timedOut: true })
+    await expect(pending).resolves.toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('timed out')
+    })
+  })
+
+  it('holds the in-flight slot until a timed-out formatter is confirmed gone', async () => {
+    const release = runProcessPending()
+    const first = runFormatOnSave({
+      settings: enabledSettings,
+      worktreePath: '/repo',
+      absoluteFilePath: '/repo/src/a.ts'
+    })
+
+    await expect(
+      runFormatOnSave({
+        settings: enabledSettings,
+        worktreePath: '/repo',
+        absoluteFilePath: '/repo/src/a.ts'
+      })
+    ).resolves.toEqual({ status: 'skipped', reason: 'already-running' })
+
+    release({ code: null, timedOut: true })
+    await first
+
+    runProcessResolvesWith(0)
     await expect(
       runFormatOnSave({
         settings: enabledSettings,
@@ -245,46 +324,22 @@ describe('runFormatOnSave', () => {
     ).resolves.toEqual({ status: 'completed' })
   })
 
-  it('kills the whole process group when the formatter times out', async () => {
-    vi.useFakeTimers()
-    try {
-      spawnPending()
-      const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true)
+  it('names the signal when a formatter is killed without a timeout', async () => {
+    runProcessMock.mockResolvedValue(processResult({ code: null, signal: 'SIGSEGV' }))
 
-      const pending = runFormatOnSave({
+    await expect(
+      runFormatOnSave({
         settings: enabledSettings,
         worktreePath: '/repo',
         absoluteFilePath: '/repo/src/a.ts'
       })
-      await vi.advanceTimersByTimeAsync(FORMAT_ON_SAVE_TIMEOUT_MS + 10)
-
-      if (process.platform === 'win32') {
-        expect(execFileMock).toHaveBeenCalledWith(
-          'taskkill',
-          expect.arrayContaining(['/t', '/f']),
-          expect.any(Function)
-        )
-      } else {
-        // Why: the negative pid reaches the formatter the shell spawned, which a
-        // plain child.kill() would leave running to overwrite a later save.
-        expect(killSpy).toHaveBeenCalledWith(-4242, 'SIGKILL')
-      }
-
-      lastChild?.emit('close', null)
-      await expect(pending).resolves.toMatchObject({
-        status: 'failed',
-        message: expect.stringContaining('timed out')
-      })
-      killSpy.mockRestore()
-    } finally {
-      vi.useRealTimers()
-    }
+    ).resolves.toEqual({ status: 'failed', message: 'Formatter was stopped by SIGSEGV.' })
   })
 
   it('shares one in-flight slot across differently-cased windows paths', async () => {
     // Why: Windows resolves paths case-insensitively, so two tabs on the same
     // file would otherwise run the formatter over each other's output.
-    const release = spawnPending()
+    const release = runProcessPending()
 
     // Why: include globs stay case-sensitive like every other glob matcher, so
     // this case tests the in-flight key alone.
@@ -305,7 +360,7 @@ describe('runFormatOnSave', () => {
 
     release?.()
     await expect(first).resolves.toEqual({ status: 'completed' })
-    expect(spawnMock).toHaveBeenCalledTimes(1)
+    expect(runProcessMock).toHaveBeenCalledTimes(1)
   })
 
   it('runs the formatter on the remote host for an SSH worktree', async () => {
@@ -333,7 +388,7 @@ describe('runFormatOnSave', () => {
       timeoutMs: expect.any(Number)
     })
     // Why: the local shell must not be touched for a file that lives elsewhere.
-    expect(spawnMock).not.toHaveBeenCalled()
+    expect(runProcessMock).not.toHaveBeenCalled()
   })
 
   it('uses cmd.exe when the SSH host is Windows', async () => {
@@ -462,33 +517,68 @@ describe('runFormatOnSave', () => {
     await expect(first).resolves.toEqual({ status: 'completed' })
   })
 
-  it('routes a WSL worktree through wsl.exe with linux paths', async () => {
-    vi.mocked(parseWslPath).mockReturnValue({ distro: 'Ubuntu', linuxPath: '/home/dev/repo' })
-    execFileMock.mockImplementation(
-      (_file: string, _args: string[], _options: unknown, callback: ExecCallback) => {
-        callback(null, '', '')
-        return { kill: vi.fn() }
+  describe('WSL worktrees', () => {
+    const wslRequest = {
+      settings: enabledSettings,
+      worktreePath: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo',
+      absoluteFilePath: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo\\src\\a.ts'
+    }
+
+    function wslResult(overrides: Partial<WslResult> = {}): WslResult {
+      return {
+        environmentResolved: true,
+        code: 0,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        ...overrides
       }
-    )
+    }
 
-    await expect(
-      runFormatOnSave({
-        settings: enabledSettings,
-        worktreePath: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo',
-        absoluteFilePath: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo\\src\\a.ts'
+    beforeEach(() => {
+      vi.mocked(parseWslPath).mockReturnValue({ distro: 'Ubuntu', linuxPath: '/home/dev/repo' })
+      runWslProcessMock.mockResolvedValue(wslResult())
+    })
+
+    it('runs the formatter inside the distro with linux paths', async () => {
+      await expect(runFormatOnSave(wslRequest)).resolves.toEqual({ status: 'completed' })
+
+      expect(runWslProcessMock).toHaveBeenCalledWith({
+        distro: 'Ubuntu',
+        script: expect.stringContaining('prettier --write'),
+        shell: 'bash',
+        cwd: '/home/dev/repo',
+        loginPath: 'preferred',
+        timeoutMs: FORMAT_ON_SAVE_TIMEOUT_MS,
+        maxOutputBytes: 1024 * 1024
       })
-    ).resolves.toEqual({ status: 'completed' })
+      expect(runProcessMock).not.toHaveBeenCalled()
+    })
 
-    const [file, args] = execFileMock.mock.calls[0]
-    expect(file).toBe('wsl.exe')
-    expect(args).toEqual([
-      '-d',
-      'Ubuntu',
-      '--',
-      'bash',
-      '-c',
-      expect.stringContaining("cd '/home/dev/repo' && prettier --write")
-    ])
-    expect(spawnMock).not.toHaveBeenCalled()
+    it('reports the guest formatter stderr, a timeout, and a clipped success', async () => {
+      runWslProcessMock.mockResolvedValueOnce(wslResult({ code: 1, stderr: 'SyntaxError: line 3' }))
+      await expect(runFormatOnSave(wslRequest)).resolves.toEqual({
+        status: 'failed',
+        message: 'SyntaxError: line 3'
+      })
+
+      runWslProcessMock.mockResolvedValueOnce(wslResult({ code: null, timedOut: true }))
+      await expect(runFormatOnSave(wslRequest)).resolves.toMatchObject({
+        status: 'failed',
+        message: expect.stringContaining('timed out')
+      })
+
+      // Why: output above the cap is clipped by the runner, never turned into a failure.
+      runWslProcessMock.mockResolvedValueOnce(wslResult({ stdout: 'x'.repeat(2048) }))
+      await expect(runFormatOnSave(wslRequest)).resolves.toEqual({ status: 'completed' })
+    })
+
+    it('reports a wsl.exe that cannot start as a formatter failure', async () => {
+      runWslProcessMock.mockRejectedValueOnce(new Error('spawn wsl.exe ENOENT'))
+      await expect(runFormatOnSave(wslRequest)).resolves.toEqual({
+        status: 'failed',
+        message: 'spawn wsl.exe ENOENT'
+      })
+    })
   })
 })
