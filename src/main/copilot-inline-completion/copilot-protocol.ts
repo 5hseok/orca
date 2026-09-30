@@ -22,13 +22,52 @@ export function buildCopilotInitializeParams(editorVersion: string): object {
   }
 }
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+/** checkStatus answer; anything unrecognized reads as signed out. */
+export function parseCheckStatusResult(value: unknown): { signedIn: boolean; user: string | null } {
+  if (!isRecord(value)) {
+    return { signedIn: false, user: null }
+  }
+  return {
+    signedIn: value.status === 'OK' || value.status === 'MaybeOk',
+    user: optionalString(value.user) ?? null
+  }
+}
+
+export function parseSignInResponse(value: unknown): CopilotSignInResponse | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const { command } = value
+  return {
+    status: optionalString(value.status),
+    user: optionalString(value.user),
+    userCode: optionalString(value.userCode),
+    verificationUri: optionalString(value.verificationUri),
+    command:
+      isRecord(command) && typeof command.command === 'string'
+        ? {
+            command: command.command,
+            arguments: Array.isArray(command.arguments) ? command.arguments : undefined
+          }
+        : undefined
+  }
+}
+
 export function parseCopilotStatusNotification(
   params: unknown
 ): Pick<CopilotStatus, 'kind' | 'message' | 'busy'> | null {
-  const raw = params as { kind?: unknown; message?: unknown; busy?: unknown } | null
-  if (!raw || typeof raw !== 'object') {
+  if (!isRecord(params)) {
     return null
   }
+  const raw = params
   const kind = COPILOT_STATUS_KINDS.find((candidate) => candidate === raw.kind) ?? null
   return {
     kind,

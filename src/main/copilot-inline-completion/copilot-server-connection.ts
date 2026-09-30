@@ -1,4 +1,5 @@
 import { ContentLengthMessageDecoder, encodeContentLengthMessage } from './content-length-framing'
+import { isRecord } from './copilot-protocol'
 import { terminateCopilotServer, type CopilotServerProcess } from './copilot-server-process'
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
@@ -9,12 +10,10 @@ type PendingRequest = {
   timer: NodeJS.Timeout
 }
 
-type ServerMessage = {
-  id?: number | string
-  method?: string
-  result?: unknown
-  error?: { message?: string }
-  params?: unknown
+function errorMessage(error: unknown): string {
+  return isRecord(error) && typeof error.message === 'string'
+    ? error.message
+    : 'Copilot server request failed'
 }
 
 export type CopilotServerConnectionOptions = {
@@ -104,37 +103,41 @@ export function connectCopilotServer(
     close(new Error('Copilot server connection closed'))
   }
 
-  function handleMessage(message: ServerMessage): void {
-    if (message.id !== undefined && message.method === undefined) {
-      const entry = pending.get(Number(message.id))
+  function handleMessage(message: Record<string, unknown>): void {
+    const { id, method } = message
+    const hasId = typeof id === 'number' || typeof id === 'string'
+    if (hasId && method === undefined) {
+      const entry = pending.get(Number(id))
       if (!entry) {
         return
       }
-      pending.delete(Number(message.id))
+      pending.delete(Number(id))
       clearTimeout(entry.timer)
       if (message.error) {
-        entry.reject(new Error(message.error.message ?? 'Copilot server request failed'))
+        entry.reject(new Error(errorMessage(message.error)))
       } else {
         entry.resolve(message.result ?? null)
       }
       return
     }
-    if (message.method === undefined) {
+    if (typeof method !== 'string') {
       return
     }
-    if (message.id === undefined) {
-      options.onNotification(message.method, message.params)
+    if (!hasId) {
+      options.onNotification(method, message.params)
       return
     }
     // Why: answer server->client requests so servers that await them don't stall.
-    const custom = options.onRequest(message.method, message.params)
-    send({ jsonrpc: '2.0', id: message.id, result: custom === undefined ? null : custom })
+    const custom = options.onRequest(method, message.params)
+    send({ jsonrpc: '2.0', id, result: custom === undefined ? null : custom })
   }
 
   child.stdout.on('data', (chunk: Buffer) => {
     try {
       for (const message of decoder.push(chunk)) {
-        handleMessage(message as ServerMessage)
+        if (isRecord(message)) {
+          handleMessage(message)
+        }
       }
     } catch (error) {
       close(error instanceof Error ? error : new Error('Copilot server stream failed'))

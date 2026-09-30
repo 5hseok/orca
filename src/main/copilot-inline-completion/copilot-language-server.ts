@@ -15,6 +15,8 @@ import { createCopilotSignIn } from './copilot-sign-in'
 import {
   buildCopilotInitializeParams,
   isHttpsUrl,
+  isRecord,
+  parseCheckStatusResult,
   parseCopilotStatusNotification
 } from './copilot-protocol'
 
@@ -76,15 +78,11 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
 
   async function refreshAuth(connection: CopilotServerConnection): Promise<void> {
     try {
-      const result = (await connection.request('checkStatus', {})) as {
-        status?: string
-        user?: string
-      } | null
-      const signedIn = result?.status === 'OK' || result?.status === 'MaybeOk'
+      const { signedIn, user } = parseCheckStatusResult(await connection.request('checkStatus', {}))
       authenticated = signedIn
       updateStatus({
         installed: true,
-        user: signedIn ? (result?.user ?? null) : null,
+        user: signedIn ? user : null,
         ...(signedIn ? {} : { kind: 'Error' as const })
       })
     } catch {
@@ -119,7 +117,7 @@ export function createCopilotLanguageServer(deps: CopilotLanguageServerDeps) {
     if (method !== 'window/showDocument') {
       return undefined
     }
-    const uri = (params as { uri?: unknown } | null)?.uri
+    const uri = isRecord(params) ? params.uri : undefined
     // Why: a server asking to open pages outside a user-started sign-in is not expected.
     if (signInFlow.isActive() && isHttpsUrl(uri)) {
       deps.openExternal(uri)

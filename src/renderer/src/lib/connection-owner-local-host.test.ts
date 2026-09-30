@@ -87,8 +87,17 @@ describe('isFileOnLocalHostFromState', () => {
           projectGroupId: 'g1',
           name: 'Folder',
           folderPath: '/srv/repo',
+          linkedTask: null,
+          comment: '',
+          isArchived: false,
+          isUnread: false,
+          isPinned: false,
+          sortOrder: 0,
+          lastActivityAt: 0,
+          createdAt: 0,
+          updatedAt: 0,
           executionHostId
-        } as FolderWorkspace
+        }
       ],
       projectGroups: [],
       repos: [makeRepo({ id: 'r' })],

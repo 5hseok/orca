@@ -5,6 +5,7 @@ import { vi } from 'vitest'
 export function createFakeCopilotModel(initialText: string, uri = 'file:///repo/a.ts') {
   let text = initialText
   const listeners = new Set<() => void>()
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: test double implementing only the ITextModel members Copilot document sync reads.
   const model = {
     uri: { toString: () => uri },
     getValue: () => text,

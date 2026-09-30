@@ -32,7 +32,7 @@ describe('connectCopilotServer', () => {
     await connection.ready
     const pending = connection.request('checkStatus', {})
     const request = await fake.waitFor((message) => message.method === 'checkStatus')
-    fake.reply(request.id as number, { status: 'OK' })
+    fake.reply(request.id, { status: 'OK' })
     await expect(pending).resolves.toEqual({ status: 'OK' })
   })
 

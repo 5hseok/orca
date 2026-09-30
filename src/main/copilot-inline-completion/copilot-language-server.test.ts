@@ -39,10 +39,9 @@ const fileUri = pathToFileURL(openArgs.filePath).toString()
 
 describe('buildCopilotInitializeParams', () => {
   it('identifies the editor and plugin as the README requires', () => {
-    const params = buildCopilotInitializeParams('1.2.3') as {
-      initializationOptions: { editorInfo: { name: string; version: string } }
-    }
-    expect(params.initializationOptions.editorInfo).toEqual({ name: 'Orca', version: '1.2.3' })
+    expect(buildCopilotInitializeParams('1.2.3')).toMatchObject({
+      initializationOptions: { editorInfo: { name: 'Orca', version: '1.2.3' } }
+    })
   })
 })
 
@@ -115,7 +114,7 @@ describe('createCopilotLanguageServer', () => {
     const { fake, copilot, spawnServer } = createCopilotWithFakeServer({})
     const first = copilot.openDocument(openArgs)
     const firstCheck = await fake.waitFor((m) => m.method === 'checkStatus')
-    fake.replyError(firstCheck.id as number, 'boom')
+    fake.replyError(firstCheck.id, 'boom')
     await expect(first).resolves.toEqual({ fileUri: null })
     expect(fake.child.kill).not.toHaveBeenCalled()
     fake.setAutoReply('checkStatus', { status: 'OK', user: 'octocat' })
@@ -127,7 +126,7 @@ describe('createCopilotLanguageServer', () => {
     const { fake, copilot } = createCopilotWithFakeServer({})
     const first = copilot.openDocument(openArgs)
     const startupCheck = await fake.waitFor((m) => m.method === 'checkStatus')
-    fake.replyError(startupCheck.id as number, 'boom')
+    fake.replyError(startupCheck.id, 'boom')
     await expect(first).resolves.toEqual({ fileUri: null })
     fake.setAutoReply('checkStatus', { status: 'OK', user: 'octocat' })
     const opens = await Promise.all([
@@ -160,7 +159,7 @@ describe('createCopilotLanguageServer', () => {
       textDocument: { uri: fileUri, version: 2 },
       context: { triggerKind: 2 }
     })
-    fake.reply(request.id as number, { items: [{ insertText: 'pass' }] })
+    fake.reply(request.id, { items: [{ insertText: 'pass' }] })
     await expect(pending).resolves.toEqual({
       opened: true,
       result: { items: [{ insertText: 'pass' }] }
@@ -202,7 +201,7 @@ describe('createCopilotLanguageServer', () => {
     const { fake, copilot, copyToClipboard } = createCopilotWithFakeServer(SIGNED_OUT)
     const pending = copilot.signIn()
     const signIn = await fake.waitFor((message) => message.method === 'signIn')
-    fake.reply(signIn.id as number, {
+    fake.reply(signIn.id, {
       userCode: 'ABCD-EFGH',
       command: { command: 'github.copilot.finishDeviceFlow', arguments: [], title: 'Sign in' }
     })
@@ -220,7 +219,7 @@ describe('createCopilotLanguageServer', () => {
     const { fake, copilot } = createCopilotWithFakeServer(SIGNED_OUT)
     const pending = copilot.signIn()
     const signIn = await fake.waitFor((message) => message.method === 'signIn')
-    fake.reply(signIn.id as number, {
+    fake.reply(signIn.id, {
       userCode: 'ABCD-EFGH',
       command: { command: 'github.copilot.finishDeviceFlow', arguments: [] }
     })
@@ -228,7 +227,7 @@ describe('createCopilotLanguageServer', () => {
     expect(fake.child.kill).not.toHaveBeenCalled()
     const execute = await fake.waitFor((message) => message.method === 'workspace/executeCommand')
     fake.setAutoReply('checkStatus', { status: 'OK', user: 'octocat' })
-    fake.reply(execute.id as number, null)
+    fake.reply(execute.id, null)
     await vi.waitFor(() => expect(copilot.getStatus()).resolves.toMatchObject({ user: 'octocat' }))
   })
 
@@ -236,10 +235,10 @@ describe('createCopilotLanguageServer', () => {
     const { fake, copilot, statuses } = createCopilotWithFakeServer(SIGNED_OUT)
     const pending = copilot.signIn()
     const signIn = await fake.waitFor((message) => message.method === 'signIn')
-    fake.reply(signIn.id as number, { userCode: 'ABCD-EFGH', command: { command: 'finish' } })
+    fake.reply(signIn.id, { userCode: 'ABCD-EFGH', command: { command: 'finish' } })
     await pending
     const execute = await fake.waitFor((message) => message.method === 'workspace/executeCommand')
-    fake.replyError(execute.id as number, 'device flow expired')
+    fake.replyError(execute.id, 'device flow expired')
     await vi.waitFor(() => expect(statuses.at(-1)?.signInFailed).toBe(true))
     void copilot.signIn()
     await vi.waitFor(() => expect(statuses.at(-1)?.signInFailed).toBe(false))
@@ -249,11 +248,11 @@ describe('createCopilotLanguageServer', () => {
     const { fake, copilot, statuses } = createCopilotWithFakeServer(SIGNED_OUT)
     const pending = copilot.signIn()
     const signIn = await fake.waitFor((message) => message.method === 'signIn')
-    fake.reply(signIn.id as number, { userCode: 'ABCD-EFGH', command: { command: 'finish' } })
+    fake.reply(signIn.id, { userCode: 'ABCD-EFGH', command: { command: 'finish' } })
     await pending
     const execute = await fake.waitFor((message) => message.method === 'workspace/executeCommand')
     fake.setAutoReply('checkStatus', { status: 'OK', user: 'octocat' })
-    fake.replyError(execute.id as number, 'timed out')
+    fake.replyError(execute.id, 'timed out')
     await vi.waitFor(() => expect(statuses.at(-1)?.user).toBe('octocat'))
     expect(statuses.some((s) => s.signInFailed)).toBe(false)
   })
@@ -262,7 +261,7 @@ describe('createCopilotLanguageServer', () => {
     const { fake, copilot, openExternal } = createCopilotWithFakeServer(SIGNED_OUT)
     const pending = copilot.signIn()
     const signIn = await fake.waitFor((message) => message.method === 'signIn')
-    fake.reply(signIn.id as number, { userCode: 'ABCD-EFGH', command: { command: 'finish' } })
+    fake.reply(signIn.id, { userCode: 'ABCD-EFGH', command: { command: 'finish' } })
     await pending
     fake.requestFromServer(90, 'window/showDocument', { uri: 'file:///etc/passwd', external: true })
     fake.requestFromServer(91, 'window/showDocument', {

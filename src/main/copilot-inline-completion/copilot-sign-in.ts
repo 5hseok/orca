@@ -1,5 +1,5 @@
 import type { CopilotSignInResult } from '../../shared/copilot-inline-completion-types'
-import { isHttpsUrl, type CopilotSignInResponse } from './copilot-protocol'
+import { isHttpsUrl, parseSignInResponse, type CopilotSignInResponse } from './copilot-protocol'
 import type { CopilotServerConnection } from './copilot-server-connection'
 
 // Why: the device flow resolves only after the user finishes in the browser.
@@ -49,7 +49,7 @@ export function createCopilotSignIn(deps: CopilotSignInDeps) {
       if (!connection) {
         return { state: 'unavailable' }
       }
-      const response = (await connection.request('signIn', {})) as CopilotSignInResponse | null
+      const response = parseSignInResponse(await connection.request('signIn', {}))
       if (!response?.userCode) {
         await deps.refreshAuth(connection)
         return { state: 'alreadySignedIn', user: response?.user ?? deps.currentUser() }
