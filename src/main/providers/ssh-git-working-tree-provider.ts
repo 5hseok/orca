@@ -6,6 +6,7 @@ import type {
 import type { GitHistoryOptions, GitHistoryResult } from '../../shared/git-history'
 import type { GitConflictOperation } from '../../shared/git-status-types'
 import type { GitAdmissionTier } from '../git/command-runner/git-exec-options'
+import { requestGitStreamable } from '../ssh/ssh-git-response-stream-reader'
 import { SshGitNoninteractiveProvider } from './ssh-git-noninteractive-provider'
 
 export class SshGitWorkingTreeProvider extends SshGitNoninteractiveProvider {
@@ -133,7 +134,7 @@ export class SshGitWorkingTreeProvider extends SshGitNoninteractiveProvider {
     revision?: string,
     contentsSource?: GitBlameContentsSource
   ): Promise<GitBlameResult> {
-    return (await this.mux.request('git.blame', {
+    return (await requestGitStreamable(this.mux, 'git.blame', {
       worktreePath,
       filePath,
       ...(revision ? { revision } : {}),

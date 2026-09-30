@@ -100,13 +100,21 @@ export class GitHandlerReadOperations extends GitHandlerOperationContext {
     })
   }
 
-  async blame(params: Record<string, unknown>) {
+  async blame(params: Record<string, unknown>, context?: RequestContext) {
     const worktreePath = params.worktreePath as string
     const filePath = params.filePath as string
     const revision = parseGitBlameRevision(params.revision)
     const contentsSource =
       params.contentsSource === GIT_BLAME_INDEX_CONTENTS ? GIT_BLAME_INDEX_CONTENTS : undefined
-    return blameFile(this.git.bind(this), worktreePath, filePath, revision, contentsSource)
+    const result = await blameFile(
+      this.git.bind(this),
+      worktreePath,
+      filePath,
+      revision,
+      contentsSource
+    )
+    // Why: whole-file blame can exceed one control-lane frame, so stream it like git.diff.
+    return this.maybeStreamResponse(result, params, context)
   }
 
   async getDiff(params: Record<string, unknown>, context?: RequestContext) {

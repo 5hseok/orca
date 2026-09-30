@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { gitInit, gitCommit, type MockDispatcher } from './git-handler-test-setup'
@@ -7,18 +7,21 @@ import {
   createGitTempDir,
   removeGitTempDir
 } from './git-handler-test-harness'
+import type { GitHandler } from './git-handler'
 import { GIT_BLAME_INDEX_CONTENTS, isUncommittedBlameOid } from '../shared/git-blame'
 
 describe('GitHandler blame', () => {
   let dispatcher: MockDispatcher
+  let handler: GitHandler
   let tmpDir: string
 
   beforeEach(() => {
     tmpDir = createGitTempDir()
-    ;({ dispatcher } = createGitHandlerRelay())
+    ;({ dispatcher, handler } = createGitHandlerRelay())
   })
 
   afterEach(async () => {
+    handler.dispose()
     await removeGitTempDir(tmpDir)
   })
 
@@ -69,5 +72,29 @@ describe('GitHandler blame', () => {
     expect(index.status).toBe('ready')
     expect(index.lines).toHaveLength(2)
     expect(isUncommittedBlameOid(index.lines[1]?.commitOid ?? '')).toBe(true)
+  })
+
+  it('streams a blame reply that exceeds the control-lane frame budget', async () => {
+    gitInit(tmpDir)
+    const body = Array.from({ length: 4000 }, (_, i) => `line ${i}`).join('\n')
+    writeFileSync(`${tmpDir}/big.txt`, `${body}\n`)
+    gitCommit(tmpDir, 'Add big file')
+    ;(dispatcher as unknown as { notifyBulk: unknown }).notifyBulk = vi
+      .fn()
+      .mockResolvedValue(undefined)
+    const params = { worktreePath: tmpDir, filePath: 'big.txt' }
+    const context = { clientId: 1, isStale: () => false }
+
+    const plain = (await dispatcher.callRequest('git.blame', params, context)) as {
+      lines: unknown[]
+    }
+    expect(plain.lines).toHaveLength(4000)
+
+    const streamed = await dispatcher.callRequest(
+      'git.blame',
+      { ...params, __streamResponse: true },
+      context
+    )
+    expect(streamed).toHaveProperty('__orcaGitResponseStream')
   })
 })
