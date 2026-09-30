@@ -7,6 +7,7 @@ import {
   type FormatOnSaveResult
 } from '../../shared/format-on-save-command'
 import { getRepoExecutionHostId, parseExecutionHostId } from '../../shared/execution-host'
+import { getStoredRepoSshConnectionId } from '../repo-execution-host'
 import { getSshGitProvider } from '../providers/ssh-git-dispatch'
 import { resolveRepoOwnedWorktreePath } from './repo-owned-worktree-path'
 import type { RemoteFormatExecutor } from '../format-on-save-runner'
@@ -37,9 +38,11 @@ export function registerEditorFormatOnSaveHandlers(store: Store): void {
       }
 
       const host = parseExecutionHostId(getRepoExecutionHostId(repo))
+      // Why: a row can name its SSH owner via `executionHostId` alone, which the raw `connectionId` misses.
+      const sshConnectionId = getStoredRepoSshConnectionId(repo)
       // Why: runtime hosts have no non-interactive exec channel of their own, so
       // the formatter can't reach the file. SSH does, via agent.execNonInteractive.
-      if (!repo.connectionId && host && host.kind !== 'local') {
+      if (!sshConnectionId && host && host.kind !== 'local') {
         return { status: 'skipped', reason: 'unsupported-host' }
       }
 
@@ -48,8 +51,8 @@ export function registerEditorFormatOnSaveHandlers(store: Store): void {
       // worktree. Handles the remote path shape for SSH repos too.
       const worktreePath = await resolveRepoOwnedWorktreePath(repo, store, args.worktreePath)
 
-      if (repo.connectionId) {
-        const remoteExec = createRemoteFormatExecutor(repo.connectionId)
+      if (sshConnectionId) {
+        const remoteExec = createRemoteFormatExecutor(sshConnectionId)
         if (!remoteExec) {
           // Why: a disconnected SSH host isn't a formatter failure — the save
           // already landed, so stay quiet and let the next save format.
@@ -60,7 +63,7 @@ export function registerEditorFormatOnSaveHandlers(store: Store): void {
           worktreePath,
           absoluteFilePath: args.filePath,
           remoteExec,
-          hostScope: repo.connectionId
+          hostScope: sshConnectionId
         })
       }
 

@@ -141,6 +141,16 @@ describe('editor:formatOnSave handler', () => {
     expect(execNonInteractive).toHaveBeenCalledWith('/bin/bash', ['-lc', 'fmt'], '/srv', 1)
   })
 
+  it('routes a row that names its SSH owner only through executionHostId', async () => {
+    getSshGitProviderMock.mockReturnValue({ execNonInteractive: vi.fn() })
+    const invoke = registerWith(localRepo({ executionHostId: 'ssh:ssh-target-2' }))
+
+    await invoke(VALID_ARGS)
+
+    expect(getSshGitProviderMock).toHaveBeenCalledWith('ssh-target-2')
+    expect(runFormatOnSaveMock.mock.calls[0][0].hostScope).toBe('ssh-target-2')
+  })
+
   it('skips an SSH repo whose relay is not connected', async () => {
     getSshGitProviderMock.mockReturnValue(undefined)
     const invoke = registerWith(localRepo({ connectionId: 'ssh-target-1' }))

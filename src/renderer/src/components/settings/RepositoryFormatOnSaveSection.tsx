@@ -39,7 +39,7 @@ export function RepositoryFormatOnSaveSection({
   // Why: SSH hosts format through the relay's non-interactive exec channel;
   // runtime environments have no equivalent, so only those are called out.
   const executionHost = parseExecutionHostId(getRepoExecutionHostId(repo))
-  const isRuntimeHost = !repo.connectionId && executionHost?.kind === 'runtime'
+  const isRuntimeHost = executionHost?.kind === 'runtime'
 
   const [commandDraft, setCommandDraft] = useState(settings.command)
   const [includeDraft, setIncludeDraft] = useState(formatOnSaveIncludeToInput(settings.include))
