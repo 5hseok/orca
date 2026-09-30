@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { editor } from 'monaco-editor'
 import { useAppStore } from '@/store'
 import { findWorktreeById } from '@/store/slices/worktree-helpers'
-import { getConnectionIdForFile } from '@/lib/connection-context'
+import { isFileOnLocalHostFromState } from '@/lib/connection-owner-resolution'
 import { isLocalPathOpenBlocked } from '@/lib/local-path-open-guard'
 import { attachMonacoCopilotDocument } from '@/lib/monaco-copilot/monaco-copilot-attach'
 import { useCopilotStatus } from '@/lib/monaco-copilot/copilot-status'
@@ -30,6 +30,11 @@ export function useMonacoCopilot(params: {
     }
     return findWorktreeById(s.worktreesByRepo, worktreeId)?.path ?? null
   })
+  // Why: only a provably local host may attach -- a null SSH connection alone also describes a
+  // runtime-hosted worktree left open after the active runtime was switched off.
+  const provablyLocal = useAppStore((s) =>
+    isFileOnLocalHostFromState(s, worktreeId ?? null, filePath)
+  )
   const remoteRuntimeActive = useAppStore((s) => isLocalPathOpenBlocked(s.settings))
   const copilotStatus = useCopilotStatus()
   const installed = copilotStatus !== null
@@ -40,8 +45,7 @@ export function useMonacoCopilot(params: {
     if (!mountedEditor || !worktreeId || !rootPath || !installed || readOnly || liveTail) {
       return
     }
-    // Why: `=== null` only -- undefined means the owning host is not resolved yet.
-    if (remoteRuntimeActive || getConnectionIdForFile(worktreeId, filePath) !== null) {
+    if (remoteRuntimeActive || !provablyLocal) {
       return
     }
     const model = mountedEditor.getModel()
@@ -58,6 +62,7 @@ export function useMonacoCopilot(params: {
     installed,
     copilotUser,
     remoteRuntimeActive,
+    provablyLocal,
     readOnly,
     liveTail
   ])
