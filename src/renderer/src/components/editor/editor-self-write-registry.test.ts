@@ -4,6 +4,7 @@ import {
   __getSelfWriteRegistrySizeForTests,
   clearSelfWrite,
   deferUntilFormatterSettles,
+  getRecentSelfWrite,
   hasRecentSelfWrite,
   recordFormatterPendingSelfWrite,
   recordSelfWrite,
@@ -136,6 +137,26 @@ describe('editor self-write registry', () => {
       expect(hasRecentSelfWrite('/repo/b.ts')).toBe(false)
       await Promise.resolve()
       expect(expired).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps a pending stamp and its held work when capacity eviction runs', async () => {
+      const held = vi.fn()
+      recordFormatterPendingSelfWrite('/repo/pending.ts')
+      deferUntilFormatterSettles('/repo/pending.ts', undefined, 'k', held)
+
+      // Why: the pending stamp is the oldest entry, so a plain oldest-first eviction would drop it first.
+      for (let index = 0; index < 300; index++) {
+        recordSelfWrite(`/repo/filler-${index}.ts`, 'x')
+      }
+      expect(__getSelfWriteRegistrySizeForTests()).toBeLessThanOrEqual(256)
+      expect(getRecentSelfWrite('/repo/pending.ts')).toEqual({
+        content: null,
+        formatterPending: true
+      })
+
+      recordSelfWrite('/repo/pending.ts', 'formatted')
+      await Promise.resolve()
+      expect(held).toHaveBeenCalledTimes(1)
     })
   })
 })

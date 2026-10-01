@@ -63,12 +63,14 @@ function pruneExpiredSelfWrites(now = Date.now()): void {
 }
 
 function enforceSelfWriteStampLimit(): void {
-  while (stamps.size > SELF_WRITE_MAX_STAMPS) {
-    const oldest = stamps.keys().next().value
-    if (oldest === undefined) {
-      break
+  for (const [key, stamp] of stamps) {
+    if (stamps.size <= SELF_WRITE_MAX_STAMPS) {
+      return
     }
-    stamps.delete(oldest)
+    // Why: a pending stamp may hold watcher events that only its settle replays; evicting it would lose them.
+    if (!stamp.formatterPending) {
+      stamps.delete(key)
+    }
   }
 }
 
