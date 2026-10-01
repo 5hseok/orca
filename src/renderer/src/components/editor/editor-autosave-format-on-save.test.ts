@@ -169,12 +169,12 @@ describe('format on save through the editor save queue', () => {
     const save = requestEditorFileSave({ fileId: FILE_ID })
     await formatStarted
 
-    // Why: the formatter's bytes are unknown until it exits, so the stamp must already accept any content.
+    // Why: the formatter's bytes are unknown until it exits, so events are held rather than judged.
     expect(getRecentSelfWrite(FILE_ID, undefined)).toEqual({
       content: null,
       formatterPending: true
     })
-    expect(isDiskContentExpectedBySelfWrite(FILE_ID, undefined, FORMATTED)).toBe(true)
+    expect(isDiskContentExpectedBySelfWrite(FILE_ID, undefined, FORMATTED)).toBe(false)
 
     releaseFormat?.({ status: 'completed' })
     await save
