@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   isFloatingWorkspacePanelFocused: vi.fn(() => false),
-  resolveActiveTabPaneColumnTarget: vi.fn(),
+  resolveBrowserSourcePaneColumnTarget: vi.fn(),
   moveTabToNewPaneColumn: vi.fn()
 }))
 
@@ -23,7 +23,7 @@ vi.mock('@/lib/floating-workspace-guest-bridge', () => ({
   dispatchFloatingWorkspaceGuestSelectIndex: vi.fn()
 }))
 vi.mock('@/components/tab-bar/active-tab-pane-column-split', () => ({
-  resolveActiveTabPaneColumnTarget: mocks.resolveActiveTabPaneColumnTarget
+  resolveBrowserSourcePaneColumnTarget: mocks.resolveBrowserSourcePaneColumnTarget
 }))
 vi.mock('@/components/tab-bar/tab-move-to-pane-column', () => ({
   moveTabToNewPaneColumn: mocks.moveTabToNewPaneColumn
@@ -34,8 +34,10 @@ vi.mock('../../store', () => ({
 
 import { registerTabLifecycleIpcBridge } from './tab-lifecycle-ipc-bridge'
 
-function registerWithMoveListener(): (direction: 'left' | 'right' | 'up' | 'down') => void {
-  let listener: ((direction: 'left' | 'right' | 'up' | 'down') => void) | undefined
+type MoveTabToSplitPayload = { direction: 'left' | 'right' | 'up' | 'down'; sourceId: string }
+
+function registerWithMoveListener(): (direction: MoveTabToSplitPayload['direction']) => void {
+  let listener: ((payload: MoveTabToSplitPayload) => void) | undefined
   const noop = (): (() => void) => () => {}
   vi.stubGlobal('window', {
     api: {
@@ -48,7 +50,7 @@ function registerWithMoveListener(): (direction: 'left' | 'right' | 'up' | 'down
         onSwitchTabAcrossAllTypes: noop,
         onSwitchRecentTab: noop,
         onSwitchTerminalTab: noop,
-        onMoveActiveTabToSplit: (cb: typeof listener) => {
+        onMoveTabToSplit: (cb: typeof listener) => {
           listener = cb
           return () => {}
         }
@@ -56,7 +58,7 @@ function registerWithMoveListener(): (direction: 'left' | 'right' | 'up' | 'down
     }
   })
   registerTabLifecycleIpcBridge([])
-  return (direction) => listener!(direction)
+  return (direction) => listener!({ direction, sourceId: 'browser-1' })
 }
 
 describe('tab lifecycle bridge move-to-split', () => {
@@ -70,10 +72,13 @@ describe('tab lifecycle bridge move-to-split', () => {
   })
 
   it('moves the active tab into a new pane column in the requested direction', () => {
-    mocks.resolveActiveTabPaneColumnTarget.mockReturnValue({ unifiedTabId: 't1', groupId: 'g1' })
+    mocks.resolveBrowserSourcePaneColumnTarget.mockReturnValue({
+      unifiedTabId: 't1',
+      groupId: 'g1'
+    })
     registerWithMoveListener()('right')
 
-    expect(mocks.resolveActiveTabPaneColumnTarget).toHaveBeenCalledWith('wt-1')
+    expect(mocks.resolveBrowserSourcePaneColumnTarget).toHaveBeenCalledWith('browser-1')
     expect(mocks.moveTabToNewPaneColumn).toHaveBeenCalledWith({
       unifiedTabId: 't1',
       groupId: 'g1',
@@ -82,11 +87,14 @@ describe('tab lifecycle bridge move-to-split', () => {
   })
 
   it('does nothing when the tab cannot split or the floating panel owns focus', () => {
-    mocks.resolveActiveTabPaneColumnTarget.mockReturnValue(null)
+    mocks.resolveBrowserSourcePaneColumnTarget.mockReturnValue(null)
     registerWithMoveListener()('right')
     expect(mocks.moveTabToNewPaneColumn).not.toHaveBeenCalled()
 
-    mocks.resolveActiveTabPaneColumnTarget.mockReturnValue({ unifiedTabId: 't1', groupId: 'g1' })
+    mocks.resolveBrowserSourcePaneColumnTarget.mockReturnValue({
+      unifiedTabId: 't1',
+      groupId: 'g1'
+    })
     mocks.isFloatingWorkspacePanelFocused.mockReturnValue(true)
     registerWithMoveListener()('right')
     expect(mocks.moveTabToNewPaneColumn).not.toHaveBeenCalled()

@@ -14,7 +14,7 @@ import {
   dispatchFloatingWorkspaceGuestClose,
   dispatchFloatingWorkspaceGuestSelectIndex
 } from '@/lib/floating-workspace-guest-bridge'
-import { resolveActiveTabPaneColumnTarget } from '@/components/tab-bar/active-tab-pane-column-split'
+import { resolveBrowserSourcePaneColumnTarget } from '@/components/tab-bar/active-tab-pane-column-split'
 import { moveTabToNewPaneColumn } from '@/components/tab-bar/tab-move-to-pane-column'
 import { useAppStore } from '../../store'
 function getWorktreeRuntimeEnvironmentId(worktreeId: string | null | undefined): string | null {
@@ -104,14 +104,14 @@ export function registerTabLifecycleIpcBridge(unsubs: (() => void)[]): void {
   )
 
   // Why: optional like onScrollBrowserPage — older preload surfaces and test doubles may not expose it.
-  const subscribeMoveActiveTabToSplit = window.api.ui.onMoveActiveTabToSplit
-  if (subscribeMoveActiveTabToSplit) {
+  const subscribeMoveTabToSplit = window.api.ui.onMoveTabToSplit
+  if (subscribeMoveTabToSplit) {
     unsubs.push(
-      subscribeMoveActiveTabToSplit((direction) => {
+      subscribeMoveTabToSplit(({ direction, sourceId }) => {
         if (isFloatingWorkspacePanelFocused()) {
           return
         }
-        const target = resolveActiveTabPaneColumnTarget(useAppStore.getState().activeWorktreeId)
+        const target = resolveBrowserSourcePaneColumnTarget(sourceId)
         if (target) {
           moveTabToNewPaneColumn({ ...target, direction })
         }

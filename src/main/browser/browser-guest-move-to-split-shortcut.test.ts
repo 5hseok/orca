@@ -44,7 +44,10 @@ describe('browser guest move-tab-to-split shortcut', () => {
     const { send, pressChord } = setup('worktree-1')
 
     expect(pressChord()).toHaveBeenCalledOnce()
-    expect(send).toHaveBeenCalledWith('ui:moveActiveTabToSplit', 'right')
+    expect(send).toHaveBeenCalledWith('ui:moveTabToSplit', {
+      direction: 'right',
+      sourceId: 'tab-1'
+    })
   })
 
   it('leaves the chord alone for a floating-panel guest', () => {

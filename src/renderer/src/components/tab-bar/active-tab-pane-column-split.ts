@@ -1,6 +1,7 @@
 import type { KeybindingActionId } from '../../../../shared/keybindings'
 import { useAppStore } from '../../store'
 import type { TabSplitDirection } from '../../store/slices/tabs'
+import { resolveBrowserWorkspaceOwner } from '@/lib/browser-workspace-source-resolution'
 import { canMoveTabToNewPaneColumn } from './tab-move-to-pane-column'
 
 export type TabPaneColumnTarget = {
@@ -25,4 +26,20 @@ export function resolveActiveTabPaneColumnTarget(
     return null
   }
   return { unifiedTabId: activeTab.id, groupId: activeTab.groupId }
+}
+
+/** The tab owning a focused browser guest, or null when it is unknown or cannot split. */
+export function resolveBrowserSourcePaneColumnTarget(sourceId: string): TabPaneColumnTarget | null {
+  const state = useAppStore.getState()
+  const owner = resolveBrowserWorkspaceOwner(state, sourceId)
+  const tab = owner
+    ? (state.unifiedTabsByWorktree[owner.worktreeId] ?? []).find(
+        (candidate) =>
+          candidate.contentType === 'browser' && candidate.entityId === owner.workspaceId
+      )
+    : undefined
+  if (!tab || !canMoveTabToNewPaneColumn(tab.id, tab.groupId)) {
+    return null
+  }
+  return { unifiedTabId: tab.id, groupId: tab.groupId }
 }

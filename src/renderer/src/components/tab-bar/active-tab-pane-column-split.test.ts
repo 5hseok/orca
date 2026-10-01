@@ -3,7 +3,8 @@ import { useAppStore } from '../../store'
 import type { Tab } from '../../../../shared/tab-types'
 import {
   TAB_SPLIT_SHORTCUT_DIRECTIONS,
-  resolveActiveTabPaneColumnTarget
+  resolveActiveTabPaneColumnTarget,
+  resolveBrowserSourcePaneColumnTarget
 } from './active-tab-pane-column-split'
 
 const WT = 'wt-1'
@@ -100,5 +101,46 @@ describe('active-tab-pane-column-split', () => {
     })
 
     expect(resolveActiveTabPaneColumnTarget(WT)).toBeNull()
+  })
+
+  describe('resolveBrowserSourcePaneColumnTarget', () => {
+    function seedBrowserInSecondGroup(tabOrder: string[]): void {
+      const browserTab: Tab = {
+        ...unifiedTab('tab-browser', 2),
+        groupId: 'group-2',
+        contentType: 'browser',
+        entityId: 'ws-1'
+      }
+      useAppStore.setState({
+        groupsByWorktree: {
+          [WT]: [
+            { id: 'group-1', worktreeId: WT, activeTabId: 'tab-a', tabOrder: ['tab-a', 'tab-b'] },
+            { id: 'group-2', worktreeId: WT, activeTabId: 'tab-browser', tabOrder }
+          ]
+        },
+        unifiedTabsByWorktree: {
+          [WT]: [unifiedTab('tab-a', 0), unifiedTab('tab-b', 1), browserTab]
+        },
+        browserTabsByWorktree: { [WT]: [{ id: 'ws-1' }] },
+        browserPagesByWorkspace: { 'ws-1': [{ id: 'page-1' }] }
+      } as unknown as Parameters<typeof useAppStore.setState>[0])
+    }
+
+    it('targets the guest-owning tab even when another group is active', () => {
+      seedBrowserInSecondGroup(['tab-browser', 'tab-other'])
+
+      expect(resolveBrowserSourcePaneColumnTarget('page-1')).toEqual({
+        unifiedTabId: 'tab-browser',
+        groupId: 'group-2'
+      })
+    })
+
+    it('returns null for an unknown guest or a single-tab group', () => {
+      seedBrowserInSecondGroup(['tab-browser', 'tab-other'])
+      expect(resolveBrowserSourcePaneColumnTarget('page-missing')).toBeNull()
+
+      seedBrowserInSecondGroup(['tab-browser'])
+      expect(resolveBrowserSourcePaneColumnTarget('page-1')).toBeNull()
+    })
   })
 })
