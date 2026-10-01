@@ -33,6 +33,7 @@ function pump(): void {
 export function enqueueGitBlameRequest(run: () => Promise<GitBlameResult>): {
   promise: Promise<GitBlameResult | null>
   cancel: () => void
+  promote: () => void
 } {
   let request!: QueuedBlameRequest
   const promise = new Promise<GitBlameResult | null>((resolve, reject) => {
@@ -48,6 +49,14 @@ export function enqueueGitBlameRequest(run: () => Promise<GitBlameResult>): {
       if (index !== -1) {
         pending.splice(index, 1)
         request.resolve(null)
+      }
+    },
+    // Why: the pane the user focuses should not wait behind other mounted panes; no-op once started.
+    promote: () => {
+      const index = pending.indexOf(request)
+      if (index > 0) {
+        pending.splice(index, 1)
+        pending.unshift(request)
       }
     }
   }

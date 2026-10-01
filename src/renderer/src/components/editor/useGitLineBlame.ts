@@ -121,7 +121,7 @@ export function useGitLineBlame(args: {
     let cancelled = false
     let fetchGeneration = 0
     let debounce: ReturnType<typeof setTimeout> | null = null
-    let queued: { cancel: () => void } | null = null
+    let queued: { cancel: () => void; promote: () => void } | null = null
     const dropPendingFetch = (): void => {
       fetchGeneration += 1
       if (debounce) {
@@ -200,8 +200,10 @@ export function useGitLineBlame(args: {
 
     load()
     const cursorSub = editorInstance.onDidChangeCursorPosition((event) => {
+      queued?.promote()
       renderLine(event.position.lineNumber)
     })
+    const focusSub = editorInstance.onDidFocusEditorText(() => queued?.promote())
     const contentSub = editorInstance.onDidChangeModelContent(() => {
       // Why: cached blame no longer matches the model, so drop it and drop any in-flight result.
       dropPendingFetch()
@@ -230,6 +232,7 @@ export function useGitLineBlame(args: {
       dropPendingFetch()
       node.removeEventListener('mousedown', onAnnotationMouseDown)
       cursorSub.dispose()
+      focusSub.dispose()
       contentSub.dispose()
       modelSub.dispose()
       configSub.dispose()

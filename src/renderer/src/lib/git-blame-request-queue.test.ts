@@ -64,5 +64,61 @@ describe('enqueueGitBlameRequest', () => {
     gates.b.resolve()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(started).toEqual(['a', 'b', 'old', 'mid'])
+
+    // Why: the queue is module state, so drain it for the next test.
+    gates.old.resolve()
+    gates.mid.resolve()
+    gates.late.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it('promote moves a queued request ahead of older ones', async () => {
+    const started: string[] = []
+    const gates = { a: deferred(), b: deferred(), old: deferred(), focused: deferred() }
+    const run = (name: keyof typeof gates) => () => {
+      started.push(name)
+      return gates[name].promise
+    }
+    enqueueGitBlameRequest(run('a'))
+    enqueueGitBlameRequest(run('b'))
+    enqueueGitBlameRequest(run('old'))
+    const focused = enqueueGitBlameRequest(run('focused'))
+
+    focused.promote()
+    gates.a.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(started).toEqual(['a', 'b', 'focused'])
+
+    gates.b.resolve()
+    gates.focused.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    gates.old.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(started).toEqual(['a', 'b', 'focused', 'old'])
+  })
+
+  it('promote is a no-op for a running or finished request', async () => {
+    const started: string[] = []
+    const gates = { a: deferred(), b: deferred(), c: deferred() }
+    const run = (name: keyof typeof gates) => () => {
+      started.push(name)
+      return gates[name].promise
+    }
+    const a = enqueueGitBlameRequest(run('a'))
+    enqueueGitBlameRequest(run('b'))
+    enqueueGitBlameRequest(run('c'))
+
+    a.promote()
+    expect(started).toEqual(['a', 'b'])
+
+    gates.a.resolve()
+    await a.promise
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    a.promote()
+    expect(started).toEqual(['a', 'b', 'c'])
+
+    gates.b.resolve()
+    gates.c.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 })

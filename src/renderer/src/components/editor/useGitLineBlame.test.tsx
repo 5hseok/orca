@@ -52,6 +52,7 @@ function makeModel(): FakeModel {
 function createFakeEditor(readOnly: boolean) {
   const content = new Set<() => void>()
   const modelChange = new Set<() => void>()
+  const focus = new Set<() => void>()
   let model: FakeModel | null = makeModel()
   let widget: editor.IContentWidget | null = null
   const subscribe = (set: Set<() => void>) => (cb: () => void) => {
@@ -71,7 +72,8 @@ function createFakeEditor(readOnly: boolean) {
     onDidChangeCursorPosition: subscribe(new Set()),
     onDidChangeConfiguration: subscribe(new Set()),
     onDidChangeModelContent: subscribe(content),
-    onDidChangeModel: subscribe(modelChange)
+    onDidChangeModel: subscribe(modelChange),
+    onDidFocusEditorText: subscribe(focus)
   }
   return {
     editor: fake as unknown as editor.ICodeEditor,
@@ -80,6 +82,7 @@ function createFakeEditor(readOnly: boolean) {
       model!.version += 1
       content.forEach((cb) => cb())
     },
+    focusText: () => focus.forEach((cb) => cb()),
     swapModel: () => {
       model = makeModel()
       modelChange.forEach((cb) => cb())
@@ -111,13 +114,13 @@ describe('useGitLineBlame', () => {
     vi.useRealTimers()
   })
 
-  function mount(fake: ReturnType<typeof createFakeEditor>) {
+  function mount(fake: ReturnType<typeof createFakeEditor>, relativePath = 'a.ts') {
     renderHook(() =>
       useGitLineBlame({
         editor: fake.editor,
         enabled: true,
         worktreeId: 'repo::/repo',
-        relativePath: 'a.ts'
+        relativePath
       })
     )
   }
@@ -179,5 +182,28 @@ describe('useGitLineBlame', () => {
     await advance(200)
     await act(async () => resolveFirst(blameFor('Ada')))
     expect(fake.annotation()).toContain('Grace')
+  })
+
+  it('starts a focused pane ahead of older queued panes', async () => {
+    const gates: ((result: GitBlameResult) => void)[] = []
+    mocks.getRuntimeGitBlame.mockImplementation(
+      () => new Promise<GitBlameResult>((resolve) => gates.push(resolve))
+    )
+    const fakes = ['running-1.ts', 'running-2.ts', 'older.ts', 'focused.ts'].map((path) => {
+      const fake = createFakeEditor(true)
+      mount(fake, path)
+      return fake
+    })
+    await advance(200)
+    const startedPaths = (): string[] => mocks.getRuntimeGitBlame.mock.calls.map((call) => call[1])
+    expect(startedPaths()).toEqual(['running-1.ts', 'running-2.ts'])
+
+    fakes[3]!.focusText()
+    gates[0]!(blameFor('Ada'))
+    await advance(10)
+    expect(startedPaths()).toEqual(['running-1.ts', 'running-2.ts', 'focused.ts'])
+
+    gates.forEach((resolve) => resolve(blameFor('Ada')))
+    await advance(10)
   })
 })
