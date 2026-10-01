@@ -133,6 +133,36 @@ describe('AgentExecHandler Windows command spawning', () => {
     })
   })
 
+  it.each([
+    [
+      'a quoted program followed by a quoted argument',
+      '"C:\\Program Files\\fmt.exe" --write "C:\\a b.ts"'
+    ],
+    ['a lone quoted program path', '"C:\\Program Files\\fmt.exe"']
+  ])('wraps %s exactly once, since callers send the bare command line', async (_label, script) => {
+    await withPlatform('win32', async () => {
+      const child = createFakeChild()
+      spawnMock.mockReturnValue(child as never)
+      const handlers = createHandlers()
+
+      const pending = handlers.get('agent.execNonInteractive')!(
+        {
+          binary: 'cmd.exe',
+          args: ['/d', '/s', '/c', script],
+          cwd: 'C:\\repo',
+          stdin: null,
+          timeoutMs: 5_000
+        },
+        requestContext()
+      )
+      child.emit('close', 0)
+      await pending
+
+      // Why: /s strips one outer pair, so a script that starts and ends with a quote still needs its own pair.
+      expect(spawnMock.mock.calls[0][1]).toEqual(['/d', '/s', '/c', `"${script}"`])
+    })
+  })
+
   it('leaves non-cmd binaries on the default argument quoting', async () => {
     await withPlatform('win32', async () => {
       const child = createFakeChild()
