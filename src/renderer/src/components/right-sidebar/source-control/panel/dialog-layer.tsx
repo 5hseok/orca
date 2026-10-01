@@ -166,8 +166,8 @@ export function SourceControlDialogLayer({
             </DialogTitle>
             <DialogDescription className="text-xs">
               {translate(
-                'auto.components.right.sidebar.SourceControl.c9ad22888e',
-                'Pick the branch compare target for this workspace. Other workspaces keep their own compare target.'
+                'auto.components.right.sidebar.SourceControl.f465692a2e',
+                'Pick the branch compare target for this workspace.'
               )}
             </DialogDescription>
           </DialogHeader>
