@@ -9,6 +9,7 @@ import type { UpdateCheckOptions } from '../../shared/update-status-types'
 import type { WorkspaceSidebarPosition } from '../../shared/ui-chrome-types'
 import { translateMain } from '../i18n/main-i18n'
 import { createAppMenuSelectionItem } from './app-menu-selection-item'
+import { createAppWindowMenu } from './app-menu-window'
 import { buildSidebarToggleMenuItems } from './sidebar-toggle-menu-items'
 
 export type AppearanceMenuState = {
@@ -308,10 +309,7 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
     ]
   }
 
-  const windowMenu: Electron.MenuItemConstructorOptions = {
-    label: translateMain('menu.window', 'Window'),
-    submenu: [{ role: 'minimize' }, { role: 'zoom' }]
-  }
+  const windowMenu = createAppWindowMenu(translateMain('menu.window', 'Window'), isMac)
 
   const helpMenu: Electron.MenuItemConstructorOptions = {
     label: translateMain('menu.help', 'Help'),
