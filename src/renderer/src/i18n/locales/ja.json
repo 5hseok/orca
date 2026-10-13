@@ -649,13 +649,6 @@
             }
           }
         },
-        "worktree": {
-          "background": {
-            "terminals": {
-              "setupTitle": "設定"
-            }
-          }
-        },
         "work": {
           "item": {
             "direct": {
@@ -17522,7 +17515,8 @@
         "notConfirmedMany": "{{value0}} 件のチャットが再開されたことを確認できませんでした",
         "notConfirmedOtherOne": "他のチャット 1 件が再開されたことを確認できませんでした",
         "notConfirmedOtherMany": "他のチャット {{value0}} 件が再開されたことを確認できませんでした",
-        "show": "表示",
+        "viewChats": "チャットを表示",
+        "review": "確認",
         "activityUnnamed": "名前なし",
         "activityApproval": "承認待ち: {{value0}}",
         "activityQuestion": "回答待ち: {{value0}}",
@@ -19107,7 +19101,6 @@
     "nativeChatUpgrade": {
       "eyebrow": "新機能",
       "title": "ネイティブチャットを刷新",
-      "chatModeNote": "新しい Agent タブは、これまでどおりターミナルで開きます。",
       "intro": "対応 Agent の新しいチャットはアップグレード版のチャットビューで開きます。チャットと CLI の切り替えは右サイドバーの{{panel}}から:",
       "resumeInNativeChat": "{{action}}: 対応する CLI の会話をネイティブチャットで開きます。",
       "resumeInCli": "{{action}}: Claude/Codex のチャットを新しい CLI セッションに複製します。元のチャットは残ります。",

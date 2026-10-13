@@ -649,13 +649,6 @@
             }
           }
         },
-        "worktree": {
-          "background": {
-            "terminals": {
-              "setupTitle": "设置"
-            }
-          }
-        },
         "work": {
           "item": {
             "direct": {
@@ -17536,7 +17529,8 @@
         "notConfirmedMany": "无法确认 {{value0}} 个聊天已恢复",
         "notConfirmedOtherOne": "无法确认另外 1 个聊天已恢复",
         "notConfirmedOtherMany": "无法确认另外 {{value0}} 个聊天已恢复",
-        "show": "显示",
+        "viewChats": "查看聊天",
+        "review": "检查",
         "activityUnnamed": "未命名",
         "activityApproval": "等待您的批准：{{value0}}",
         "activityQuestion": "等待您的回答：{{value0}}",
@@ -19121,7 +19115,6 @@
     "nativeChatUpgrade": {
       "eyebrow": "新功能",
       "title": "本机聊天已升级",
-      "chatModeNote": "新的智能体标签页仍像以前一样在终端中打开。",
       "intro": "受支持智能体的新聊天现在会在升级后的聊天视图中打开。要在聊天和 CLI 之间切换，请打开右侧边栏中的{{panel}}：",
       "resumeInNativeChat": "{{action}}：在本机聊天中打开受支持的 CLI 对话。",
       "resumeInCli": "{{action}}：将 Claude 或 Codex 聊天复制到新的 CLI 会话中。原始聊天保持不变。",

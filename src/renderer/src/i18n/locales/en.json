@@ -832,13 +832,6 @@
             }
           }
         },
-        "worktree": {
-          "background": {
-            "terminals": {
-              "setupTitle": "Setup"
-            }
-          }
-        },
         "work": {
           "item": {
             "direct": {
@@ -2137,7 +2130,8 @@
         "notConfirmedMany": "Couldn’t confirm {{value0}} chats were resumed",
         "notConfirmedOtherOne": "Couldn’t confirm 1 other chat was resumed",
         "notConfirmedOtherMany": "Couldn’t confirm {{value0}} other chats were resumed",
-        "show": "Show",
+        "viewChats": "View chats",
+        "review": "Review",
         "activityUnnamed": "unnamed",
         "activityApproval": "Waiting for your approval: {{value0}}",
         "activityQuestion": "Waiting for your answer: {{value0}}",
@@ -19271,8 +19265,7 @@
     "nativeChatUpgrade": {
       "eyebrow": "New",
       "title": "Native chat got an upgrade",
-      "chatModeNote": "New agent tabs still open in the terminal, as before.",
-      "okay": "Okay",
+      "leaveOff": "Leave Off",
       "enableNow": "Enable Now",
       "enableError": "Could not enable chat mode.",
       "intro": "New chats with supported agents now open in the upgraded chat view. To move between chat and CLI, open {{panel}} in the right sidebar:",

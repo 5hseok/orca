@@ -750,13 +750,6 @@
             }
           }
         },
-        "worktree": {
-          "background": {
-            "terminals": {
-              "setupTitle": "Configuration"
-            }
-          }
-        },
         "work": {
           "item": {
             "direct": {
@@ -17639,7 +17632,8 @@
         "notConfirmedMany": "Impossible de confirmer que {{value0}} chats ont repris",
         "notConfirmedOtherOne": "Impossible de confirmer qu'1 autre chat a repris",
         "notConfirmedOtherMany": "Impossible de confirmer que {{value0}} autres chats ont repris",
-        "show": "Afficher",
+        "viewChats": "Voir les chats",
+        "review": "Vérifier",
         "activityUnnamed": "sans nom",
         "activityApproval": "En attente de votre approbation : {{value0}}",
         "activityQuestion": "En attente de votre réponse : {{value0}}",
@@ -19056,7 +19050,6 @@
     "nativeChatUpgrade": {
       "eyebrow": "Nouveau",
       "title": "Le chat natif évolue",
-      "chatModeNote": "Les nouveaux onglets d'agent s'ouvrent toujours dans le terminal, comme avant.",
       "intro": "Les nouveaux chats des agents compatibles utilisent la vue améliorée. Pour alterner entre chat et CLI, ouvrez {{panel}} (barre latérale droite) :",
       "resumeInNativeChat": "{{action}} ouvre une conversation CLI compatible dans le chat natif.",
       "resumeInCli": "{{action}} copie un chat Claude/Codex dans une CLI neuve ; l'original reste intact.",
