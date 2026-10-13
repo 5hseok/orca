@@ -9,6 +9,8 @@
 
 import { agentJournalSubmissionKey } from '../../../shared/agent-session-journal-item-key'
 import { isRootAgentJournalItem } from '../../../shared/agent-session-journal-producer'
+import { latestStructuredAgentSessionTurn } from '../../../shared/structured-agent-session-live-turn'
+import { isSubagentBlock } from '../../../shared/native-chat-types'
 import type {
   AgentJournalCursor,
   AgentJournalRenderItem,
@@ -21,6 +23,7 @@ import {
   type AgentSessionHistoryPage,
   type AgentSessionHistoryRequest,
   type AgentSessionHistoryResult,
+  type AgentSessionLatestTurn,
   type AgentSessionSubagentRosterEntry
 } from '../../../shared/agent-session-wire'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
@@ -53,23 +56,28 @@ export type AgentSessionHistoryScope = 'every-agent' | 'own-agent'
 
 /**
  * The newest `limit` of the session's own rows, in whole sequence groups, and every
- * row after the oldest of them: a subagent's rows ride along with the conversation
- * they happened in, so its burst cannot crowd the conversation off the page. The page
- * stays contiguous and starts at its first item, as the cursor means. Fewer own rows
- * than `limit` reach back to the start. With no subagent rows this is the newest
- * `limit` rows, as before.
+ * row after the oldest of them: a subagent's rows, and each subagent's own row, ride
+ * along with the conversation they happened in, so a burst or a fan-out cannot crowd
+ * the conversation off the page. The page stays contiguous and starts at its first
+ * item, as the cursor means; the byte budget still bounds it. Fewer own rows than
+ * `limit` reach back to the start. With no subagent rows this is the newest `limit`
+ * rows, as before.
  */
 function conversationWindow(
   items: readonly AgentJournalRenderItem[],
   limit: number
 ): AgentJournalRenderItem[] {
-  const own = items.filter(isRootAgentJournalItem)
+  const own = items.filter((item) => isRootAgentJournalItem(item) && !isSubagentRow(item))
   if (own.length === items.length) {
     return newestWholeSequenceGroups(items, limit)
   }
   const ownWindow = newestWholeSequenceGroups(own, limit)
   const start = ownWindow.length < own.length ? ownWindow[0]?.sequence : undefined
   return start === undefined ? [...items] : items.filter((item) => item.sequence >= start)
+}
+
+function isSubagentRow(item: AgentJournalRenderItem): boolean {
+  return item.body.kind === 'message' && item.body.blocks.some(isSubagentBlock)
 }
 
 export function readAgentSessionHistory(
@@ -80,9 +88,6 @@ export function readAgentSessionHistory(
   snapshot: AgentJournalSnapshot = journal.snapshot(),
   scope: AgentSessionHistoryScope = 'every-agent'
 ): AgentSessionHistoryResult {
-  if (journal.isReadOnly) {
-    return historyReset(snapshot, 'schema_unreadable')
-  }
   const limit = resolveHistoryLimit(request.limit)
   if (request.direction === 'after') {
     return readForward(journal, snapshot, request.cursor, limit)
@@ -248,7 +253,7 @@ function readForward(
   if (contentBytes > HISTORY_PAGE_CONTENT_BUDGET_BYTES) {
     items = items.map((item) => {
       const bytes = historyEntryBytes(item, submissionBytes)
-      return bytes > HISTORY_PAGE_CONTENT_BUDGET_BYTES ? oversizedHistoryItem(item, bytes) : item
+      return bytes > HISTORY_PAGE_CONTENT_BUDGET_BYTES ? oversizedHistoryItem(item) : item
     })
     contentBytes = pageContentBytes(items, projected.batch.removedItemIds)
   }
@@ -311,6 +316,20 @@ function buildPage(input: {
     liveCursor: input.snapshot.cursor,
     hasOlder: input.hasOlder,
     hasNewer: input.hasNewer,
-    ...(input.subagentRoster === undefined ? {} : { subagentRoster: input.subagentRoster })
+    ...(input.subagentRoster === undefined ? {} : { subagentRoster: input.subagentRoster }),
+    // From the whole timeline, never the page: a long turn's record sits below any window.
+    latestTurn: snapshotLatestTurn(input.snapshot)
   }
+}
+
+// A catch-up run pages one snapshot many times; its scan back to the turn record is paid once.
+const latestTurnBySnapshot = new WeakMap<AgentJournalSnapshot, AgentSessionLatestTurn | null>()
+
+function snapshotLatestTurn(snapshot: AgentJournalSnapshot): AgentSessionLatestTurn | null {
+  let latest = latestTurnBySnapshot.get(snapshot)
+  if (latest === undefined) {
+    latest = latestStructuredAgentSessionTurn(snapshot.items)
+    latestTurnBySnapshot.set(snapshot, latest)
+  }
+  return latest
 }

@@ -12,7 +12,8 @@ const {
   appMock: {
     isPackaged: true,
     getVersion: vi.fn(() => '1.0.51'),
-    on: vi.fn()
+    on: vi.fn(),
+    prependListener: vi.fn()
   },
   nativeUpdaterMock: { on: vi.fn() },
   getLinuxPackageTypeMock: vi.fn<() => 'deb' | 'rpm' | 'non-root' | 'unusable'>(() => 'deb'),
@@ -89,6 +90,10 @@ function createContext(overrides?: Partial<HandlerContext>): HandlerContext {
     markUpdateAvailableEventPending: vi.fn(),
     markMissingManifestPrereleaseFallbackChecking: vi.fn(),
     performQuitAndInstall: vi.fn(),
+    commitStagedMacInstall: vi.fn(),
+    failMacStaging: vi.fn(),
+    isAwaitingMacStaging: vi.fn(() => false),
+    isMacStagingDeferredToInstall: vi.fn(() => false),
     shouldDeferMacQuitForInstall: vi.fn(() => true),
     recordCompletedUpdateCheck: vi.fn(),
     restoreReleaseUpdateSource: vi.fn(),

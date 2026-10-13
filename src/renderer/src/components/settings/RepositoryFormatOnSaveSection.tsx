@@ -36,10 +36,9 @@ export function RepositoryFormatOnSaveSection({
   const settings = normalizeRepoFormatOnSaveSettings(
     repo.formatOnSave ?? getDefaultRepoFormatOnSaveSettings()
   )
-  // Why: SSH hosts format through the relay's non-interactive exec channel;
-  // runtime environments have no equivalent, so only those are called out.
+  // Why: a remote project's server runs the command, so the formatter must exist on that host.
   const executionHost = parseExecutionHostId(getRepoExecutionHostId(repo))
-  const isRuntimeHost = executionHost?.kind === 'runtime'
+  const isRemoteHost = executionHost !== null && executionHost.kind !== 'local'
 
   const includeInput = formatOnSaveIncludeToInput(settings.include)
   const [commandDraft, setCommandDraft] = useState(settings.command)
@@ -235,11 +234,11 @@ export function RepositoryFormatOnSaveSection({
         />
       </SearchableSetting>
 
-      {isRuntimeHost ? (
+      {isRemoteHost ? (
         <p className="max-w-3xl text-xs text-muted-foreground">
           {translate(
-            'auto.components.settings.RepositoryFormatOnSaveSection.runtimeHostNotice',
-            'This project runs on a runtime host, which has no channel for running the command. Saves there are written unformatted; local, WSL, and SSH worktrees are formatted.'
+            'auto.components.settings.RepositoryFormatOnSaveSection.remoteHostNotice',
+            'This project runs on a remote host, so the command runs there and its formatter must be installed on that host. A server on an older Orca version saves unformatted.'
           )}
         </p>
       ) : null}

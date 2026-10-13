@@ -1,29 +1,27 @@
 // The Codex subagent roster: one journal row per spawn group, revised in place.
 //
-// Activity supplies membership; child turn events supply execution state.
-//
-// KNOWN LIMITATION: `groups` is process-local and is never seeded from the
-// journal, while the row's identity is keyed on the group id alone. So once a
-// group leaves the map its row stays, and the next activity item rebuilds that
-// row from one child — rewriting N down to one. Two ways in: eviction past
-// MAX_CODEX_SUBAGENT_GROUPS, which drops the oldest-inserted group in-process
-// even while it is live, and skips the sweep so its children never latch
-// `unverifiable`; and a restart on `threadId:outside-turn`, the one group id
-// that outlives the process — `thread/resume` is verified to return the same
-// thread, and a real turn id is assumed freshly minted per turn. Seeding from
-// the journal is the fix.
+// An announcement supplies membership — a `subAgentActivity` item, or in
+// Codex's default multi-agent mode any collab call naming the helper — and
+// child turn events supply execution state: each child turn is one run of the
+// child. Everything the row says follows the shared subagent tracker's rules;
+// this module only reads Codex's events. Rows earlier provider runs journaled
+// are inherited, so a restart neither splits a child nor rewrites the row no
+// turn owns from one child.
 
 import type { AgentJournalTurnScope } from '../../shared/agent-session-journal-types'
-import { isTerminalSubagentState } from '../../shared/native-chat-subagent-summary'
 import type { NativeChatSubagentState } from '../../shared/native-chat-types'
 import type {
   StructuredAgentSessionEventSink,
   StructuredAgentSessionSinkAdmission
 } from '../native-chat/agent-session-wire/structured-agent-session-event-sink'
+import { JournaledSubagentGroups } from '../native-chat/subagent-tracker/journaled-subagent-groups'
+import { subagentRowSinkPort } from '../native-chat/subagent-tracker/subagent-row-sink-port'
+import { SubagentTracker } from '../native-chat/subagent-tracker/subagent-tracker'
+import type { SubagentReport } from '../native-chat/subagent-tracker/subagent-tracker-types'
 import {
-  codexSubagentLabel,
-  isCodexRootAgentActivity,
   readCodexSubagentActivity,
+  readCodexSubagentAnnouncements,
+  type CodexSubagentAnnouncement,
   readCodexThreadTokenTotal
 } from './codex-subagent-activity'
 import {
@@ -34,21 +32,16 @@ import {
 } from './codex-subagent-executions'
 import { readRecord } from './codex-item-field-readers'
 import { readCodexTurnId } from './codex-structured-thread-facts'
-import { codexSubagentGroupBody } from './codex-subagent-group-body'
 import { CodexSubagentLinkage } from './codex-subagent-linkage'
-export { codexSubagentGroupBody } from './codex-subagent-group-body'
-export { codexSubagentGroupId, codexSubagentGroupIdentity } from './codex-subagent-roster-state'
 import {
   codexSubagentGroupId,
   codexSubagentGroupIdentity,
-  type RosterGroup
+  isCodexOutsideTurnGroup
 } from './codex-subagent-roster-state'
 import type { CodexThreadItem } from './codex-structured-item-translation'
-import {
-  MAX_CODEX_SUBAGENT_GROUPS,
-  MAX_CODEX_SUBAGENTS_PER_GROUP,
-  MAX_CODEX_TOKEN_USAGE_THREADS
-} from './codex-structured-journal-limits'
+import { CodexThreadTokenTotals } from './codex-thread-token-totals'
+export { subagentGroupJournalBody as codexSubagentGroupBody } from '../native-chat/agent-session-journal/journal-subagent-group-body'
+export { codexSubagentGroupId, codexSubagentGroupIdentity } from './codex-subagent-roster-state'
 
 const ADMITTED: StructuredAgentSessionSinkAdmission = { accepted: true }
 
@@ -63,60 +56,65 @@ export type CodexSubagentRosterDeps = {
 }
 
 export class CodexSubagentRoster {
-  private readonly groups = new Map<string, RosterGroup>()
-  /** Latest reported total per thread, kept regardless of roster membership: a
-   *  usage frame can arrive before the child's first activity item, and filtering
-   *  at receipt would lose it permanently. Children are selected at write time;
-   *  the map itself is LRU-capped in `handleTokenUsage`. */
-  private readonly tokensByThread = new Map<string, number>()
-  private readonly now: () => number
-  private readonly executions: CodexSubagentExecutions
+  private readonly tracker: SubagentTracker<AgentJournalTurnScope>
+  /** Every thread's total, members or not; a child shows its total once it is listed. */
+  private readonly tokensByThread = new CodexThreadTokenTotals()
+  /** The one owner of child membership and turn state; the rows of calls on a helper read it too. */
+  readonly executions: CodexSubagentExecutions
+  private readonly unfollow: () => void
   /** Who produced a row, from what this roster learned about each child thread. */
   readonly linkage: CodexSubagentLinkage
 
   constructor(private readonly deps: CodexSubagentRosterDeps) {
-    this.now = deps.now ?? (() => Date.now())
+    this.tracker = new SubagentTracker({
+      port: subagentRowSinkPort(deps.sink, codexSubagentGroupIdentity),
+      outsideTurn: isCodexOutsideTurnGroup,
+      journaled: new JournaledSubagentGroups(
+        () => deps.sink.journalLinkage?.() ?? null,
+        codexSubagentGroupIdentity
+      ),
+      ...(deps.now ? { now: deps.now } : {})
+    })
     this.executions = deps.executions ?? new CodexSubagentExecutions()
+    // The row follows the executions, so every frame that ends a child's turn — its own
+    // `turn/completed` (a failed one included) or its thread closing — settles it.
+    this.unfollow = this.executions.onExecutionChanged(
+      (child) => child.execution && this.follow(child, child.execution)
+    )
     this.linkage = new CodexSubagentLinkage({
       primaryThreadId: deps.primaryThreadId,
       executions: this.executions
     })
   }
 
-  /** Consume a `subAgentActivity` item. Returns null when the item is not one. */
+  /** Consume an item that announces children. Null means the item is not this roster's to render:
+   *  a `subAgentActivity` item renders as the roster row alone, while a collab call keeps its own
+   *  row, so it is claimed only to hand back a refused write. */
   handleItem(input: {
     threadId: string
     turnId: string | null
     item: CodexThreadItem
   }): StructuredAgentSessionSinkAdmission | null {
-    const activity = readCodexSubagentActivity(input.item)
-    if (!activity) {
-      return null
-    }
-    // The root node is the parent turn itself, not a child it spawned.
-    if (
-      activity.agentThreadId === this.deps.primaryThreadId() ||
-      isCodexRootAgentActivity(activity)
-    ) {
-      return ADMITTED
-    }
+    const refused = readCodexSubagentAnnouncements(input.item, this.deps.primaryThreadId())
+      .map((announcement) => this.announce(input, announcement))
+      .find((admission) => !admission.accepted)
+    return refused ?? (readCodexSubagentActivity(input.item) !== null ? ADMITTED : null)
+  }
+
+  private announce(
+    input: { threadId: string; turnId: string | null },
+    announcement: CodexSubagentAnnouncement
+  ): StructuredAgentSessionSinkAdmission {
     const child = this.executions.register(
-      activity.agentThreadId,
-      codexSubagentLabel(activity),
-      activity.kind === 'started' || activity.kind === 'interacted' ? input.turnId : undefined,
-      // Only `started` names the spawner: other kinds ride whichever agent acted.
-      activity.kind === 'started' ? input.threadId : undefined
+      announcement.agentThreadId,
+      announcement.label,
+      announcement.namesParentTurn ? input.turnId : undefined,
+      // Only a spawn names the spawner: other announcements ride whichever agent acted.
+      announcement.spawned ? input.threadId : undefined
     )
-    if (!child?.execution) {
-      return ADMITTED
-    }
-    const group =
-      this.executionGroup(child.agentThreadId, child.execution.turnId) ??
-      this.groupFor(input.threadId, input.turnId)
-    if (!group.entries.has(child.agentThreadId)) {
-      this.recordExecution(group, child, child.execution)
-    }
-    return this.write(group)
+    return child?.execution
+      ? this.report(child, child.execution, true, this.groupFor(input.threadId, input.turnId))
+      : ADMITTED
   }
 
   handleTurnEvent(event: {
@@ -142,33 +140,28 @@ export class CodexSubagentRoster {
     turnId: string
     state: NativeChatSubagentState
   }): StructuredAgentSessionSinkAdmission {
-    if (input.threadId === this.deps.primaryThreadId()) {
+    if (
+      input.threadId === this.deps.primaryThreadId() ||
+      this.tracker.hasSettled(input.threadId, input.turnId)
+    ) {
       return ADMITTED
     }
     const observed = this.executions.observeTurn(input.threadId, input.turnId, input.state)
-    if (!observed || !observed.child.registered) {
+    // Followed already if the execution changed; re-derived (idempotently) for its admission.
+    return observed ? this.follow(observed.child, observed.execution) : ADMITTED
+  }
+
+  /** A child turn starting is a run starting; one ending only revises the row listing it. */
+  private follow(
+    child: Readonly<CodexExecutionChild>,
+    execution: CodexChildExecution
+  ): StructuredAgentSessionSinkAdmission {
+    if (!child.registered) {
       return ADMITTED
     }
-    const { child, execution } = observed
-    if (input.state === 'working') {
-      const parent = this.deps.primaryThreadId() ?? input.threadId
-      const group =
-        this.executionGroup(child.agentThreadId, execution.turnId) ??
-        this.groupFor(parent, this.deps.activeTurn(parent) ?? child.parentTurnId)
-      this.recordExecution(group, child, execution)
-      return this.write(group)
-    }
-    for (const group of this.groups.values()) {
-      if (group.executionTurns.get(input.threadId) !== input.turnId) {
-        continue
-      }
-      this.recordExecution(group, child, execution)
-      const admission = this.write(group)
-      if (!admission.accepted) {
-        return admission
-      }
-    }
-    return ADMITTED
+    const parent = this.deps.primaryThreadId() ?? child.agentThreadId
+    const group = this.groupFor(parent, this.deps.activeTurn(parent) ?? child.parentTurnId)
+    return this.report(child, execution, execution.state === 'working', group)
   }
 
   /** Consume `thread/tokenUsage/updated`. Returns null when the params are not one. */
@@ -177,29 +170,16 @@ export class CodexSubagentRoster {
     if (!usage) {
       return null
     }
-    // A running total: the newest frame REPLACES the previous one. Summing
-    // updates would multiply a single child's usage by its frame count.
-    // Re-insert so the eviction scan below sees recency: `set` on an existing
-    // key keeps its original position, which would age out an active thread.
-    this.tokensByThread.delete(usage.threadId)
-    this.tokensByThread.set(usage.threadId, usage.totalTokens)
-    while (this.tokensByThread.size > MAX_CODEX_TOKEN_USAGE_THREADS) {
-      const oldest = this.tokensByThread.keys().next().value
-      if (typeof oldest !== 'string') {
-        break
-      }
-      this.tokensByThread.delete(oldest)
-    }
-    for (const group of this.groups.values()) {
-      if (!group.entries.has(usage.threadId)) {
-        continue
-      }
-      const admission = this.write(group)
-      if (!admission.accepted) {
-        return admission
-      }
-    }
-    return ADMITTED
+    this.tokensByThread.record(usage.threadId, usage.totalTokens)
+    const located = this.tracker.locate(usage.threadId)
+    return located
+      ? this.tracker.report({
+          id: usage.threadId,
+          group: { id: located.group.groupId, placement: () => located.group.placement },
+          announces: false,
+          tokens: usage.totalTokens
+        })
+      : ADMITTED
   }
 
   /**
@@ -212,154 +192,50 @@ export class CodexSubagentRoster {
    */
   settleSession(): StructuredAgentSessionSinkAdmission {
     this.executions.settleSession()
-    for (const group of this.groups.values()) {
-      const admission = this.sweep(group)
-      if (!admission.accepted) {
-        return admission
-      }
-    }
-    return ADMITTED
+    return this.tracker.settleSession()
   }
 
   dispose(): void {
-    this.groups.clear()
+    this.unfollow()
+    this.tracker.dispose()
     this.tokensByThread.clear()
   }
 
-  private sweep(group: RosterGroup | undefined): StructuredAgentSessionSinkAdmission {
-    if (!group) {
-      return ADMITTED
-    }
-    let changed = false
-    for (const [id, entry] of group.entries) {
-      if (isTerminalSubagentState(entry.state)) {
-        continue
-      }
-      group.entries.set(id, { ...entry, state: 'unverifiable', settledAt: this.now() })
-      changed = true
-    }
-    // A null `lastSerialized` means the previous write was refused part-way, so
-    // the settled roster's last revision is queued but never published. Nothing
-    // is guaranteed to write this group again, so retry here even when the sweep
-    // itself changed nothing.
-    return changed || group.lastSerialized === null ? this.write(group) : ADMITTED
+  retentionSizes(): { groups: number; settledIdentities: number } {
+    return this.tracker.sizes()
   }
 
-  private groupFor(threadId: string, turnId: string | null): RosterGroup {
+  private report(
+    child: Readonly<CodexExecutionChild>,
+    execution: CodexChildExecution,
+    announces: boolean,
+    group: SubagentReport<AgentJournalTurnScope>['group']
+  ): StructuredAgentSessionSinkAdmission {
+    const tokens = this.tokensByThread.get(child.agentThreadId)
+    return this.tracker.report({
+      id: child.agentThreadId,
+      run: execution.turnId,
+      group,
+      announces,
+      label: child.label,
+      state: execution.state,
+      ...(typeof tokens === 'number' ? { tokens } : {}),
+      // A spawned child may outlive the turn that spawned it.
+      backgrounded: true
+    })
+  }
+
+  /** The group a child spawned now belongs to: the session's own agent's current turn. */
+  private groupFor(
+    threadId: string,
+    turnId: string | null
+  ): SubagentReport<AgentJournalTurnScope>['group'] {
     const ownerThreadId = this.deps.primaryThreadId() ?? threadId
     const ownerTurnId =
       ownerThreadId === threadId ? turnId : (this.deps.activeTurn(ownerThreadId) ?? turnId)
-    const groupId = codexSubagentGroupId(ownerThreadId, ownerTurnId)
-    const existing = this.groups.get(groupId)
-    if (existing) {
-      return existing
+    return {
+      id: codexSubagentGroupId(ownerThreadId, ownerTurnId),
+      placement: () => this.deps.turnScopeFor(ownerThreadId, ownerTurnId)
     }
-    const group: RosterGroup = {
-      groupId,
-      identity: codexSubagentGroupIdentity(groupId),
-      turnScope: this.deps.turnScopeFor(ownerThreadId, ownerTurnId),
-      entries: new Map(),
-      executionTurns: new Map(),
-      labelCounts: new Map(),
-      lastSerialized: null
-    }
-    this.groups.set(groupId, group)
-    while (this.groups.size > MAX_CODEX_SUBAGENT_GROUPS) {
-      const oldest = this.groups.keys().next().value
-      if (typeof oldest !== 'string' || oldest === groupId) {
-        break
-      }
-      this.groups.delete(oldest)
-    }
-    return group
-  }
-
-  private executionGroup(threadId: string, turnId: string): RosterGroup | undefined {
-    return [...this.groups.values()].find((group) => group.executionTurns.get(threadId) === turnId)
-  }
-
-  /** Two children can share a trailing path segment; the ordinal keeps their
-   *  rows apart without inventing a name the provider never sent. */
-  private claimLabel(group: RosterGroup, label: string | null): string {
-    const base = label ?? 'subagent'
-    const seen = group.labelCounts.get(base) ?? 0
-    group.labelCounts.set(base, seen + 1)
-    return seen === 0 ? base : `${base} ${seen + 1}`
-  }
-
-  private recordExecution(
-    group: RosterGroup,
-    child: CodexExecutionChild,
-    execution: CodexChildExecution | null
-  ): void {
-    const existing = group.entries.get(child.agentThreadId)
-    if (!existing && group.entries.size >= MAX_CODEX_SUBAGENTS_PER_GROUP) {
-      return
-    }
-    const turnId = execution?.turnId ?? null
-    const state = execution?.state ?? 'unverifiable'
-    const sameTurn = existing && group.executionTurns.get(child.agentThreadId) === turnId
-    if (sameTurn && existing.state === state) {
-      return
-    }
-    const now = this.now()
-    group.executionTurns.set(child.agentThreadId, turnId)
-    group.entries.set(child.agentThreadId, {
-      id: child.agentThreadId,
-      label: existing?.label ?? this.claimLabel(group, child.label),
-      state,
-      startedAt: sameTurn ? existing.startedAt : now,
-      ...(isTerminalSubagentState(state) ? { settledAt: now } : {}),
-      ...(existing?.tokens !== undefined ? { tokens: existing.tokens } : {})
-    })
-  }
-
-  private write(group: RosterGroup): StructuredAgentSessionSinkAdmission {
-    const agents = [...group.entries].map(([id, entry]) => {
-      const tokens = this.tokensByThread.get(id)
-      if (typeof tokens !== 'number' || tokens === entry.tokens) {
-        return entry
-      }
-      // Persisted, not merely read: the thread map is LRU-capped, and reading it
-      // afresh each write would retract a count this row has already shown.
-      const merged = { ...entry, tokens }
-      group.entries.set(id, merged)
-      return merged
-    })
-    const body = codexSubagentGroupBody(group.groupId, agents)
-    const serialized = JSON.stringify(body)
-    if (serialized === group.lastSerialized) {
-      // Nothing changed — a duplicate delivery must not burn a revision.
-      return ADMITTED
-    }
-    group.lastSerialized = serialized
-    // Deliberately unstamped: a child's frame can trigger this write, but the
-    // row is the PARENT's roster of its children.
-    // The append coalesces per group so a burst collapses to the latest roster.
-    // The publish must NOT reuse that key: the queue coalesces by key alone,
-    // with no op-kind check, so a publish carrying it would splice out the
-    // still-queued append and the row would never reach the journal.
-    const options = {
-      coalescingKey: `codex-subagents:${group.groupId}`,
-      turnScope: group.turnScope
-    }
-    const admission = this.deps.sink.tryAppendItem
-      ? this.deps.sink.tryAppendItem(group.identity, body, options)
-      : (this.deps.sink.appendItem(group.identity, body, options), ADMITTED)
-    if (!admission.accepted) {
-      group.lastSerialized = null
-      return admission
-    }
-    const published = this.deps.sink.tryPublish
-      ? this.deps.sink.tryPublish()
-      : (this.deps.sink.publish(), ADMITTED)
-    if (!published.accepted) {
-      // Symmetric with the append refusal above: the suppression state may only
-      // advance once the revision is both queued AND published. Left set, an
-      // identical replay short-circuits and the last revision of a settled
-      // roster stays queued but never reaches the renderer.
-      group.lastSerialized = null
-    }
-    return published
   }
 }

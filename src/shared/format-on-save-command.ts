@@ -7,6 +7,9 @@ import { expandCommandTokens } from './format-on-save-command-expansion'
 export const SUGGESTED_FORMAT_ON_SAVE_INCLUDE = '**/*.{ts,tsx,js,jsx,json,css,md}'
 export const SUGGESTED_FORMAT_ON_SAVE_COMMAND = 'npx prettier --write ${file}'
 
+/** Long enough for a cold `npx prettier`, short enough that a hung formatter frees the file quickly. */
+export const FORMAT_ON_SAVE_TIMEOUT_MS = 20_000
+
 export {
   FORMAT_ON_SAVE_FILE_TOKEN,
   FORMAT_ON_SAVE_RELATIVE_FILE_TOKEN,
@@ -18,7 +21,7 @@ export type FormatOnSaveSkipReason =
   | 'not-included'
   | 'outside-worktree'
   | 'already-running'
-  /** Runtime hosts, and SSH hosts whose relay is down, have no exec channel to reach the file. */
+  /** The owning host cannot run the formatter: an older server without `files.formatOnSave`, or a host this process does not serve. */
   | 'unsupported-host'
 
 export type FormatOnSaveResult =

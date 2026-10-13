@@ -1,4 +1,5 @@
-import { runProcess, type ProcessResult } from '../shared/child-process/run-process'
+import { runProcess } from '@orca/process-host'
+import type { ProcessResult } from '@orca/process-host/process-spec'
 import {
   expandFormatOnSaveCommand,
   type FormatOnSaveResult

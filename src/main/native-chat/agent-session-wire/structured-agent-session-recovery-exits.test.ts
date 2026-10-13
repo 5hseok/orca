@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { spawnProcess } from '../../../shared/child-process/run-process'
-import { CODEX_SPAWN_TOKEN_ENV } from '../../codex/codex-structured-owner-identity'
+import { spawnProcess } from '@orca/process-host'
+import { ORCA_AGENT_SESSION_SPAWN_TOKEN_ENV } from '../../../shared/agent-session-caller-env'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
 import { openTestAgentSessionRecordStore } from '../../runtime/agent-session-record-store-test-harness'
 import { readProcessStartTimeMs } from '../../runtime/agent-session-process-identity-probe'
@@ -22,6 +22,9 @@ import {
   resetHostTestOperationIds
 } from './structured-agent-session-host-test-data'
 import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from './structured-agent-session-logger'
+import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
+import { NO_STRUCTURED_AGENTS } from './structured-agent-session-adapter-router-test-support'
 
 const CALLER = { callerKey: 'client-1' }
 
@@ -36,7 +39,7 @@ async function spawnOwner(spawnToken: string) {
   const child = spawnProcess({
     program: process.execPath,
     args: ['-e', 'setInterval(() => {}, 1_000)'],
-    env: { ...process.env, [CODEX_SPAWN_TOKEN_ENV]: spawnToken }
+    env: { ...process.env, [ORCA_AGENT_SESSION_SPAWN_TOKEN_ENV]: spawnToken }
   })
   spawnedOwners.add(child)
   const pid = child.pid
@@ -81,6 +84,8 @@ function adapter(): StructuredAgentSessionAdapter {
 
 function openHost(overrides: Partial<StructuredAgentSessionHostDeps> = {}): void {
   host = new StructuredAgentSessionHost({
+    agents: NO_STRUCTURED_AGENTS,
+    logger: createStructuredAgentSessionLogger(),
     store,
     adapter: adapter(),
     journalDatabase: openTestJournalHostDatabase(root),
@@ -108,7 +113,7 @@ beforeEach(async () => {
     },
     link: {
       linkId: `link-${fence}`,
-      handle: { provider: 'codex', threadId: THREAD },
+      handle: codexProviderHandle(THREAD),
       origin: store.getRecord(SESSION)?.providerHandleChain.length ? 'resumed' : 'created',
       mintedAtFence: fence,
       observedAt: NOW
@@ -286,7 +291,7 @@ describe('recovery exits', () => {
       process: outgoing.process,
       link: {
         linkId: 'link-outgoing',
-        handle: { provider: 'codex', threadId: THREAD },
+        handle: codexProviderHandle(THREAD),
         origin: 'created',
         mintedAtFence: 1,
         observedAt: NOW
@@ -331,7 +336,7 @@ describe('recovery exits', () => {
       process: replacement.process,
       link: {
         linkId: 'link-replacement',
-        handle: { provider: 'codex', threadId: THREAD },
+        handle: codexProviderHandle(THREAD),
         origin: 'resumed',
         mintedAtFence: 3,
         observedAt: NOW + 2

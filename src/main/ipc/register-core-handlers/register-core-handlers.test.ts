@@ -35,7 +35,9 @@ const {
   registerCodexAccountHandlersMock,
   registerAgentHookHandlersMock,
   registerClaudeAccountHandlersMock,
+  registerOpenCodeGoCredentialsHandlersMock,
   registerMiniMaxCredentialsHandlersMock,
+  registerZcodePlanCredentialsHandlersMock,
   registerGrokAccountHandlersMock,
   registerCursorAccountHandlersMock,
   registerClipboardHandlersMock,
@@ -103,7 +105,9 @@ const {
   registerCodexAccountHandlersMock: vi.fn(),
   registerAgentHookHandlersMock: vi.fn(),
   registerClaudeAccountHandlersMock: vi.fn(),
+  registerOpenCodeGoCredentialsHandlersMock: vi.fn(),
   registerMiniMaxCredentialsHandlersMock: vi.fn(),
+  registerZcodePlanCredentialsHandlersMock: vi.fn(),
   registerGrokAccountHandlersMock: vi.fn(),
   registerCursorAccountHandlersMock: vi.fn(),
   registerClipboardHandlersMock: vi.fn(),
@@ -338,8 +342,16 @@ vi.mock('../claude-accounts', () => ({
   registerClaudeAccountHandlers: registerClaudeAccountHandlersMock
 }))
 
+vi.mock('../opencode-go-credentials', () => ({
+  registerOpenCodeGoCredentialsHandlers: registerOpenCodeGoCredentialsHandlersMock
+}))
+
 vi.mock('../minimax-credentials', () => ({
   registerMiniMaxCredentialsHandlers: registerMiniMaxCredentialsHandlersMock
+}))
+
+vi.mock('../zcode-plan-credentials', () => ({
+  registerZcodePlanCredentialsHandlers: registerZcodePlanCredentialsHandlersMock
 }))
 
 vi.mock('../grok-accounts', () => ({
@@ -407,7 +419,13 @@ import { registerCoreHandlers } from './register-core-handlers'
 let registeredAiVaultOptions: {
   ensureStructuredSessionOwnership: () => Promise<void>
 }
-let registeredRuntime: { ensureStructuredAgentSessionHost: ReturnType<typeof vi.fn> } | undefined
+let registeredRuntime:
+  | {
+      ensureStructuredAgentSessionHost: ReturnType<typeof vi.fn>
+      closeNotificationDismissals: ReturnType<typeof vi.fn>
+    }
+  | undefined
+let registeredRelaunchExit: (() => Promise<void>) | undefined
 
 describe('registerCoreHandlers', () => {
   beforeEach(() => {
@@ -446,7 +464,9 @@ describe('registerCoreHandlers', () => {
     registerCodexAccountHandlersMock.mockReset()
     registerAgentHookHandlersMock.mockReset()
     registerClaudeAccountHandlersMock.mockReset()
+    registerOpenCodeGoCredentialsHandlersMock.mockReset()
     registerMiniMaxCredentialsHandlersMock.mockReset()
+    registerZcodePlanCredentialsHandlersMock.mockReset()
     registerClipboardHandlersMock.mockReset()
     setTrustedClipboardRendererWebContentsIdMock.mockReset()
     registerUpdaterHandlersMock.mockReset()
@@ -481,7 +501,8 @@ describe('registerCoreHandlers', () => {
     const runtime = {
       marker: 'runtime',
       getAgentBrowserBridge: () => null,
-      ensureStructuredAgentSessionHost: vi.fn()
+      ensureStructuredAgentSessionHost: vi.fn(),
+      closeNotificationDismissals: vi.fn(async () => {})
     }
     const stats = { marker: 'stats' }
     const claudeUsage = { marker: 'claudeUsage' }
@@ -533,7 +554,13 @@ describe('registerCoreHandlers', () => {
       openCodeUsage,
       museUsage
     })
-    expect(registerAppHandlersMock).toHaveBeenCalledWith(store, { onBeforeRelaunch })
+    expect(registerAppHandlersMock).toHaveBeenCalledWith(store, {
+      onBeforeRelaunch,
+      onBeforeRelaunchExit: expect.any(Function)
+    })
+    registeredRelaunchExit = registerAppHandlersMock.mock.calls[0]?.[1]?.onBeforeRelaunchExit
+    await registeredRelaunchExit?.()
+    expect(runtime.closeNotificationDismissals).toHaveBeenCalledOnce()
     expect(registerCodexAccountHandlersMock).toHaveBeenCalledWith(
       codexAccounts,
       expect.any(Function)
@@ -546,7 +573,9 @@ describe('registerCoreHandlers', () => {
     )
     expect(registerPetHandlersMock).toHaveBeenCalled()
     expect(registerClaudeAccountHandlersMock).toHaveBeenCalledWith(claudeAccounts)
+    expect(registerOpenCodeGoCredentialsHandlersMock).toHaveBeenCalledWith(rateLimits)
     expect(registerMiniMaxCredentialsHandlersMock).toHaveBeenCalledWith(rateLimits)
+    expect(registerZcodePlanCredentialsHandlersMock).toHaveBeenCalledWith(rateLimits)
     expect(registerGrokAccountHandlersMock).toHaveBeenCalled()
     expect(registerCursorAccountHandlersMock).toHaveBeenCalled()
     expect(registerRateLimitHandlersMock).toHaveBeenCalledWith(rateLimits, codexAccounts)
@@ -683,6 +712,26 @@ describe('registerCoreHandlers', () => {
       )
     } finally {
       recordStructuredAgentSessionHostInstallRefusal(null)
+    }
+  })
+
+  it('lets relaunch exit after 2 s when the dismissal close never settles', async () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      registeredRuntime?.closeNotificationDismissals.mockReturnValueOnce(new Promise(() => {}))
+      let exited = false
+      void registeredRelaunchExit?.().then(() => {
+        exited = true
+      })
+      await vi.advanceTimersByTimeAsync(1_999)
+      expect(exited).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(exited).toBe(true)
+      expect(warn).toHaveBeenCalledOnce()
+    } finally {
+      warn.mockRestore()
+      vi.useRealTimers()
     }
   })
 

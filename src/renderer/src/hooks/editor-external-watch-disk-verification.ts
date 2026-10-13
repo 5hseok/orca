@@ -14,8 +14,9 @@ import {
   isDiskContentExpectedBySelfWrite,
   type RecentSelfWrite
 } from '@/components/editor/editor-self-write-registry'
-import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
+import { readRuntimeFileContent } from '@/runtime/runtime-file-read-client'
 import type { EditorExternalWatchTarget } from './editor-external-watch-targets'
+import { runtimeTargetForOwnerEnvironment } from '@/runtime/runtime-client-target'
 
 export type EditorExternalWatchNotification = {
   worktreeId: string
@@ -67,9 +68,7 @@ function readFileForEchoVerification(args: {
   let pending = inFlightEchoVerificationReads.get(key)
   if (!pending) {
     pending = readRuntimeFileContent({
-      settings: args.runtimeEnvironmentId
-        ? { activeRuntimeEnvironmentId: args.runtimeEnvironmentId }
-        : null,
+      target: runtimeTargetForOwnerEnvironment(args.runtimeEnvironmentId ?? null),
       filePath: args.filePath,
       relativePath: args.relativePath,
       worktreeId: args.worktreeId ?? undefined,

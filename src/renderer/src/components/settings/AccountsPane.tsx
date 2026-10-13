@@ -12,7 +12,7 @@ import { isWebClientLocation } from '@/lib/web-client-location'
 import {
   emptyClaudeAccountsState,
   emptyCodexAccountsState,
-  hasRemoteProviderAccountOwner,
+  getProviderAccountsOwnerKey,
   watchProviderAccounts
 } from '@/runtime/runtime-provider-accounts-client'
 import {
@@ -21,10 +21,12 @@ import {
   getAccountsGeminiSearchEntries,
   getAccountsCursorSearchEntries,
   getAccountsGrokSearchEntries,
+  getAccountsAntigravitySearchEntries,
   getAccountsLocationSearchEntries,
   getAccountsMiniMaxSearchEntries,
   getAccountsOpencodeSearchEntries,
-  getAccountsPaneSearchEntries
+  getAccountsPaneSearchEntries,
+  getAccountsZcodePlanSearchEntries
 } from './accounts-search'
 import { getRemoteAccountsPaneScope } from './provider-account-scope'
 import { ProviderHostScopeControl } from './ProviderHostScopeControl'
@@ -38,7 +40,11 @@ import {
   providerAccountMatchesView
 } from './provider-account-visibility'
 import { GrokAccountsSection } from './GrokAccountsSection'
+import { AntigravityAccountsSection } from './AntigravityAccountsSection'
+import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
+import { runtimeTargetEnvironmentId } from '@/runtime/runtime-client-target'
 import { CursorAccountsSection } from './CursorAccountsSection'
+import { ZcodePlanAccountsSection } from './ZcodePlanAccountsSection'
 import type {
   AccountsPaneProps,
   AccountsPaneSectionModel,
@@ -61,6 +67,7 @@ import {
   renderOpenCodeAccountsSection
 } from './accounts-pane-provider-setting-sections'
 import { renderMiniMaxAccountsSection } from './accounts-pane-minimax-section'
+import { ManagedDataAccountsSection } from './ManagedDataAccountsSection'
 import { renderAccountsRemovalDialogs } from './accounts-pane-removal-dialogs'
 
 export { getAccountsPaneSearchEntries }
@@ -68,6 +75,7 @@ export { getAccountsPaneSearchEntries }
 export function AccountsPane({
   settings,
   updateSettings,
+  hostScope,
   wslSupportedPlatform = false,
   wslAvailable = false,
   wslDistros = EMPTY_WSL_DISTROS,
@@ -100,15 +108,24 @@ export function AccountsPane({
     wslDistros,
     wslCapabilitiesLoading
   )
-  // Why: with a Remote Orca Server active the server owns provider accounts
-  // (see #7973); every list/select/remove below must scope to it, not host/WSL.
-  const isRemoteAccountScope = hasRemoteProviderAccountOwner(settings)
-  const activeRuntimeEnvironmentId = settings.activeRuntimeEnvironmentId?.trim() || null
+  // Why: a server owns its provider accounts (see #7973); every list/select/remove
+  // below goes to the host chosen in the page, never to the focused one.
+  const accountOwner = hostScope.target
+  const isRemoteAccountScope = accountOwner.kind === 'environment'
+  const scopeEnvironmentId = runtimeTargetEnvironmentId(hostScope.target)
+  // Why: a select/remove can outlive a host change; its result
+  // belongs to the owner it was sent to, not the one now shown.
+  const accountOwnerKey = getProviderAccountsOwnerKey(accountOwner)
+  const currentAccountOwnerKeyRef = useRef(accountOwnerKey)
+  useEffect(() => {
+    currentAccountOwnerKeyRef.current = accountOwnerKey
+  }, [accountOwnerKey])
+  const isCurrentAccountOwner = (): boolean => currentAccountOwnerKeyRef.current === accountOwnerKey
   // Why: keep the real name separate from the prose fallback below; the scope
   // label must not interpolate the fallback.
   const remoteServerName = isRemoteAccountScope
-    ? (runtimeEnvironments.find((environment) => environment.id === activeRuntimeEnvironmentId)
-        ?.name ?? null)
+    ? (runtimeEnvironments.find((environment) => environment.id === scopeEnvironmentId)?.name ??
+      null)
     : null
   const remoteServerLabel = isRemoteAccountScope
     ? (remoteServerName ??
@@ -260,41 +277,43 @@ export function AccountsPane({
   }, [])
 
   useEffect(() => {
+    const owner: RuntimeClientTarget = scopeEnvironmentId
+      ? { kind: 'environment', environmentId: scopeEnvironmentId }
+      : { kind: 'local' }
     // Why: remote snapshots stream usage refreshes after the synchronous ready
     // message, so the watcher stays open for the pane's lifetime; the local
     // path resolves once and the close() is a no-op.
-    const watcher = watchProviderAccounts(
-      { activeRuntimeEnvironmentId },
-      {
-        onSnapshot: (snapshot) => {
-          // Why: a failed provider's half is a substituted empty roster, not
-          // authoritative data; keep prior state and leave the loaded gate shut.
-          if (!snapshot.failedProviders?.includes('codex')) {
-            setCodexAccounts(snapshot.codex)
-            setCodexAccountsLoaded(true)
-          }
-          if (!snapshot.failedProviders?.includes('claude')) {
-            setClaudeAccounts(snapshot.claude)
-          }
-        },
-        onError: (error) => {
-          toast.error(
-            translate(
-              'auto.components.settings.AccountsPane.loadAccountsFailed',
-              'Could not load provider accounts.'
-            ),
-            { description: String((error as Error)?.message ?? error) }
-          )
+    const watcher = watchProviderAccounts(owner, {
+      onSnapshot: (snapshot) => {
+        // Why: a failed provider's half is a substituted empty roster, not
+        // authoritative data; keep prior state and leave the loaded gate shut.
+        if (!snapshot.failedProviders?.includes('codex')) {
+          setCodexAccounts(snapshot.codex)
+          setCodexAccountsLoaded(true)
         }
+        if (!snapshot.failedProviders?.includes('claude')) {
+          setClaudeAccounts(snapshot.claude)
+        }
+      },
+      onError: (error) => {
+        toast.error(
+          translate(
+            'auto.components.settings.AccountsPane.loadAccountsFailed',
+            'Could not load provider accounts.'
+          ),
+          { description: String((error as Error)?.message ?? error) }
+        )
       }
-    )
+    })
     return () => {
       watcher.close()
     }
-  }, [activeRuntimeEnvironmentId])
+  }, [scopeEnvironmentId])
 
   const runCodexAccountAction = createCodexAccountActionRunner({
     settings,
+    accountOwner,
+    isCurrentAccountOwner,
     accountRuntime,
     isRemoteAccountScope,
     codexAccounts,
@@ -306,6 +325,7 @@ export function AccountsPane({
   })
   const runClaudeAccountAction = createClaudeAccountActionRunner({
     settings,
+    isCurrentAccountOwner,
     accountRuntime,
     isRemoteAccountScope,
     claudeAccounts,
@@ -316,6 +336,7 @@ export function AccountsPane({
   })
   const model: AccountsPaneSectionModel = {
     settings,
+    accountOwner,
     updateSettings,
     searchQuery,
     recordFeatureInteraction,
@@ -370,6 +391,12 @@ export function AccountsPane({
     clearMiniMaxCookie
   }
   const visibleSections = [
+    !searchQuery || /opencode|devin|account/i.test(searchQuery) ? (
+      <div key={accountOwnerKey} className="space-y-8">
+        <ManagedDataAccountsSection provider="opencode" target={accountOwner} />
+        <ManagedDataAccountsSection provider="devin" target={accountOwner} />
+      </div>
+    ) : null,
     wslSupportedPlatform &&
     !isRemoteAccountScope &&
     matchesSettingsSearch(searchQuery, getAccountsLocationSearchEntries())
@@ -384,6 +411,14 @@ export function AccountsPane({
     matchesSettingsSearch(searchQuery, getAccountsGeminiSearchEntries())
       ? renderGeminiAccountsSection(model)
       : null,
+    matchesSettingsSearch(searchQuery, getAccountsAntigravitySearchEntries()) ? (
+      <AntigravityAccountsSection
+        key={`antigravity:${accountOwnerKey}:${accountRuntime.runtime}:${accountRuntime.wslDistro ?? ''}`}
+        owner={accountOwner}
+        target={{ runtime: accountRuntime.runtime, wslDistro: accountRuntime.wslDistro }}
+        label={accountRuntimeSentenceLabel}
+      />
+    ) : null,
     matchesSettingsSearch(searchQuery, getAccountsOpencodeSearchEntries())
       ? renderOpenCodeAccountsSection(model)
       : null,
@@ -395,6 +430,9 @@ export function AccountsPane({
     ) : null,
     matchesSettingsSearch(searchQuery, getAccountsCursorSearchEntries()) ? (
       <CursorAccountsSection key="cursor" />
+    ) : null,
+    matchesSettingsSearch(searchQuery, getAccountsZcodePlanSearchEntries()) ? (
+      <ZcodePlanAccountsSection key="zcode" />
     ) : null
   ]
 

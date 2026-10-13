@@ -209,25 +209,25 @@ describe('RepositoryFormatOnSaveSection', () => {
     )
   })
 
-  it('says nothing extra for an SSH project, which formats through the relay', () => {
+  it('tells an SSH project that its server runs the command', () => {
     render({ ...baseRepo, connectionId: 'ssh-target-1' })
-    expect(container.textContent).not.toContain('runtime host')
+    expect(container.textContent).toContain('remote host')
   })
 
   it('says nothing for a WSL worktree, which is a local execution host', () => {
     // Why: WSL repos keep executionHostId 'local' — the formatter runs inside the
-    // distro, so the runtime-host notice must not appear for them.
+    // distro, so the remote-host notice must not appear for them.
     render({ ...baseRepo, path: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo' })
-    expect(container.textContent).not.toContain('runtime host')
+    expect(container.textContent).not.toContain('remote host')
   })
 
-  it('warns that a runtime-hosted project is saved unformatted', () => {
+  it('tells a runtime-hosted project that its server runs the command', () => {
     render({ ...baseRepo, executionHostId: 'runtime:env-1' })
-    expect(container.textContent).toContain('runtime host')
+    expect(container.textContent).toContain('remote host')
   })
 
   it('says nothing about hosts for a local project', () => {
     render()
-    expect(container.textContent).not.toContain('runtime host')
+    expect(container.textContent).not.toContain('remote host')
   })
 })

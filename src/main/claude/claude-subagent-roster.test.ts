@@ -14,6 +14,8 @@ import {
   type StructuredAgentSessionEventSink
 } from '../native-chat/agent-session-wire/structured-agent-session-event-sink'
 import { ClaudeSubagentRoster } from './claude-subagent-roster'
+import { withJournalQueueMembers } from '../native-chat/agent-session-wire/structured-agent-session-journal-double-test-support'
+import { testEventSinkLogging } from '../native-chat/agent-session-wire/structured-agent-session-logger-test-support'
 
 const TURN_1 = 'claude-session:turn-1'
 
@@ -365,13 +367,13 @@ describe('ClaudeSubagentRoster', () => {
   })
 
   describe('groups that no later event can reach', () => {
-    it('loses contact with a group evicted past the bound', () => {
+    it('retains live groups past the settled-history bound', () => {
       const { roster, rolesIn, setGroupKey } = harness('turn-0')
       for (let index = 0; index < 33; index += 1) {
         setGroupKey(`turn-${index}`)
         roster.observeSystemFrame(started({ task_id: `task-${index}`, description: 'Audit' }))
       }
-      expect(rolesIn('turn-0')).toEqual([expect.objectContaining({ state: 'unverifiable' })])
+      expect(rolesIn('turn-0')).toEqual([expect.objectContaining({ state: 'working' })])
       expect(rolesIn('turn-32')).toEqual([expect.objectContaining({ state: 'working' })])
     })
 
@@ -455,14 +457,15 @@ describe('ClaudeSubagentRoster — through the real sink queue', () => {
   it('lands every revision, not just the one that was already in flight', async () => {
     const appended: AgentJournalItemBody[] = []
     let published = 0
-    const journal = {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a double for the journal members this path calls; the helper adds the in-order ones.
+    const journal = withJournalQueueMembers({
       appendItem: async (_identity: AgentJournalItemIdentity, body: AgentJournalItemBody) => {
         appended.push(body)
         return { cursor: { epoch: 'e', sequence: appended.length } }
       },
       appendTombstone: async () => ({ epoch: 'e', sequence: 0 })
-    } as unknown as AgentSessionJournal
-    const deferred = createDeferredStructuredAgentSessionEventSink()
+    }) as unknown as AgentSessionJournal
+    const deferred = createDeferredStructuredAgentSessionEventSink(testEventSinkLogging())
     deferred.bind({
       journal,
       fence: 1,
@@ -476,8 +479,7 @@ describe('ClaudeSubagentRoster — through the real sink queue', () => {
       currentTurnScope: () => AGENT_JOURNAL_THREAD_SCOPE
     })
 
-    // The first append is in flight while the rest are submitted, so a publish
-    // sharing the row's coalescing key would evict them.
+    // The first append is in flight while the rest are submitted; each must still land.
     roster.observeSystemFrame(started({ task_id: 'task-1', description: 'One' }))
     roster.observeSystemFrame(started({ task_id: 'task-2', description: 'Two' }))
     roster.observeSystemFrame(
@@ -587,17 +589,20 @@ describe('ClaudeSubagentRoster — invocation fences', () => {
     expect(rolesIn(TURN_1)[0].state).toBe('completed')
   })
 
-  it('bounds invocation history and refuses to reopen beyond the retained budget', () => {
+  it('keeps reopening a child resumed many times, and never revives a run it has forgotten', () => {
     const { roster, roles } = harness()
     for (let i = 0; i < 20; i++) {
       roster.observeSystemFrame(started({ task_id: 'task-1', tool_use_id: `tool-${i}` }))
-      if (i >= 16) {
-        expect(roles()[0].state).toBe('unverifiable')
-      }
+      expect(roles()[0].state).toBe('working')
       roster.observeToolResult(`tool-${i}`, false)
+      expect(roles()[0].state).toBe('completed')
     }
     roster.observeSystemFrame(started({ task_id: 'task-1', tool_use_id: 'tool-0' }))
-    expect(roles()[0].state).toBe('unverifiable')
+    roster.observeSystemFrame(started({ task_id: 'task-1', tool_use_id: 'tool-19' }))
+    expect(roles()[0].state).toBe('completed')
+    expect(roster.linkage.settledLinkageFor('tool-19')).toMatchObject({
+      linkage: { agentId: 'task-1', attempt: 20 }
+    })
   })
 })
 

@@ -13,6 +13,7 @@ import { canonicalizeAgentSessionIdentity } from './agent-session-claim-identity
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
 import { resolveLocalWindowsAgentStartupShell } from '../../shared/windows-terminal-shell'
 import { buildAgentResumeStartupPlan } from '../../shared/tui-agent-startup'
+import { OrchestrationError } from './orchestration/orchestration-error'
 import {
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv
@@ -48,11 +49,10 @@ export class OrcaRuntimeWithGetAgentSessionExecutionNamespace extends OrcaRuntim
     operation: 'resume' | 'create',
     signal?: AbortSignal
   ): Promise<boolean> {
-    const provider = workspace.connectionId
-      ? this.getSshProviderFn?.(workspace.connectionId)
-      : this.getLocalProvider()
+    // Why: an SSH workspace has no provider here; an unavailable route is not proof of an old
+    // owner, so preserve the structured failure.
+    const provider = workspace.connectionId ? null : this.getLocalProvider()
     if (!provider) {
-      // An unavailable route is not proof of an old owner; preserve the structured failure.
       return true
     }
     const probe =
@@ -60,8 +60,8 @@ export class OrcaRuntimeWithGetAgentSessionExecutionNamespace extends OrcaRuntim
         ? provider.supportsAgentSessionClaims
         : provider.supportsAgentSessionCreateOperations
     if (!probe) {
-      // Local in-process PTYs need no wire negotiation; unknown SSH providers are legacy.
-      return workspace.connectionId === null
+      // Local in-process PTYs need no wire negotiation.
+      return true
     }
     try {
       return (await probe.call(provider, { signal })) === true
@@ -92,6 +92,15 @@ export class OrcaRuntimeWithGetAgentSessionExecutionNamespace extends OrcaRuntim
     if (request.kind === 'automatic') {
       // Legacy renderer sleep records are migration evidence, not host authority.
       throw new Error('agent_session_resume_not_authorized')
+    }
+    if (
+      request.agent === 'opencode' &&
+      Object.values(request.launchPreferences ?? {}).some((value) => value !== undefined)
+    ) {
+      throw new OrchestrationError(
+        'capability_unsupported',
+        'OpenCode resume preferences are not verified by this execution host.'
+      )
     }
     if (!this.store) {
       throw new Error('runtime_unavailable')
@@ -158,6 +167,7 @@ export class OrcaRuntimeWithGetAgentSessionExecutionNamespace extends OrcaRuntim
       tabId: request.placement?.tabId,
       leafId: request.placement?.leafId,
       agentSessionClaim: claim,
+      ...(request.spawnIntent ? { spawnIntent: request.spawnIntent } : {}),
       signal: _caller.signal
     })
     return {

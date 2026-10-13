@@ -45,6 +45,10 @@ vi.mock('./zcode-usage-fetcher', () => ({
   fetchZcodeRateLimits: vi.fn()
 }))
 
+vi.mock('./antigravity-usage-fetcher', () => ({
+  fetchAntigravityRateLimits: vi.fn()
+}))
+
 vi.mock('./minimax/minimax-fetcher', () => ({
   fetchMiniMaxRateLimits: vi.fn()
 }))
@@ -344,7 +348,7 @@ describe('RateLimitService', () => {
     const refresh = service.refresh().then(() => {
       refreshResolved = true
     })
-    await flushMicrotasks()
+    await flushMicrotasks(8)
 
     const pendingGrokState = service.getState()
     expect(pendingGrokState.claude?.status).toBe('ok')
@@ -427,8 +431,7 @@ describe('RateLimitService', () => {
     const service = new RateLimitService()
     service.setOpenCodeGoConfigResolver(() => ({
       sessionCookie: 'session=abc123',
-      workspaceIdOverride: '',
-      apiKey: ''
+      workspaceIdOverride: ''
     }))
     const networkProxySettings = {
       httpProxyUrl: 'http://proxy.example:8080',
@@ -455,6 +458,9 @@ describe('RateLimitService', () => {
     )
     expect(fetchCodexRateLimits).toHaveBeenCalledTimes(1)
     expect(fetchGeminiRateLimits).toHaveBeenCalledTimes(1)
+    expect(fetchCodexRateLimits).toHaveBeenCalledWith(
+      expect.objectContaining({ networkProxySettings, signal: expect.any(AbortSignal) })
+    )
     expect(fetchGeminiRateLimits).toHaveBeenCalledWith(true)
     expect(fetchOpenCodeGoUsage).toHaveBeenCalledTimes(1)
     expect(fetchOpenCodeGoUsage).toHaveBeenCalledWith(
@@ -558,8 +564,7 @@ describe('RateLimitService', () => {
     const service = new RateLimitService()
     service.setOpenCodeGoConfigResolver(() => ({
       sessionCookie: '',
-      workspaceIdOverride: '',
-      apiKey: ''
+      workspaceIdOverride: ''
     }))
 
     vi.mocked(fetchClaudeRateLimits).mockRejectedValueOnce(new Error('claude down'))
@@ -583,8 +588,7 @@ describe('RateLimitService', () => {
     let cookie = 'session=valid'
     service.setOpenCodeGoConfigResolver(() => ({
       sessionCookie: cookie,
-      workspaceIdOverride: '',
-      apiKey: ''
+      workspaceIdOverride: ''
     }))
 
     // 1. Success fetch
@@ -620,8 +624,7 @@ describe('RateLimitService', () => {
     let workspaceId = 'wrk_A'
     service.setOpenCodeGoConfigResolver(() => ({
       sessionCookie: 'session=valid',
-      workspaceIdOverride: workspaceId,
-      apiKey: ''
+      workspaceIdOverride: workspaceId
     }))
 
     // 1. Success fetch for Workspace A

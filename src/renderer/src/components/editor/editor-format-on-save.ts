@@ -1,9 +1,14 @@
 import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
-import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
+import { readRuntimeFileContent } from '@/runtime/runtime-file-read-client'
+import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client-types'
+import { getRemoteFileArgs, withSshMutationExpectation } from '@/runtime/runtime-file-routing'
+import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import { RuntimeRpcCallError } from '@/runtime/runtime-rpc-result'
 import type { OpenFile } from '@/store/slices/editor'
 import type { Worktree } from '../../../../shared/worktree/types'
 import {
+  FORMAT_ON_SAVE_TIMEOUT_MS,
   isFormatOnSaveConfigured,
   matchesFormatOnSaveInclude,
   normalizeRepoFormatOnSaveSettings,
@@ -77,33 +82,23 @@ async function readFormattedContent(
   }
 }
 
-// Why: mirrors the fields getEditorFileOperationContext returns that this path
-// needs; typing `settings` off the file client keeps the read call cast-free.
-type EditorFileOperationContext = {
-  settings: Parameters<typeof readRuntimeFileContent>[0]['settings']
-  worktreeId: string
-  worktreePath: string | null
-  connectionId?: string
-  expectedExecutionHostId: 'local' | `ssh:${string}`
-}
-
 type MaybeFormatSavedFileArgs = {
   file: OpenFile
   worktree: Worktree | null | undefined
-  fileContext: EditorFileOperationContext
+  fileContext: RuntimeFileOperationArgs
   savedContent: string
 }
 
-/**
- * Whether a save can reach the formatter at all. Runtime environments have no
- * non-interactive exec channel, so they skip the IPC round trip; SSH-backed
- * repos do have one and are handled in the main process.
- */
+// Why: the server's own formatter timeout plus room for the round trip, so a slow run is reported
+// by the server rather than cut off by the transport.
+const FORMAT_ON_SAVE_RPC_TIMEOUT_MS = FORMAT_ON_SAVE_TIMEOUT_MS + 10_000
+
+/** Whether a save can reach a formatter at all: local files via IPC, remote files via their server. */
 export function canFormatSavedFile(
-  file: Pick<OpenFile, 'runtimeEnvironmentId'>,
+  _file: Pick<OpenFile, 'runtimeEnvironmentId'>,
   worktree: Worktree | null | undefined
 ): boolean {
-  return Boolean(worktree?.path) && !file.runtimeEnvironmentId
+  return Boolean(worktree?.path)
 }
 
 /** Whether the repo's own config says this save will run a formatter. */
@@ -141,14 +136,14 @@ export async function maybeFormatSavedFile({
     worktreePath: worktree.path,
     filePath: file.filePath,
     savedContent,
-    runFormat: (args) => window.api.editor.formatOnSave(args),
+    runFormat: (args) => runFormatOnHost(fileContext, args),
     readSavedContent: async () => {
       const result = await readRuntimeFileContent({
-        settings: fileContext.settings,
+        target: fileContext.target,
         filePath: file.filePath,
         relativePath: file.relativePath,
         worktreeId: file.worktreeId,
-        // Why: an SSH file lives on the host that ran the formatter; a local read would miss it.
+        // Why: the file lives on the host that ran the formatter; a local read would miss it.
         connectionId: fileContext.connectionId
       })
       return typeof result.content === 'string' ? result.content : null
@@ -165,4 +160,36 @@ function notifyFormatFailure(message: string): void {
       description: message.length > 300 ? `${message.slice(0, 300)}…` : message
     }
   )
+}
+
+/**
+ * The host that owns the file runs the formatter: a remote workspace goes to its own server, never
+ * to this machine's shell. An older server without the method means "not supported", not a failure.
+ */
+async function runFormatOnHost(
+  fileContext: RuntimeFileOperationArgs,
+  args: { repoId: string; worktreePath: string; filePath: string }
+): Promise<FormatOnSaveResult> {
+  const remoteArgs = getRemoteFileArgs(fileContext, args.filePath)
+  if (!remoteArgs) {
+    return window.api.editor.formatOnSave(args)
+  }
+  try {
+    return await callRuntimeRpc<FormatOnSaveResult>(
+      remoteArgs.target,
+      'files.formatOnSave',
+      withSshMutationExpectation(fileContext, {
+        worktree: remoteArgs.worktreeSelector,
+        relativePath: remoteArgs.relativePath
+      }),
+      { timeoutMs: FORMAT_ON_SAVE_RPC_TIMEOUT_MS }
+    )
+  } catch (error) {
+    if (error instanceof RuntimeRpcCallError && error.code === 'method_not_found') {
+      return { status: 'skipped', reason: 'unsupported-host' }
+    }
+    // Why: a timeout or dropped transport proves nothing about the formatter on the host, so the
+    // caller rereads the file instead of reporting a failure.
+    throw error
+  }
 }

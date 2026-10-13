@@ -1,4 +1,5 @@
 import { normalizeAbsolutePathForComparison } from '@/components/right-sidebar/file-explorer-paths'
+import { MAX_TIMER_DELAY_MS } from '../../../../shared/timer-delay'
 
 // Why: the editor's own save path writes to disk, which fans out as an
 // fs:changed event back to useEditorExternalWatch a few ms later. Treating
@@ -36,6 +37,43 @@ type SelfWriteStamp = RecentSelfWrite & {
 }
 
 const stamps = new Map<string, SelfWriteStamp>()
+let expiryTimer: ReturnType<typeof setTimeout> | null = null
+let scheduledExpiryAt = Infinity
+
+function clearExpiryTimer(): void {
+  if (expiryTimer !== null) {
+    clearTimeout(expiryTimer)
+    expiryTimer = null
+  }
+  scheduledExpiryAt = Infinity
+}
+
+function scheduleExpiredSelfWriteCleanup(): void {
+  let nextExpiryAt = Infinity
+  for (const stamp of stamps.values()) {
+    if (Number.isFinite(stamp.expiresAt)) {
+      nextExpiryAt = Math.min(nextExpiryAt, stamp.expiresAt + 1)
+    }
+  }
+  if (nextExpiryAt === Infinity) {
+    clearExpiryTimer()
+    return
+  }
+  if (expiryTimer !== null && scheduledExpiryAt <= nextExpiryAt) {
+    return
+  }
+  clearExpiryTimer()
+  scheduledExpiryAt = nextExpiryAt
+  expiryTimer = setTimeout(
+    () => {
+      expiryTimer = null
+      scheduledExpiryAt = Infinity
+      pruneExpiredSelfWrites()
+      scheduleExpiredSelfWriteCleanup()
+    },
+    Math.min(MAX_TIMER_DELAY_MS, Math.max(0, nextExpiryAt - Date.now()))
+  )
+}
 
 function selfWriteKey(absolutePath: string, runtimeEnvironmentId?: string | null): string {
   return `${runtimeEnvironmentId?.trim() || 'client'}::${normalizeAbsolutePathForComparison(absolutePath)}`
@@ -94,6 +132,7 @@ export function recordSelfWrite(
   enforceSelfWriteStampLimit()
   // Why: the formatter has settled, so events held back during its run are now verified against the real bytes.
   releaseDeferredReplays(previous)
+  scheduleExpiredSelfWriteCleanup()
 }
 
 export function recordFormatterPendingSelfWrite(
@@ -114,6 +153,7 @@ export function recordFormatterPendingSelfWrite(
       : {})
   })
   enforceSelfWriteStampLimit()
+  scheduleExpiredSelfWriteCleanup()
 }
 
 /**
@@ -136,6 +176,9 @@ export function deferUntilFormatterSettles(
 
 export function clearSelfWrite(absolutePath: string, runtimeEnvironmentId?: string | null): void {
   removeStamp(selfWriteKey(absolutePath, runtimeEnvironmentId))
+  if (stamps.size === 0) {
+    clearExpiryTimer()
+  }
 }
 
 export function getRecentSelfWrite(
@@ -149,6 +192,9 @@ export function getRecentSelfWrite(
   }
   if (Date.now() > stamp.expiresAt) {
     removeStamp(key)
+    if (stamps.size === 0) {
+      clearExpiryTimer()
+    }
     return null
   }
   return stamp.formatterPending
@@ -181,6 +227,7 @@ export function hasRecentSelfWrite(
 }
 
 export function __clearSelfWriteRegistryForTests(): void {
+  clearExpiryTimer()
   stamps.clear()
 }
 

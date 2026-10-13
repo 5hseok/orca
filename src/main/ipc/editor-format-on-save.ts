@@ -1,16 +1,13 @@
 import { ipcMain } from 'electron'
 import type { Store } from '../persistence'
-import { runFormatOnSave } from '../format-on-save-runner'
+import { runRepoFormatOnSave } from '../format-on-save-repo'
 import {
   isFormatOnSaveConfigured,
   normalizeRepoFormatOnSaveSettings,
   type FormatOnSaveResult
 } from '../../shared/format-on-save-command'
 import { getRepoExecutionHostId, parseExecutionHostId } from '../../shared/execution-host'
-import { getStoredRepoSshConnectionId } from '../repo-execution-host'
-import { getSshGitProvider } from '../providers/ssh-git-dispatch'
 import { resolveRepoOwnedWorktreePath } from './repo-owned-worktree-path'
-import type { RemoteFormatExecutor } from '../format-on-save-runner'
 
 type FormatOnSaveArgs = {
   repoId: string
@@ -30,60 +27,24 @@ export function registerEditorFormatOnSaveHandlers(store: Store): void {
         return { status: 'skipped', reason: 'not-configured' }
       }
 
-      // Why: the command is read from the repo record, never from the renderer —
-      // otherwise this handler would be an arbitrary-command-execution channel.
-      const settings = normalizeRepoFormatOnSaveSettings(repo.formatOnSave)
-      if (!isFormatOnSaveConfigured(settings)) {
+      if (!isFormatOnSaveConfigured(normalizeRepoFormatOnSaveSettings(repo.formatOnSave))) {
         return { status: 'skipped', reason: 'not-configured' }
       }
 
+      // Why: a remote repo is formatted by its own server through `files.formatOnSave`; running
+      // its command here would answer for the wrong machine.
       const host = parseExecutionHostId(getRepoExecutionHostId(repo))
-      // Why: a row can name its SSH owner via `executionHostId` alone, which the raw `connectionId` misses.
-      const sshConnectionId = getStoredRepoSshConnectionId(repo)
-      // Why: runtime hosts have no non-interactive exec channel of their own, so
-      // the formatter can't reach the file. SSH does, via agent.execNonInteractive.
-      if (!sshConnectionId && host && host.kind !== 'local') {
+      if (host && host.kind !== 'local') {
         return { status: 'skipped', reason: 'unsupported-host' }
       }
 
       // Why: proves the worktree is registered AND owned by this repo, so a
-      // caller cannot pair one repo's configured command with another repo's
-      // worktree. Handles the remote path shape for SSH repos too.
+      // caller cannot pair one repo's configured command with another repo's worktree.
       const worktreePath = await resolveRepoOwnedWorktreePath(repo, store, args.worktreePath)
 
-      if (sshConnectionId) {
-        const remoteExec = createRemoteFormatExecutor(sshConnectionId)
-        if (!remoteExec) {
-          // Why: a disconnected SSH host isn't a formatter failure — the save
-          // already landed, so stay quiet and let the next save format.
-          return { status: 'skipped', reason: 'unsupported-host' }
-        }
-        return runFormatOnSave({
-          settings,
-          worktreePath,
-          absoluteFilePath: args.filePath,
-          remoteExec,
-          hostScope: sshConnectionId
-        })
-      }
-
-      return runFormatOnSave({
-        settings,
-        worktreePath,
-        absoluteFilePath: args.filePath
-      })
+      return runRepoFormatOnSave({ repo, worktreePath, absoluteFilePath: args.filePath })
     }
   )
-}
-
-function createRemoteFormatExecutor(connectionId: string): RemoteFormatExecutor | null {
-  const provider = getSshGitProvider(connectionId)
-  if (!provider) {
-    return null
-  }
-
-  return ({ binary, args, cwd, timeoutMs }) =>
-    provider.execNonInteractive(binary, args, cwd, timeoutMs)
 }
 
 function parseFormatOnSaveArgs(rawArgs: unknown): FormatOnSaveArgs {

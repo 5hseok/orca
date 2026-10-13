@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 const resolveLocal = (absoluteFilePath: string) =>
-  resolveFormatTarget({ worktreePath: worktree, absoluteFilePath, isRemote: false })
+  resolveFormatTarget({ worktreePath: worktree, absoluteFilePath })
 
 describe('resolveFormatTarget', () => {
   it('returns the canonical path and worktree-relative path for a file inside', async () => {
@@ -39,8 +39,7 @@ describe('resolveFormatTarget', () => {
     await expect(
       resolveFormatTarget({
         worktreePath: '/home/dev/repo',
-        absoluteFilePath: '/home/dev/repo/../other/a.ts',
-        isRemote: true
+        absoluteFilePath: '/home/dev/repo/../other/a.ts'
       })
     ).resolves.toBeNull()
   })
@@ -57,23 +56,12 @@ describe('resolveFormatTarget', () => {
     await expect(
       resolveFormatTarget({
         worktreePath: missingRoot,
-        absoluteFilePath: join(missingRoot, 'src', 'a.ts'),
-        isRemote: false
+        absoluteFilePath: join(missingRoot, 'src', 'a.ts')
       })
     ).resolves.toEqual({
       absolutePath: join(missingRoot, 'src', 'a.ts'),
       relativePath: 'src/a.ts'
     })
-  })
-
-  it('treats a remote path lexically without touching the local filesystem', async () => {
-    await expect(
-      resolveFormatTarget({
-        worktreePath: '/home/dev/repo',
-        absoluteFilePath: '/home/dev/repo/src/a.ts',
-        isRemote: true
-      })
-    ).resolves.toEqual({ absolutePath: '/home/dev/repo/src/a.ts', relativePath: 'src/a.ts' })
   })
 
   describe.skipIf(process.platform === 'win32')('symlinks', () => {
@@ -101,8 +89,7 @@ describe('resolveFormatTarget', () => {
       await expect(
         resolveFormatTarget({
           worktreePath: viaLink,
-          absoluteFilePath: join(viaLink, 'src', 'a.ts'),
-          isRemote: false
+          absoluteFilePath: join(viaLink, 'src', 'a.ts')
         })
       ).resolves.toEqual({
         absolutePath: join(worktree, 'src', 'a.ts'),

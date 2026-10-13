@@ -1,5 +1,4 @@
 import { win32 as pathWin32 } from 'node:path'
-import { canUseBunPty } from '../daemon/pty-subprocess/bun-pty-process-capabilities'
 import { recognizeAgentProcessFromCommandLine } from '../../shared/agent-process-recognition'
 import { WINDOWS_GIT_BASH_SHELL } from '../../shared/windows-terminal-shell'
 import { resolveWindowsGitBashShellPath } from '../git-bash'
@@ -11,7 +10,7 @@ import {
 } from './local-pty-launch-helpers'
 import type { LocalPtyProviderOptions } from './local-pty-provider-types'
 import type { getShellLaunchConfig } from './local-pty-shell-ready'
-import { ensureNodePtySpawnHelperExecutable, validateWorkingDirectory } from './local-pty-utils'
+import { ensureNodePtySpawnHelperExecutable } from './local-pty-utils'
 import {
   resolveEffectiveWindowsPowerShell,
   shouldProbeWindowsPowerShellAvailability,
@@ -20,7 +19,7 @@ import {
 import { buildWindowsPowerShellSpawnAttempts } from './windows-shell-fallback-chain'
 import { resolveWindowsShellLaunchArgs } from './windows-shell-args'
 import { assertSafeAgentStartupCwd } from './pty-default-cwd'
-import type { PtySpawnOptions } from './types'
+import type { PtySpawnOptions } from './pty-provider-contract'
 
 type WslLaunchContext = { distro: string; treatPosixCwdAsWsl: true }
 type LocalPtyLaunchSeed = {
@@ -52,9 +51,9 @@ export type LocalPtyLaunchPlan = {
   getFallbackShellReadyConfig:
     | ((shell: string) => ReturnType<typeof getShellLaunchConfig>)
     | undefined
-  // Why hoisted: a fallback shell must drop the primary's launch env, and
+  // Why hoisted: a fallback shell must undo the primary's launch env, and
   // re-deriving the key names would re-run wrapper generation.
-  primaryLaunchEnvKeys: string[]
+  primaryPreLaunchEnv: Record<string, string | undefined>
   isWslShell: boolean
   launchWslDistro: string | null
 }
@@ -77,12 +76,7 @@ function finalizeLocalPtyLaunchPlan(
     windowsFallbackAttempts?: ReturnType<typeof buildWindowsPowerShellSpawnAttempts>
   }
 ): LocalPtyLaunchPlan {
-  if (!canUseBunPty()) {
-    ensureNodePtySpawnHelperExecutable()
-  }
-  if (seed.args.prevalidatedCwd !== shell.validationCwd) {
-    validateWorkingDirectory(shell.validationCwd)
-  }
+  ensureNodePtySpawnHelperExecutable()
   const isWslShell =
     Boolean(seed.wslInfo) || pathWin32.basename(shell.shellPath).toLowerCase() === 'wsl.exe'
   return {
@@ -101,7 +95,7 @@ function finalizeLocalPtyLaunchPlan(
     windowsFallbackAttempts: shell.windowsFallbackAttempts ?? [],
     shellReadyLaunch: null,
     getFallbackShellReadyConfig: undefined,
-    primaryLaunchEnvKeys: [],
+    primaryPreLaunchEnv: {},
     isWslShell,
     launchWslDistro: isWslShell ? (seed.launchWslContext?.distro ?? null) : null
   }

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ProcessResult, ProcessSpec } from '../shared/child-process/run-process'
+import type { ProcessResult, ProcessSpec } from '@orca/process-host/process-spec'
 import type { WslResult, WslSpec } from './wsl/wsl-runner'
 
 const runProcessMock = vi.fn<(spec: ProcessSpec) => Promise<ProcessResult>>()
 const runWslProcessMock = vi.fn<(spec: WslSpec) => Promise<WslResult>>()
 
-vi.mock('../shared/child-process/run-process', () => ({
+vi.mock('@orca/process-host', () => ({
   runProcess: (spec: ProcessSpec) => runProcessMock(spec)
 }))
 
@@ -127,17 +127,21 @@ describe('runFormatOnSave', () => {
     expect(runProcessMock).not.toHaveBeenCalled()
   })
 
-  it('fails without spawning when a path cannot be quoted safely for the remote shell', async () => {
-    const remoteExec = vi.fn()
-    await expect(
-      runFormatOnSave({
-        settings: enabledSettings,
-        worktreePath: 'C:\\repo',
-        absoluteFilePath: 'C:\\repo\\src\\%USERNAME%.ts',
-        remoteExec
-      })
-    ).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('cmd.exe') })
-    expect(remoteExec).not.toHaveBeenCalled()
+  it('fails without spawning when a path cannot be quoted safely for cmd.exe', async () => {
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    try {
+      await expect(
+        runFormatOnSave({
+          settings: enabledSettings,
+          worktreePath: 'C:\\repo',
+          absoluteFilePath: 'C:\\repo\\src\\%USERNAME%.ts'
+        })
+      ).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('cmd.exe') })
+    } finally {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    }
+    expect(runProcessMock).not.toHaveBeenCalled()
   })
 
   it('runs the command in the worktree root with the saved path substituted', async () => {
@@ -389,160 +393,6 @@ describe('runFormatOnSave', () => {
     release?.()
     await expect(first).resolves.toEqual({ status: 'completed' })
     expect(runProcessMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('runs the formatter on the remote host for an SSH worktree', async () => {
-    const remoteExec = vi.fn().mockResolvedValue({
-      stdout: '',
-      stderr: '',
-      exitCode: 0,
-      timedOut: false
-    })
-
-    await expect(
-      runFormatOnSave({
-        settings: enabledSettings,
-        worktreePath: '/srv/repo',
-        absoluteFilePath: '/srv/repo/src/a.ts',
-        remoteExec,
-        hostScope: 'ssh-1'
-      })
-    ).resolves.toEqual({ status: 'completed' })
-
-    expect(remoteExec).toHaveBeenCalledWith({
-      binary: '/bin/bash',
-      args: ['-lc', "prettier --write '/srv/repo/src/a.ts'"],
-      cwd: '/srv/repo',
-      timeoutMs: expect.any(Number)
-    })
-    // Why: the local shell must not be touched for a file that lives elsewhere.
-    expect(runProcessMock).not.toHaveBeenCalled()
-  })
-
-  it('uses cmd.exe when the SSH host is Windows', async () => {
-    const remoteExec = vi.fn().mockResolvedValue({
-      stdout: '',
-      stderr: '',
-      exitCode: 0,
-      timedOut: false
-    })
-
-    await runFormatOnSave({
-      settings: { ...enabledSettings, include: [] },
-      worktreePath: 'C:\\srv\\repo',
-      absoluteFilePath: 'C:\\srv\\repo\\src\\a.ts',
-      remoteExec,
-      hostScope: 'ssh-win'
-    })
-
-    const call = remoteExec.mock.calls[0][0]
-    expect(call.binary).toBe('cmd.exe')
-    expect(call.args.slice(0, 3)).toEqual(['/d', '/s', '/c'])
-    expect(call.args[3]).toContain('"C:\\srv\\repo\\src\\a.ts"')
-  })
-
-  it('reports a remote formatter failure with its stderr', async () => {
-    const remoteExec = vi.fn().mockResolvedValue({
-      stdout: '',
-      stderr: 'SyntaxError: line 3',
-      exitCode: 2,
-      timedOut: false
-    })
-
-    await expect(
-      runFormatOnSave({
-        settings: enabledSettings,
-        worktreePath: '/srv/repo',
-        absoluteFilePath: '/srv/repo/src/a.ts',
-        remoteExec,
-        hostScope: 'ssh-1'
-      })
-    ).resolves.toEqual({ status: 'failed', message: 'SyntaxError: line 3' })
-  })
-
-  it('names a remote timeout and a remote spawn failure distinctly', async () => {
-    const timedOut = vi.fn().mockResolvedValue({
-      stdout: '',
-      stderr: '',
-      exitCode: null,
-      timedOut: true
-    })
-    await expect(
-      runFormatOnSave({
-        settings: enabledSettings,
-        worktreePath: '/srv/repo',
-        absoluteFilePath: '/srv/repo/src/a.ts',
-        remoteExec: timedOut,
-        hostScope: 'ssh-1'
-      })
-    ).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('timed out') })
-
-    const spawnFailed = vi.fn().mockResolvedValue({
-      stdout: '',
-      stderr: '',
-      exitCode: null,
-      timedOut: false,
-      spawnError: 'bash: not found'
-    })
-    await expect(
-      runFormatOnSave({
-        settings: enabledSettings,
-        worktreePath: '/srv/repo',
-        absoluteFilePath: '/srv/repo/src/a.ts',
-        remoteExec: spawnFailed,
-        hostScope: 'ssh-1'
-      })
-    ).resolves.toEqual({ status: 'failed', message: 'bash: not found' })
-  })
-
-  it('treats a dropped relay as a skip, not a formatter failure', async () => {
-    // Why: the save already landed; a transport error must not read as the
-    // formatter rejecting the user's file.
-    const remoteExec = vi.fn().mockRejectedValue(new Error('relay disconnected'))
-
-    await expect(
-      runFormatOnSave({
-        settings: enabledSettings,
-        worktreePath: '/srv/repo',
-        absoluteFilePath: '/srv/repo/src/a.ts',
-        remoteExec,
-        hostScope: 'ssh-1'
-      })
-    ).resolves.toEqual({ status: 'skipped', reason: 'unsupported-host' })
-  })
-
-  it('keeps in-flight slots separate per host for an identical path', async () => {
-    let releaseFirst: (() => void) | undefined
-    const slowRemote = vi.fn().mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          releaseFirst = () => resolve({ stdout: '', stderr: '', exitCode: 0, timedOut: false })
-        })
-    )
-    const fastRemote = vi
-      .fn()
-      .mockResolvedValue({ stdout: '', stderr: '', exitCode: 0, timedOut: false })
-
-    const first = runFormatOnSave({
-      settings: enabledSettings,
-      worktreePath: '/srv/repo',
-      absoluteFilePath: '/srv/repo/src/a.ts',
-      remoteExec: slowRemote,
-      hostScope: 'ssh-1'
-    })
-
-    await expect(
-      runFormatOnSave({
-        settings: enabledSettings,
-        worktreePath: '/srv/repo',
-        absoluteFilePath: '/srv/repo/src/a.ts',
-        remoteExec: fastRemote,
-        hostScope: 'ssh-2'
-      })
-    ).resolves.toEqual({ status: 'completed' })
-
-    releaseFirst?.()
-    await expect(first).resolves.toEqual({ status: 'completed' })
   })
 
   describe('WSL worktrees', () => {

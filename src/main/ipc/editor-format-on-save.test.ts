@@ -5,15 +5,13 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn(),
   removeHandler: vi.fn(),
   runFormatOnSave: vi.fn(),
-  resolveRepoOwnedWorktreePath: vi.fn(),
-  getSshGitProvider: vi.fn()
+  resolveRepoOwnedWorktreePath: vi.fn()
 }))
 
 const handleMock = mocks.handle
 const removeHandlerMock = mocks.removeHandler
 const runFormatOnSaveMock = mocks.runFormatOnSave
 const resolveRepoOwnedWorktreePathMock = mocks.resolveRepoOwnedWorktreePath
-const getSshGitProviderMock = mocks.getSshGitProvider
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -28,10 +26,6 @@ vi.mock('../format-on-save-runner', () => ({
 
 vi.mock('./repo-owned-worktree-path', () => ({
   resolveRepoOwnedWorktreePath: mocks.resolveRepoOwnedWorktreePath
-}))
-
-vi.mock('../providers/ssh-git-dispatch', () => ({
-  getSshGitProvider: mocks.getSshGitProvider
 }))
 
 import { registerEditorFormatOnSaveHandlers } from './editor-format-on-save'
@@ -80,8 +74,6 @@ beforeEach(() => {
   resolveRepoOwnedWorktreePathMock.mockImplementation(
     async (_repo: unknown, _store: unknown, value: string) => value
   )
-  getSshGitProviderMock.mockReset()
-  getSshGitProviderMock.mockReturnValue(undefined)
 })
 
 describe('editor:formatOnSave handler', () => {
@@ -109,56 +101,19 @@ describe('editor:formatOnSave handler', () => {
     expect(runFormatOnSaveMock).not.toHaveBeenCalled()
   })
 
-  it('formats an SSH repo through its relay rather than running the command locally', async () => {
-    const execNonInteractive = vi.fn().mockResolvedValue({
-      stdout: '',
-      stderr: '',
-      exitCode: 0,
-      timedOut: false
-    })
-    getSshGitProviderMock.mockReturnValue({ execNonInteractive })
-    const invoke = registerWith(localRepo({ connectionId: 'ssh-target-1' }))
-
-    await invoke(VALID_ARGS)
-
-    const passed = runFormatOnSaveMock.mock.calls[0][0]
-    expect(passed.remoteExec).toBeTypeOf('function')
-    expect(passed.hostScope).toBe('ssh-target-1')
-    // Why: the remote path is authorized against the repo too — the helper
-    // handles the remote path shape rather than resolving it locally.
-    expect(resolveRepoOwnedWorktreePathMock).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'repo-1' }),
-      expect.anything(),
-      VALID_ARGS.worktreePath
-    )
-
-    await passed.remoteExec({
-      binary: '/bin/bash',
-      args: ['-lc', 'fmt'],
-      cwd: '/srv',
-      timeoutMs: 1
-    })
-    expect(execNonInteractive).toHaveBeenCalledWith('/bin/bash', ['-lc', 'fmt'], '/srv', 1)
-  })
-
-  it('routes a row that names its SSH owner only through executionHostId', async () => {
-    getSshGitProviderMock.mockReturnValue({ execNonInteractive: vi.fn() })
-    const invoke = registerWith(localRepo({ executionHostId: 'ssh:ssh-target-2' }))
-
-    await invoke(VALID_ARGS)
-
-    expect(getSshGitProviderMock).toHaveBeenCalledWith('ssh-target-2')
-    expect(runFormatOnSaveMock.mock.calls[0][0].hostScope).toBe('ssh-target-2')
-  })
-
-  it('skips an SSH repo whose relay is not connected', async () => {
-    getSshGitProviderMock.mockReturnValue(undefined)
-    const invoke = registerWith(localRepo({ connectionId: 'ssh-target-1' }))
+  it.each([
+    ['connectionId', { connectionId: 'ssh-target-1' }],
+    ['executionHostId', { executionHostId: 'ssh:ssh-target-2' as const }]
+  ])('skips an SSH-owned repo named by %s instead of running it here', async (_name, overrides) => {
+    // Why: a remote repo is formatted by its own server through files.formatOnSave; the client
+    // must never answer for the wrong machine.
+    const invoke = registerWith(localRepo(overrides))
 
     await expect(invoke(VALID_ARGS)).resolves.toEqual({
       status: 'skipped',
       reason: 'unsupported-host'
     })
+    expect(resolveRepoOwnedWorktreePathMock).not.toHaveBeenCalled()
     expect(runFormatOnSaveMock).not.toHaveBeenCalled()
   })
 
@@ -190,6 +145,8 @@ describe('editor:formatOnSave handler', () => {
       status: 'skipped',
       reason: 'not-configured'
     })
+    // Why: authorizing a worktree lists its git worktrees; do not pay that on every save.
+    expect(resolveRepoOwnedWorktreePathMock).not.toHaveBeenCalled()
     expect(runFormatOnSaveMock).not.toHaveBeenCalled()
   })
 

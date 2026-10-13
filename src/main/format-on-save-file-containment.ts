@@ -32,13 +32,10 @@ export function getWorktreeRelativePath(
  */
 export async function resolveFormatTarget({
   worktreePath,
-  absoluteFilePath,
-  isRemote
+  absoluteFilePath
 }: {
   worktreePath: string
   absoluteFilePath: string
-  /** The path lives on another host, so this machine's filesystem cannot canonicalize it. */
-  isRemote: boolean
 }): Promise<FormatTarget | null> {
   if (hasParentSegment(absoluteFilePath)) {
     return null
@@ -46,14 +43,12 @@ export async function resolveFormatTarget({
 
   let root = worktreePath
   let file = absoluteFilePath
-  if (!isRemote) {
-    try {
-      root = await canonicalizeExistingPrefix(worktreePath)
-      file = await canonicalizeExistingPrefix(absoluteFilePath)
-    } catch {
-      // Why: a path that cannot be inspected cannot be shown to be inside the worktree.
-      return null
-    }
+  try {
+    root = await canonicalizeExistingPrefix(worktreePath)
+    file = await canonicalizeExistingPrefix(absoluteFilePath)
+  } catch {
+    // Why: a path that cannot be inspected cannot be shown to be inside the worktree.
+    return null
   }
 
   const relativePath = getWorktreeRelativePath(root, file)

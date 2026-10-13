@@ -1,11 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const toastError = vi.fn()
 vi.mock('sonner', () => ({ toast: { error: (...args: unknown[]) => toastError(...args) } }))
 vi.mock('@/i18n/i18n', () => ({ translate: (_key: string, fallback: string) => fallback }))
-vi.mock('@/runtime/runtime-file-client', () => ({ readRuntimeFileContent: vi.fn() }))
+vi.mock('@/runtime/runtime-file-read-client', () => ({ readRuntimeFileContent: vi.fn() }))
+vi.mock('@/runtime/runtime-rpc-client', () => ({ callRuntimeRpc: vi.fn() }))
 
-import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
+import { readRuntimeFileContent } from '@/runtime/runtime-file-read-client'
+import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import { RuntimeRpcCallError } from '@/runtime/runtime-rpc-result'
+import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client-types'
 import { formatSavedFile, maybeFormatSavedFile } from './editor-format-on-save'
 
 beforeEach(() => {
@@ -152,34 +156,88 @@ describe('formatSavedFile', () => {
 })
 
 describe('maybeFormatSavedFile', () => {
-  it('reads the formatted file through the SSH connection that ran the formatter', async () => {
-    vi.mocked(readRuntimeFileContent).mockResolvedValue({ content: 'formatted' } as never)
-    vi.stubGlobal('window', {
-      api: { editor: { formatOnSave: vi.fn().mockResolvedValue({ status: 'completed' }) } }
-    })
+  const formatOnSaveIpc = vi.fn()
+  const file = { filePath: '/srv/repo/a.ts', relativePath: 'a.ts', worktreeId: 'wt-1' } as never
+  const worktree = { path: '/srv/repo', repoId: 'repo-1' } as never
+  const remoteContext: RuntimeFileOperationArgs = {
+    target: { kind: 'environment', environmentId: 'env-1' },
+    worktreeId: 'wt-1',
+    worktreePath: '/srv/repo',
+    expectedExecutionHostId: 'local'
+  }
 
+  beforeEach(() => {
+    formatOnSaveIpc.mockReset()
+    formatOnSaveIpc.mockResolvedValue({ status: 'completed' })
+    vi.mocked(readRuntimeFileContent).mockReset()
+    vi.mocked(readRuntimeFileContent).mockResolvedValue({ content: 'formatted' } as never)
+    vi.mocked(callRuntimeRpc).mockReset()
+    vi.stubGlobal('window', { api: { editor: { formatOnSave: formatOnSaveIpc } } })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const run = (fileContext: RuntimeFileOperationArgs) =>
+    maybeFormatSavedFile({ file, worktree, fileContext, savedContent: 'raw' })
+
+  it('formats a local file through the main-process handler', async () => {
     await expect(
-      maybeFormatSavedFile({
-        file: {
-          filePath: '/srv/repo/a.ts',
-          relativePath: 'a.ts',
-          worktreeId: 'wt-1'
-        } as never,
-        worktree: { path: '/srv/repo', repoId: 'repo-1' } as never,
-        fileContext: {
-          settings: null,
-          worktreeId: 'wt-1',
-          worktreePath: '/srv/repo',
-          connectionId: 'ssh-1',
-          expectedExecutionHostId: 'ssh:ssh-1'
-        },
-        savedContent: 'raw'
-      })
+      run({ target: { kind: 'local' }, worktreeId: 'wt-1', worktreePath: '/srv/repo' })
     ).resolves.toBe('formatted')
 
-    expect(readRuntimeFileContent).toHaveBeenCalledWith(
-      expect.objectContaining({ connectionId: 'ssh-1', filePath: '/srv/repo/a.ts' })
+    expect(formatOnSaveIpc).toHaveBeenCalledWith({
+      repoId: 'repo-1',
+      worktreePath: '/srv/repo',
+      filePath: '/srv/repo/a.ts'
+    })
+    expect(callRuntimeRpc).not.toHaveBeenCalled()
+  })
+
+  it('formats a remote file on its own server and rereads it from there', async () => {
+    vi.mocked(callRuntimeRpc).mockResolvedValue({ status: 'completed' })
+
+    await expect(run(remoteContext)).resolves.toBe('formatted')
+
+    expect(callRuntimeRpc).toHaveBeenCalledWith(
+      { kind: 'environment', environmentId: 'env-1' },
+      'files.formatOnSave',
+      expect.objectContaining({
+        relativePath: 'a.ts',
+        expectedExecutionHostId: 'local'
+      }),
+      { timeoutMs: expect.any(Number) }
     )
-    vi.unstubAllGlobals()
+    // Why: a remote repo must never be formatted by this machine's shell.
+    expect(formatOnSaveIpc).not.toHaveBeenCalled()
+    expect(readRuntimeFileContent).toHaveBeenCalledWith(
+      expect.objectContaining({ target: remoteContext.target, filePath: '/srv/repo/a.ts' })
+    )
+  })
+
+  it('treats a server without the method as unsupported, not as a failure', async () => {
+    vi.mocked(callRuntimeRpc).mockRejectedValue(
+      new RuntimeRpcCallError({
+        id: 'r1',
+        ok: false,
+        error: { code: 'method_not_found', message: 'method_not_found' },
+        _meta: { runtimeId: 'rt' }
+      } as never)
+    )
+
+    await expect(run(remoteContext)).resolves.toBeNull()
+
+    expect(toastError).not.toHaveBeenCalled()
+    expect(readRuntimeFileContent).not.toHaveBeenCalled()
+  })
+
+  it('rereads without a failure toast when the transport times out mid-format', async () => {
+    // Why: a timeout is not evidence the formatter stopped; it may still be rewriting the file.
+    vi.mocked(callRuntimeRpc).mockRejectedValue(new Error('request timed out'))
+
+    await expect(run(remoteContext)).resolves.toBe('formatted')
+
+    expect(toastError).not.toHaveBeenCalled()
   })
 })
