@@ -92,6 +92,7 @@ export class RepoUpdatePersistenceOperations {
         | 'executionHostId'
         | 'symlinkPaths'
         | 'issueSourcePreference'
+        | 'defaultJiraProject'
         | 'forkSyncMode'
         | 'externalWorktreeVisibilityPromptDismissedAt'
         | 'externalWorktreeInboxBaselinePaths'

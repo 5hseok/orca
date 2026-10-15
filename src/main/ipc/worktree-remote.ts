@@ -20,6 +20,7 @@ import type {
   AutomationWorkspaceProvenance,
   CliWorkspaceProvenance,
   GitPushTarget,
+  GitStatusMetadataChangedEvent,
   Worktree,
   WorktreeHeadIdentity
 } from '../../shared/worktree/types'
@@ -138,6 +139,7 @@ import {
 } from '../worktree-name-retirement'
 import { createRetiredNameLookup } from '../../shared/worktree/retired-name-registry'
 import { findPendingWorktreeRemovalConflict } from '../worktree-removal-table'
+import { isWslMoveWorktreeBlocked } from '../persistence/moving-wsl-projects/wsl-move-background-backoff'
 // Why: bound the fallback `git fetch origin` so a Windows credential-manager GUI hang (STA-1292) can't wedge worktree creation forever.
 const CREATE_BASE_FALLBACK_FETCH_TIMEOUT_MS = 60_000
 // Why (#17828 CodeRabbit follow-up): the deferred materialize fetch runs off the main
@@ -836,6 +838,10 @@ function persistMaterializedPushTargetIfCreated(
   if (!target.remoteCreated || !worktreeId || !store?.setWorktreeMeta) {
     return
   }
+  // Bookkeeping incidental to the push: a project a WSL move is taking skips it, not the push.
+  if (isWslMoveWorktreeBlocked(worktreeId, store.getAllWorktreeMeta()[worktreeId]?.hostId)) {
+    return
+  }
   store.setWorktreeMeta(worktreeId, { pushTarget: target })
 }
 
@@ -918,11 +924,15 @@ export function notifyWorktreesChanged(mainWindow: BrowserWindow, repoId: string
 
 export function notifyWorktreeGitStatusMetadataChanged(
   mainWindow: BrowserWindow,
-  repoId: string
+  repoId: string,
+  worktreePaths: readonly string[] | null = null
 ): void {
   // Why: index churn is a Source Control freshness hint, not a graph mutation; leave structural caches and runtime/mobile events untouched.
   if (!mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('worktrees:gitStatusMetadataChanged', { repoId })
+    const payload: GitStatusMetadataChangedEvent = worktreePaths
+      ? { repoId, worktreePaths: [...worktreePaths] }
+      : { repoId }
+    mainWindow.webContents.send('worktrees:gitStatusMetadataChanged', payload)
   }
 }
 
