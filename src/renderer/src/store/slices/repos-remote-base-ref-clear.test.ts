@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createTestStore } from './store-test-helpers'
+import type { Repo } from '../../../../shared/repo-types'
 import {
   installReposRuntimeRoutingHarness,
   remoteRepo,
@@ -13,7 +14,9 @@ vi.mock('sonner', () => ({
 
 installReposRuntimeRoutingHarness()
 
-const pinnedRepo = { ...remoteRepo, worktreeBaseRef: 'origin/dev' }
+// Why stamped: an unstamped row is this app's own and routes to local IPC.
+const serverRepo: Repo = { ...remoteRepo, executionHostId: 'runtime:env-1' }
+const pinnedRepo: Repo = { ...serverRepo, worktreeBaseRef: 'origin/dev' }
 
 function makeStore() {
   const store = createTestStore()
@@ -29,7 +32,7 @@ describe('clearing the project default on a remote runtime', () => {
     runtimeEnvironmentCall.mockResolvedValue({
       id: 'rpc-clear',
       ok: true,
-      result: { repo: remoteRepo },
+      result: { repo: serverRepo },
       _meta: { runtimeId: 'runtime-remote' }
     })
     const store = makeStore()

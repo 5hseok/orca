@@ -3,14 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { useAppStore } from '@/store'
-import { getRuntimeEnvironmentIdForRepo } from '@/lib/repo-runtime-owner'
+import { findRepoForHost } from '@/store/slices/repo-host-identity'
 import {
   getRuntimeRepoBaseRefDefault,
   searchRuntimeRepoBaseRefs
 } from '@/runtime/runtime-repo-client'
 import { isRuntimeRepoRefSearchQueryWithinLimit } from '@/runtime/runtime-repo-search-bounds'
 import { translate } from '@/i18n/i18n'
-import { parseExecutionHostId, type ExecutionHostId } from '../../../../shared/execution-host'
+import { getRepoExecutionHostId, type ExecutionHostId } from '../../../../shared/execution-host'
 
 type BaseRefPickerProps = {
   repoId: string
@@ -29,15 +29,14 @@ export function BaseRefPicker({
   onUsePrimary,
   usePrimaryLabel
 }: BaseRefPickerProps): React.JSX.Element {
-  const focusedRuntimeEnvironmentId = useAppStore((state) =>
-    getRuntimeEnvironmentIdForRepo(state, repoId)
-  )
-  const selectedHost = parseExecutionHostId(hostId)
-  const activeRuntimeEnvironmentId = hostId
-    ? selectedHost?.kind === 'runtime'
-      ? selectedHost.environmentId
-      : null
-    : focusedRuntimeEnvironmentId
+  // Why: refs live on the repo's own host; with no host given, the repo row names it.
+  const ownerHostId = useAppStore((state) => {
+    if (hostId) {
+      return hostId
+    }
+    const repo = findRepoForHost(state.repos, repoId, { settings: state.settings })
+    return repo ? getRepoExecutionHostId(repo) : null
+  })
   // Why: null until the IPC resolves (or when the repo has no default base ref
   // available). We avoid seeding with 'origin/main' because that would display
   // a fabricated default in repos that don't actually have origin/main.
@@ -75,11 +74,10 @@ export function BaseRefPicker({
 
     const loadDefaultBaseRef = async (): Promise<void> => {
       try {
-        const result = await getRuntimeRepoBaseRefDefault(
-          { activeRuntimeEnvironmentId },
-          repoId,
-          hostId
-        )
+        if (!ownerHostId) {
+          return
+        }
+        const result = await getRuntimeRepoBaseRefDefault(ownerHostId, repoId)
         if (!stale) {
           setDefaultBaseRef(result.defaultBaseRef)
           setRemoteCount(result.remoteCount)
@@ -105,7 +103,7 @@ export function BaseRefPicker({
     return () => {
       stale = true
     }
-  }, [activeRuntimeEnvironmentId, hostId, repoId])
+  }, [ownerHostId, repoId])
 
   useEffect(() => {
     if (!isRuntimeRepoRefSearchQueryWithinLimit(baseRefQuery)) {
@@ -114,7 +112,7 @@ export function BaseRefPicker({
       return
     }
     const trimmedQuery = baseRefQuery.trim()
-    if (trimmedQuery.length < 2) {
+    if (trimmedQuery.length < 2 || !ownerHostId) {
       setBaseRefResults([])
       setIsSearchingBaseRefs(false)
       return
@@ -124,13 +122,7 @@ export function BaseRefPicker({
     setIsSearchingBaseRefs(true)
 
     const timer = window.setTimeout(() => {
-      void searchRuntimeRepoBaseRefs(
-        { activeRuntimeEnvironmentId },
-        repoId,
-        trimmedQuery,
-        20,
-        hostId
-      )
+      void searchRuntimeRepoBaseRefs(ownerHostId, repoId, trimmedQuery, 20)
         .then((results) => {
           if (!stale) {
             setBaseRefResults(results)
@@ -153,7 +145,7 @@ export function BaseRefPicker({
       stale = true
       window.clearTimeout(timer)
     }
-  }, [activeRuntimeEnvironmentId, baseRefQuery, hostId, repoId])
+  }, [baseRefQuery, ownerHostId, repoId])
 
   const effectiveBaseRef = currentBaseRef ?? defaultBaseRef
 

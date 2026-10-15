@@ -5,6 +5,7 @@ import type { GhAccountBinding } from '../../shared/github/account-binding'
 import { invalidateAuthorizedRootsCache } from '../ipc/filesystem-auth'
 import { prepareLocalWorktreeRootForRepo } from '../worktree-root-preparation'
 import type { RuntimeStore } from './runtime-store-contract'
+import { assertWslMoveRepoWritable } from '../persistence/moving-wsl-projects/wsl-move-scope-guard'
 
 type RuntimeRepositorySettingsDependencies = {
   getStore: () => RuntimeStore | null
@@ -27,6 +28,7 @@ type RepositoryUpdates = Partial<
     | 'kind'
     | 'symlinkPaths'
     | 'issueSourcePreference'
+    | 'defaultJiraProject'
     | 'externalWorktreeVisibility'
     | 'externalWorktreeVisibilityPromptDismissedAt'
     | 'externalWorktreeInboxBaselinePaths'
@@ -60,6 +62,7 @@ export class RuntimeRepositorySettingsController {
   async setBaseRef(repoSelector: string, baseRef: string): Promise<Repo> {
     const store = this.requireStore()
     const repo = await this.deps.resolveRepo(repoSelector)
+    assertWslMoveRepoWritable(store, repo)
     if (isFolderRepo(repo)) {
       throw new Error('Folder mode does not support base refs.')
     }
@@ -75,6 +78,7 @@ export class RuntimeRepositorySettingsController {
   async update(repoSelector: string, updates: RepositoryUpdates): Promise<Repo> {
     const store = this.requireStore()
     const repo = await this.deps.resolveRepo(repoSelector)
+    assertWslMoveRepoWritable(store, repo)
     const { worktreeBaseRef, ...otherUpdates } = updates
     const sanitizedUpdates = {
       ...omitUndefined(otherUpdates),
@@ -112,22 +116,13 @@ export class RuntimeRepositorySettingsController {
 
   async remove(repoSelector: string): Promise<{ removed: true }> {
     const store = this.deps.getStore()
-    if (!store?.removeProject) {
+    if (!store?.removeProjectForHost) {
       throw new Error('runtime_unavailable')
     }
     const repo = await this.deps.resolveRepo(repoSelector)
     const hostId = getRepoExecutionHostId(repo)
-    const idExistsOnOtherHost = store
-      .getRepos()
-      .some((entry) => entry.id === repo.id && getRepoExecutionHostId(entry) !== hostId)
-    if (idExistsOnOtherHost) {
-      if (!store.removeProjectForHost) {
-        throw new Error('runtime_unavailable')
-      }
-      store.removeProjectForHost(repo.id, hostId)
-    } else {
-      store.removeProject(repo.id)
-    }
+    assertWslMoveRepoWritable(store, repo)
+    store.removeProjectForHost(repo.id, hostId)
     this.deps.forgetTerminalTopology(repo.id)
     this.deps.invalidateResolvedWorktrees()
     this.deps.invalidateWorktreeScan(repo.id)

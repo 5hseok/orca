@@ -13,6 +13,8 @@ export type Worktree = {
   hostContextLabel?: string
   /** Resolved host for the display label; present when legacy rows omit hostId. */
   hostContextHostId?: ExecutionHostId
+  /** Display-only; the host's health word beside its label, absent while the host is healthy. */
+  hostContextHealthLabel?: string
   repo: string
   branch: string
   displayName: string
@@ -27,6 +29,8 @@ export type Worktree = {
   isArchived?: boolean
   isMainWorktree?: boolean
   hasHostSidebarActivity?: boolean
+  /** The paired desktop's "Hide other-client workspaces" hides this row. */
+  desktopOtherClient?: true
   worktreeInstanceId?: string
   lineageWorktreeInstanceId?: string
   parentWorktreeInstanceId?: string
@@ -38,7 +42,6 @@ export type Worktree = {
   isLastLineageChild?: boolean
   liveTerminalCount: number
   hasAttachedPty: boolean
-  preview: string
   unread: boolean
   lastOutputAt?: number
   isPinned: boolean

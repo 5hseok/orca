@@ -70,25 +70,25 @@ vi.mock('../../lib/focus-terminal-tab-surface', () => ({
   focusTerminalTabSurface: mocks.focusTerminalTabSurface
 }))
 
-vi.mock('../../runtime/web-runtime-session', () => ({
+vi.mock('../../runtime/web-runtime-session-tab-lifecycle', () => ({
   activateWebRuntimeSessionTab: mocks.activateWebRuntimeSessionTab,
-  closeWebRuntimeSessionTab: mocks.closeWebRuntimeSessionTab,
-  createWebRuntimeSessionBrowserTab: vi.fn(),
-  createWebRuntimeSessionTerminal: mocks.createWebRuntimeSessionTerminal,
-  isWebRuntimeSessionActive: mocks.isWebRuntimeSessionActive,
+  closeWebRuntimeSessionTab: mocks.closeWebRuntimeSessionTab
+}))
+vi.mock('../../runtime/web-runtime-browser-creation', () => ({
+  createWebRuntimeSessionBrowserTab: vi.fn()
+}))
+vi.mock('../../runtime/web-runtime-terminal-creation', () => ({
+  createWebRuntimeSessionTerminal: mocks.createWebRuntimeSessionTerminal
+}))
+vi.mock('../../runtime/web-runtime-session-environment', () => ({
+  isWebRuntimeSessionActive: mocks.isWebRuntimeSessionActive
+}))
+vi.mock('../../../../shared/terminal-surface-id', () => ({
   toHostSessionTabId: (tabId: string) => tabId
 }))
 
 vi.mock('@/runtime/runtime-rpc-client', () => ({
   callRuntimeRpc: mocks.callRuntimeRpc,
-  getActiveRuntimeTarget: ({
-    activeRuntimeEnvironmentId
-  }: {
-    activeRuntimeEnvironmentId?: string | null
-  }) =>
-    activeRuntimeEnvironmentId
-      ? { kind: 'environment', environmentId: activeRuntimeEnvironmentId }
-      : { kind: 'local' },
   runtimeEnvironmentSupportsCapability: mocks.runtimeEnvironmentSupportsCapability
 }))
 
@@ -254,15 +254,16 @@ describe('useTabGroupWorkspaceModel terminal activation focus', () => {
   })
 
   it('falls back to a local shell when the typed remote-create outcome is unavailable', async () => {
-    mocks.createTab.mockReturnValue({ id: 'terminal-new' })
     const { useTabGroupWorkspaceModel } = await import('./useTabGroupWorkspaceModel')
     const model = useTabGroupWorkspaceModel({ groupId: 'group-1', worktreeId: 'wt-1' })
 
     model.commands.newTerminalWithShell('zsh')
     await vi.waitFor(() => expect(mocks.createTab).toHaveBeenCalled())
 
-    expect(mocks.createTab).toHaveBeenCalledWith('wt-1', 'group-1', 'zsh')
-    expect(mocks.setActiveTab).toHaveBeenCalledWith('terminal-new')
+    expect(mocks.createTab).toHaveBeenCalledWith('wt-1', 'group-1', 'zsh', {
+      id: expect.any(String)
+    })
+    expect(mocks.setActiveTab).toHaveBeenCalledWith(mocks.createTab.mock.calls[0][3].id)
   })
 
   it('returns keyboard focus to the active split pane leaf when a terminal tab is activated', async () => {
