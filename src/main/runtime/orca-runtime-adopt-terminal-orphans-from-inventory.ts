@@ -6,7 +6,7 @@ import {
 } from './pty-recorded-surface-topology'
 import { resolveStructuredWorkerAuthority } from './structured-worker-authority'
 import type { RuntimeLeafRecord } from './runtime-terminal-state-records'
-import { OrcaRuntimeWithSubscribeToTerminalResize } from './orca-runtime-subscribe-to-terminal-resize'
+import { OrcaRuntimeWithSubscribeToTerminalResize } from './terminal/layout/terminal-resize-listeners'
 import type {
   RuntimeMobileSessionTabsResult,
   RuntimeTerminalOrphanAdoptionRequest,
@@ -18,9 +18,12 @@ import { resolveTerminalSessionWorktreeId } from './runtime-worktree-path-identi
 import { getLocalProjectWorktreeGitOptions } from '../project-runtime-git-options'
 import { adoptRuntimeTerminalOrphansFromInventory } from './runtime-terminal-orphan-adoption'
 import { getRepoIdFromWorktreeId } from '../../shared/worktree/id'
+import { getLatestPtyTitle } from './runtime-worktree-status-projection'
 import type { PtyLivenessVerdict } from '../../shared/pty-liveness-verdict'
 
-export class OrcaRuntimeWithAdoptTerminalOrphansFromInventory extends OrcaRuntimeWithSubscribeToTerminalResize {
+export abstract class OrcaRuntimeWithAdoptTerminalOrphansFromInventory extends OrcaRuntimeWithSubscribeToTerminalResize {
+  protected abstract assertGraphReady(): void
+
   protected async adoptTerminalOrphansFromInventoryUnderMutation(
     request: RuntimeTerminalOrphanAdoptionRequest,
     workspace: TerminalWorkspaceLaunchScope,
@@ -62,6 +65,7 @@ export class OrcaRuntimeWithAdoptTerminalOrphansFromInventory extends OrcaRuntim
         getPty: (handle) => this.getLivePtyForHandle(handle)?.pty ?? null,
         getLeaves: (ptyId) => this.getLeavesForPty(ptyId),
         getLeaf: (tabId, leafId) => this.leaves.get(this.getLeafKey(tabId, leafId)),
+        getDisplayTitle: (pty) => getLatestPtyTitle(this.getPtyDisplayRecord(pty)),
         replayPersistedSurface: (pty, tabId, paneKey) =>
           recordPtySurface(pty, tabId, paneKey, SURFACE_CLAIM_WITHOUT_STANDING),
         recordAdoptedSurface: (pty, tabId, paneKey) =>

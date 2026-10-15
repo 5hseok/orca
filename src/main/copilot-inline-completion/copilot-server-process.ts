@@ -1,9 +1,10 @@
 import { tmpdir } from 'node:os'
-import { spawnProcess } from '../../shared/child-process/run-process'
-import { signalProcessTree } from '../../shared/child-process/process-tree-termination'
+import { spawnProcess } from '@orca/process-host'
+import type { PipedChildProcess } from '@orca/process-host/process-spec'
+import { signalProcessTree } from '@orca/process-host/process-tree-termination'
 import { resolveCommandOnLocalPath } from '../ipc/command-path-resolver'
 
-export type CopilotServerProcess = ReturnType<typeof spawnProcess>
+export type CopilotServerProcess = PipedChildProcess
 
 export const COPILOT_SERVER_COMMAND = 'copilot-language-server'
 

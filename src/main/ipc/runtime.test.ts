@@ -172,7 +172,7 @@ describe('registerRuntimeHandlers', () => {
     }
     const runtime = {
       getRuntimeId: vi.fn().mockReturnValue('runtime-1'),
-      getClientSettings: vi.fn(() => ({ experimentalStructuredNativeChat: true })),
+      getClientSettings: vi.fn(() => ({ experimentalNativeChat: true })),
       restoreStructuredAgentSessionTabs: vi.fn(async () => undefined),
       listMobileSessionTabs: vi.fn(async () => ({
         worktree: 'workspace-1',
@@ -201,7 +201,7 @@ describe('registerRuntimeHandlers', () => {
       syncWindowGraph: vi.fn(),
       getStatus: vi.fn(),
       getRuntimeId: vi.fn().mockReturnValue('runtime-1'),
-      listProjectGroups: vi.fn().mockReturnValue([{ id: 'group-1', name: 'Platform' }])
+      listVisibleProjectGroups: vi.fn().mockReturnValue([{ id: 'group-1', name: 'Platform' }])
     }
 
     registerRuntimeHandlers(runtime as never)

@@ -442,11 +442,9 @@ describe('packaged runtime resources', () => {
         wrongArchElf[5] = 1
         wrongArchElf.writeUInt16LE(target.machine, 18)
         await writeFile(join(wrongArchPackage, 'watcher.node'), wrongArchElf)
+        await seedClipboardPublisher(resourcesDir, target.machine)
 
-        const stubBinDir = join(root, 'bin')
-        await mkdir(stubBinDir)
-        await writeFile(join(stubBinDir, 'objdump'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
-        process.env.PATH = `${stubBinDir}${delimiter}${previousPath ?? ''}`
+        await stubObjdump(root)
 
         await expect(
           electronBuilderConfig.afterPack({
@@ -468,6 +466,7 @@ describe('packaged runtime resources', () => {
     'marks packaged Unix CLI launchers executable',
     async () => {
       const root = await mkdtemp(join(tmpdir(), 'orca-electron-builder-config-'))
+      const previousPath = process.env.PATH
       try {
         const resourcesDir = join(root, 'linux-unpacked', 'resources')
         const launcherPath = join(resourcesDir, 'bin', 'orca-ide')
@@ -478,6 +477,13 @@ describe('packaged runtime resources', () => {
           { recursive: true }
         )
         await seedBundledRipgrep(resourcesDir)
+        // Layout fixtures use a cross-arch slice; native PTY probes need real packaged binaries.
+        const target =
+          process.arch === 'x64'
+            ? { electronArch: 3, machine: 0xb7 }
+            : { electronArch: 1, machine: 0x3e }
+        await seedClipboardPublisher(resourcesDir, target.machine)
+        await stubObjdump(root)
         await mkdir(join(resourcesDir, 'node_modules', 'zod', 'src'), { recursive: true })
         // Why: afterPack now fails hard when the unpacked daemon entry is
         // missing, so the fixture must carry one like a real package layout.
@@ -511,7 +517,7 @@ describe('packaged runtime resources', () => {
         await electronBuilderConfig.afterPack({
           appOutDir: join(root, 'linux-unpacked'),
           electronPlatformName: 'linux',
-          arch: 1,
+          arch: target.electronArch,
           packager: { appInfo: { version: '9.9.9' } }
         })
 
@@ -521,18 +527,33 @@ describe('packaged runtime resources', () => {
         ).resolves.toContain('"version": "9.9.9"')
         await expect(readFile(join(resourcesDir, 'package-type'), 'utf8')).resolves.toBe('AppImage')
       } finally {
+        process.env.PATH = previousPath
         await removeTree(root)
       }
     }
   )
 })
 
-const BUN_RUNTIME_BUILTINS = new Set(['bun:ffi', 'bun:sqlite'])
+// Headers model architecture; objdump is stubbed for these packaging-layout tests.
+async function seedClipboardPublisher(resourcesDir, machine) {
+  const binDir = join(resourcesDir, 'bin')
+  await mkdir(binDir, { recursive: true })
+  const elf = Buffer.alloc(64)
+  elf.set([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1])
+  elf.writeUInt16LE(2, 16)
+  elf.writeUInt16LE(machine, 18)
+  elf.writeUInt32LE(1, 20)
+  elf.writeUInt16LE(64, 52)
+  await writeFile(join(binDir, 'orca-wayland-clipboard'), elf)
+}
 
-// Why source-anchored: the bundler renames a createRequire()'d require, so
-// verifyPackagedMainRuntimeDeps' `require("x")` scan cannot see these specifiers — packaging
-// stays green while the packaged app throws MODULE_NOT_FOUND the first time the path runs.
-// Why stubs: afterPack only checks each platform binary exists; non-ELF bytes skip the glibc scan.
+async function stubObjdump(root) {
+  const directory = join(root, 'bin')
+  await mkdir(directory)
+  await writeFile(join(directory, 'objdump'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  process.env.PATH = `${directory}${delimiter}${process.env.PATH ?? ''}`
+}
+
 async function seedBundledRipgrep(resourcesDir) {
   const { BUNDLED_RIPGREP_PLATFORMS } = require('../bundled-ripgrep-resources.cjs')
   for (const platform of BUNDLED_RIPGREP_PLATFORMS) {
@@ -542,6 +563,9 @@ async function seedBundledRipgrep(resourcesDir) {
   }
 }
 
+// Why source-anchored: the bundler renames a createRequire()'d require, so
+// verifyPackagedMainRuntimeDeps' `require("x")` scan cannot see these specifiers — packaging
+// stays green while the packaged app throws MODULE_NOT_FOUND the first time the path runs.
 function collectLazyRequireSpecifiers(directory, found = new Map()) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const entryPath = join(directory, entry.name)
@@ -557,7 +581,7 @@ function collectLazyRequireSpecifiers(directory, found = new Map()) {
       continue
     }
     for (const match of source.matchAll(/\brequire[A-Za-z0-9_]*\(\s*'([^']+)'\s*\)/g)) {
-      if (!BUN_RUNTIME_BUILTINS.has(match[1]) && isPackagedExternalSpecifier(match[1])) {
+      if (isPackagedExternalSpecifier(match[1])) {
         found.set(match[1], relative(projectRoot, entryPath).replaceAll('\\', '/'))
       }
     }
@@ -574,21 +598,18 @@ function packagedResourceDestinations(platform) {
 }
 
 describe('lazily required packages reach Resources/node_modules', () => {
-  it('excludes Bun runtime builtins while retaining ordinary lazy dependencies', async () => {
-    const sourceDir = await mkdtemp(join(tmpdir(), 'orca-lazy-bun-builtins-'))
+  it('excludes runtime builtins while retaining ordinary lazy dependencies', async () => {
+    const sourceDir = await mkdtemp(join(tmpdir(), 'orca-lazy-builtins-'))
     try {
       await writeFile(
         join(sourceDir, 'runtime.ts'),
         [
           'const requireFromMain = createRequire(import.meta.url)',
           "requireFromMain('node:fs')",
-          "requireFromMain('bun:ffi')",
-          "requireFromMain('bun:sqlite')",
-          "requireFromMain('zod')",
-          "requireFromMain('bun-sqlite')"
+          "requireFromMain('zod')"
         ].join('\n')
       )
-      expect([...collectLazyRequireSpecifiers(sourceDir).keys()]).toEqual(['zod', 'bun-sqlite'])
+      expect([...collectLazyRequireSpecifiers(sourceDir).keys()]).toEqual(['zod'])
     } finally {
       await removeTree(sourceDir)
     }

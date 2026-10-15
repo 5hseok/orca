@@ -41,6 +41,17 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 
+// Why: session backfill resolves Orca's managed Codex home from userData, which otherwise resolves to the live one.
+let userDataRoot: string
+beforeEach(() => {
+  userDataRoot = mkdtempSync(join(tmpdir(), 'orca-codex-resume-user-data-'))
+  vi.stubEnv('ORCA_USER_DATA_PATH', userDataRoot)
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
+  rmSync(userDataRoot, { recursive: true, force: true })
+})
+
 describe('prepareLegacySharedCodexSessionResume', () => {
   let root: string
   let legacyHome: string
@@ -138,7 +149,7 @@ describe('prepareLegacySharedCodexSessionResume', () => {
   it('preserves the legacy home while a non-default Codex home lane is selected', async () => {
     const result = await prepareLegacySharedCodexSessionResume(legacyArgs(), {
       ...options(),
-      isHostSystemDefaultRealHome: () => false
+      isHostSystemDefaultRealHomeSelected: () => false
     })
 
     expect(result).toEqual({ useRealCodexHome: false })
@@ -169,7 +180,7 @@ describe('prepareLegacySharedCodexSessionResume', () => {
 
   function options() {
     return {
-      isHostSystemDefaultRealHome: () => true,
+      isHostSystemDefaultRealHomeSelected: () => true,
       legacyCodexHomePath: legacyHome,
       systemCodexHomePath: systemHome
     }
@@ -362,7 +373,7 @@ describe('per-account resume repin', () => {
 
   function repinOptions() {
     return {
-      isHostSystemDefaultRealHome: () => false,
+      isHostSystemDefaultRealHomeSelected: () => false,
       getSelectedHostAccountCodexHomePath: () => selectedHome
     }
   }

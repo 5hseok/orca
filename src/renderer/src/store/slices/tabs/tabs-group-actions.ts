@@ -2,7 +2,13 @@ import { createBrowserUuid } from '@/lib/browser-uuid'
 import type { TabGroup } from '../../../../../shared/tab-types'
 import type { TabsSlice, TabsSliceGet, TabsSliceSet } from './tabs-slice-contract'
 import { activeSurfacePatchMatchesState, buildActiveSurfacePatch } from './tabs-surface'
-import { buildSplitNode, collapseGroupLayout, replaceLeaf } from './tabs-layout'
+import {
+  buildSplitNode,
+  collapseGroupLayout,
+  replaceLeaf
+} from '../../../../../shared/workspace-layout/tab-group-layout-tree'
+import { workspaceRootGroupId } from '../../../../../shared/workspace-layout/workspace-layout-minted-ids'
+import { ownsGlobalSelection } from '../../global-selection-owner'
 
 export function createTabsGroupActions(
   set: TabsSliceSet,
@@ -18,7 +24,7 @@ export function createTabsGroupActions(
         return get().activeGroupIdByWorktree[worktreeId] ?? existingGroups[0].id
       }
 
-      const groupId = createBrowserUuid()
+      const groupId = workspaceRootGroupId(worktreeId)
       set((state) => ({
         // Why: a zero-tab worktree still needs a canonical root group so new tabs and splits land in a deterministic place.
         groupsByWorktree: {
@@ -56,31 +62,6 @@ export function createTabsGroupActions(
             activeGroupIdByWorktree: nextActiveGroupIdByWorktree
           }
         }
-        const groups = state.groupsByWorktree[worktreeId] ?? []
-        const unifiedTabs = state.unifiedTabsByWorktree[worktreeId] ?? []
-        const visibleTerminalEntityIds = new Set(
-          groups
-            .map((group) =>
-              group.activeTabId ? unifiedTabs.find((tab) => tab.id === group.activeTabId) : null
-            )
-            .filter((tab): tab is (typeof unifiedTabs)[number] => tab?.contentType === 'terminal')
-            .map((tab) => tab.entityId)
-        )
-        const nextUnreadTerminalTabs =
-          visibleTerminalEntityIds.size > 0
-            ? (() => {
-                let changed = false
-                const copy = { ...state.unreadTerminalTabs }
-                for (const terminalEntityId of visibleTerminalEntityIds) {
-                  if (!copy[terminalEntityId]) {
-                    continue
-                  }
-                  delete copy[terminalEntityId]
-                  changed = true
-                }
-                return changed ? copy : state.unreadTerminalTabs
-              })()
-            : state.unreadTerminalTabs
         const activeSurfacePatch = buildActiveSurfacePatch(
           {
             ...state,
@@ -91,17 +72,12 @@ export function createTabsGroupActions(
         )
         if (
           groupAlreadyFocused &&
-          nextUnreadTerminalTabs === state.unreadTerminalTabs &&
           activeSurfacePatchMatchesState(state, worktreeId, activeSurfacePatch)
         ) {
           return state
         }
         return {
           ...(groupAlreadyFocused ? {} : { activeGroupIdByWorktree: nextActiveGroupIdByWorktree }),
-          // Why: only write unreadTerminalTabs when it changed — preserving the reference keeps selectors/subscribers from firing spuriously.
-          ...(nextUnreadTerminalTabs !== state.unreadTerminalTabs
-            ? { unreadTerminalTabs: nextUnreadTerminalTabs }
-            : {}),
           ...activeSurfacePatch
         }
       }),
@@ -133,7 +109,7 @@ export function createTabsGroupActions(
           layoutByWorktree: collapsedState.layoutByWorktree,
           activeGroupIdByWorktree: collapsedState.activeGroupIdByWorktree,
           recentQuickCommandIdByGroup: remainingRecent,
-          ...(current.activeWorktreeId === worktreeId
+          ...(ownsGlobalSelection(current, worktreeId)
             ? buildActiveSurfacePatch(
                 {
                   ...current,

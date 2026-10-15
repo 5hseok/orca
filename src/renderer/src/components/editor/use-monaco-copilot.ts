@@ -2,8 +2,7 @@ import { useEffect } from 'react'
 import type { editor } from 'monaco-editor'
 import { useAppStore } from '@/store'
 import { findWorktreeById } from '@/store/slices/worktree-helpers'
-import { isFileOnLocalHostFromState } from '@/lib/connection-owner-resolution'
-import { isLocalPathOpenBlocked } from '@/lib/local-path-open-guard'
+import { isCopilotAttachOwnerLocal } from '@/lib/monaco-copilot/copilot-attach-owner'
 import { attachMonacoCopilotDocument } from '@/lib/monaco-copilot/monaco-copilot-attach'
 import { useCopilotStatus } from '@/lib/monaco-copilot/copilot-status'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
@@ -13,13 +12,14 @@ import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
  *  workspaces never attach, since their paths belong to another machine. */
 export function useMonacoCopilot(params: {
   mountedEditor: editor.IStandaloneCodeEditor | null
+  fileId: string
   filePath: string
   language: string
   worktreeId: string | undefined
   readOnly: boolean
   liveTail: boolean
 }): void {
-  const { mountedEditor, filePath, language, worktreeId, readOnly, liveTail } = params
+  const { mountedEditor, fileId, filePath, language, worktreeId, readOnly, liveTail } = params
   const rootPath = useAppStore((s) => {
     if (!worktreeId) {
       return null
@@ -30,22 +30,24 @@ export function useMonacoCopilot(params: {
     }
     return findWorktreeById(s.worktreesByRepo, worktreeId)?.path ?? null
   })
-  // Why: only a provably local host may attach -- a null SSH connection alone also describes a
-  // runtime-hosted worktree left open after the active runtime was switched off.
-  const provablyLocal = useAppStore((s) =>
-    isFileOnLocalHostFromState(s, worktreeId ?? null, filePath)
+  const ownerLocal = useAppStore((s) =>
+    isCopilotAttachOwnerLocal(s, { fileId, filePath, worktreeId: worktreeId ?? null })
   )
-  const remoteRuntimeActive = useAppStore((s) => isLocalPathOpenBlocked(s.settings))
   const copilotStatus = useCopilotStatus()
   const installed = copilotStatus !== null
   // Why: signing in or out re-attaches open editors, so ghost text starts or stops without a reload.
   const copilotUser = copilotStatus?.user ?? null
 
   useEffect(() => {
-    if (!mountedEditor || !worktreeId || !rootPath || !installed || readOnly || liveTail) {
-      return
-    }
-    if (remoteRuntimeActive || !provablyLocal) {
+    if (
+      !mountedEditor ||
+      !worktreeId ||
+      !rootPath ||
+      !installed ||
+      !ownerLocal ||
+      readOnly ||
+      liveTail
+    ) {
       return
     }
     const model = mountedEditor.getModel()
@@ -61,8 +63,7 @@ export function useMonacoCopilot(params: {
     rootPath,
     installed,
     copilotUser,
-    remoteRuntimeActive,
-    provablyLocal,
+    ownerLocal,
     readOnly,
     liveTail
   ])
