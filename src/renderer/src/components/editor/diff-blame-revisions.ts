@@ -3,7 +3,7 @@ import {
   GIT_BLAME_INDEX_CONTENTS,
   type GitBlameContentsSource
 } from '../../../../shared/git-blame'
-import type { DiffSource } from '@/store/slices/editor/types/open-file'
+import type { DiffSource } from '../../../../shared/editor-tab-view-types'
 
 export type DiffBlameRevisionPair = {
   originalRevision?: string

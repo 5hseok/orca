@@ -1,11 +1,12 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
-import { OrcaRuntimeWithWaitForSessionTabsInventoryPublication } from './orca-runtime-wait-for-session-tabs-inventory-publication'
+import type { BrowserWindow } from 'electron'
+import { RuntimeSessionTabsInventoryPublication } from './session-tabs/session-tabs-inventory-publication'
 import type { WorkspaceSessionState } from '../../shared/workspace-session-state-types'
 import { getRuntimeBrowserPageRegistry } from './runtime-browser-page-registry'
 import { splitWorktreeIdForFilesystem } from '../../shared/worktree/id'
 import { buildHeadlessMobileSessionTerminalTabs } from './mobile-session-terminal-projection'
+import { buildHeadlessMobileSessionEditorTabs } from './mobile-session-editor-projection'
 import type {
-  RuntimeMobileSessionBrowserTab,
   RuntimeMobileSessionSnapshotTab,
   RuntimeMobileSessionTabGroup,
   RuntimeMobileSessionTabsSnapshot,
@@ -15,7 +16,8 @@ import {
   collectHeadlessParentTabOrder,
   distributeHeadlessTabsAcrossGroups,
   getHeadlessMobileSessionGroupId,
-  pickHeadlessActiveTerminalTab
+  pickHeadlessActiveTerminalTab,
+  pickRestoredActiveGroupId
 } from './mobile-session-layout-projection'
 import {
   mergeMobileSessionSnapshotTabs,
@@ -27,7 +29,9 @@ import {
 } from './mobile-session-browser-group-projection'
 import { headlessMobileSnapshotContentUnchanged } from './mobile-session-snapshot-equality'
 
-export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession extends OrcaRuntimeWithWaitForSessionTabsInventoryPublication {
+export abstract class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession extends RuntimeSessionTabsInventoryPublication {
+  protected abstract getAvailableAuthoritativeWindow(): BrowserWindow | null
+
   protected hydrateHeadlessMobileSessionTabsFromWorkspaceSession(
     worktreeId?: string,
     options: {
@@ -41,7 +45,8 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
     // Why: report which worktrees were reconciled in place so callers don't
     // reconcile them a second time (see notifyMobileSessionTabsChanged).
     const reconciledWorktreeIds = new Set<string>()
-    if (this.getAvailableAuthoritativeWindow() && options.allowAttachedWindow !== true) {
+    const hasAuthoritativeWindow = Boolean(this.getAvailableAuthoritativeWindow())
+    if (hasAuthoritativeWindow && options.allowAttachedWindow !== true) {
       return reconciledWorktreeIds
     }
     const session =
@@ -72,10 +77,16 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
     ) {
       return reconciledWorktreeIds
     }
+    // A worktree whose only tabs are editors has no tabsByWorktree key.
     const entries =
       worktreeId !== undefined
         ? ([[worktreeId, session.tabsByWorktree[worktreeId] ?? []]] as const)
-        : Object.entries(session.tabsByWorktree ?? {})
+        : [
+            ...new Set([
+              ...Object.keys(session.tabsByWorktree ?? {}),
+              ...Object.keys(session.openFilesByWorktree ?? {})
+            ])
+          ].map((id) => [id, session.tabsByWorktree?.[id] ?? []] as const)
     // Why: workspaceSession keys are `${repoId}::${path}` and are not pruned when
     // a repo disappears from this client's view (e.g. removed on another client,
     // or a stale browser-persisted session). Hydrating such a key would surface a
@@ -111,13 +122,17 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
         reconciledWorktreeIds.add(entryWorktreeId)
         continue
       }
+      // Why: windowless, nothing publishes the other tabs, and a filtered seed would make the full pass skip this worktree.
+      const runtimeOwnedOnly =
+        options.onlyRuntimeOwnedTerminals === true &&
+        (existing !== undefined || hasAuthoritativeWindow)
       const terminalTabs = buildHeadlessMobileSessionTerminalTabs(
         entryWorktreeId,
         persistedTabs,
         session
       ).filter(
         (tab) =>
-          options.onlyRuntimeOwnedTerminals !== true ||
+          !runtimeOwnedOnly ||
           this.hasServeOrSshOwnedBinding(tab) ||
           this.hasRecentExpiredSshLeasePane(entryWorktreeId, tab)
       )
@@ -125,13 +140,22 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
       // so include them on every hydrate regardless of the onlyRuntimeOwnedTerminals
       // filter, which is about terminal PTY ownership and never applies to browsers.
       const browserTabs = this.buildHeadlessMobileSessionBrowserTabs(entryWorktreeId)
-      const tabs: RuntimeMobileSessionSnapshotTab[] = [...terminalTabs, ...browserTabs]
+      // Why not in the runtime-owned pass: that merges into a renderer's publication, which owns its editors.
+      const editorTabs = runtimeOwnedOnly
+        ? []
+        : buildHeadlessMobileSessionEditorTabs(entryWorktreeId, session)
+      const tabs: RuntimeMobileSessionSnapshotTab[] = [
+        ...terminalTabs,
+        ...editorTabs,
+        ...browserTabs
+      ]
       if (tabs.length === 0) {
         continue
       }
       const activeTab = pickHeadlessActiveTerminalTab(terminalTabs)
       const tabOrder = [
         ...collectHeadlessParentTabOrder(terminalTabs),
+        ...editorTabs.map((tab) => tab.id),
         ...browserTabs.map((tab) => tab.id)
       ]
       const groupId = getHeadlessMobileSessionGroupId(entryWorktreeId)
@@ -142,13 +166,15 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
       const mergedActiveTab =
         existing?.tabs.find((tab) => tab.id === existing.activeTabId) ??
         activeTab ??
+        editorTabs.find((tab) => tab.isActive) ??
         mergedTabs[0] ??
         null
       const mergedTerminalTabs = mergedTabs.filter(
         (tab): tab is RuntimeMobileSessionTerminalTab => tab.type === 'terminal'
       )
+      // Editors ride with browsers: both keep their persisted group, unlike terminal parents.
       const mergedBrowserOrder = mergedTabs
-        .filter((tab): tab is RuntimeMobileSessionBrowserTab => tab.type === 'browser')
+        .filter((tab) => tab.type === 'browser' || tab.type === 'markdown' || tab.type === 'file')
         .map((tab) => tab.id)
       // Why: a persisted multi-group split must be restored on cold rebuild, or
       // the headless serve coalesces the user's group layout back into one group
@@ -156,9 +182,7 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
       const persistedGroups = session.tabGroups?.[entryWorktreeId]
       const persistedLayout = session.tabGroupLayouts?.[entryWorktreeId]
       const hasPersistedSplit =
-        options.onlyRuntimeOwnedTerminals !== true &&
-        persistedGroups !== undefined &&
-        persistedGroups.length > 1
+        !runtimeOwnedOnly && persistedGroups !== undefined && persistedGroups.length > 1
       const activeTopLevelId = mergedActiveTab
         ? mergedActiveTab.type === 'terminal'
           ? mergedActiveTab.parentTabId
@@ -216,7 +240,13 @@ export class OrcaRuntimeWithHydrateHeadlessMobileSessionTabsFromWorkspaceSession
           ? this.getMergedMobileSessionPublicationEpoch(existing, tabs)
           : `headless-hydrated:${Date.now().toString(36)}`,
         snapshotVersion: (existing?.snapshotVersion ?? 0) + 1,
-        activeGroupId: existing?.activeGroupId ?? groupId,
+        activeGroupId: hasPersistedSplit
+          ? pickRestoredActiveGroupId(
+              nextTabGroups,
+              [existing?.activeGroupId, session.activeGroupIdByWorktree?.[entryWorktreeId]],
+              activeTopLevelId
+            )
+          : (existing?.activeGroupId ?? groupId),
         activeTabId: mergedActiveTab?.id ?? null,
         activeTabType: mergedActiveTab?.type ?? null,
         tabGroups: nextTabGroups,

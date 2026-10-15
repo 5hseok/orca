@@ -5,14 +5,14 @@ import type {
 } from '../../../shared/git-diff-compare-types'
 import type { GitBlameContentsSource, GitBlameResult } from '../../../shared/git-blame'
 import { resolveLocalWorktreePath, type RuntimeGitContext } from './runtime-git-client-context'
-import { callRuntimeRpc, getActiveRuntimeTarget } from './runtime-rpc-client'
+import { callRuntimeRpc } from './runtime-rpc-client'
 import { toRuntimeWorktreeSelector } from './runtime-worktree-selector'
 
 export async function getRuntimeGitDiff(
   context: RuntimeGitContext,
   args: { filePath: string; staged: boolean; compareAgainstHead?: boolean }
 ): Promise<GitDiffResult> {
-  const target = getActiveRuntimeTarget(context.settings)
+  const target = context.target
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.diff({
       worktreePath: resolveLocalWorktreePath(context),
@@ -35,7 +35,7 @@ export async function getRuntimeGitBranchCompare(
   baseRef: string,
   admissionTier: 'interactive' | 'background' = 'interactive'
 ): Promise<GitBranchCompareResult> {
-  const target = getActiveRuntimeTarget(context.settings)
+  const target = context.target
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.branchCompare({
       worktreePath: resolveLocalWorktreePath(context),
@@ -56,7 +56,7 @@ export async function getRuntimeGitCommitCompare(
   context: RuntimeGitContext,
   commitId: string
 ): Promise<GitCommitCompareResult> {
-  const target = getActiveRuntimeTarget(context.settings)
+  const target = context.target
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.commitCompare({
       worktreePath: resolveLocalWorktreePath(context),
@@ -80,7 +80,7 @@ export async function getRuntimeGitBranchDiff(
     oldPath?: string
   }
 ): Promise<GitDiffResult> {
-  const target = getActiveRuntimeTarget(context.settings)
+  const target = context.target
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.branchDiff({
       worktreePath: resolveLocalWorktreePath(context),
@@ -107,7 +107,7 @@ export async function getRuntimeGitCommitDiff(
     oldPath?: string
   }
 ): Promise<GitDiffResult> {
-  const target = getActiveRuntimeTarget(context.settings)
+  const target = context.target
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.commitDiff({
       worktreePath: resolveLocalWorktreePath(context),
@@ -132,7 +132,7 @@ export async function getRuntimeGitBlame(
   revision?: string,
   contentsSource?: GitBlameContentsSource
 ): Promise<GitBlameResult> {
-  const target = getActiveRuntimeTarget(context.settings)
+  const target = context.target
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.blame({
       worktreePath: resolveLocalWorktreePath(context),

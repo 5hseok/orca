@@ -1,17 +1,11 @@
 import { useEffect, useRef } from 'react'
 import type { editor } from 'monaco-editor'
 import { translate } from '@/i18n/i18n'
-import { getConnectionId } from '@/lib/connection-context'
 import { monaco } from '@/lib/monaco-setup'
 import { openGitBlameCommitDiff } from '@/lib/open-git-blame-commit-diff'
-import { getRepoOwnerRoutedSettings } from '@/lib/repo-runtime-owner'
-import { getRuntimeGitBlame } from '@/runtime/runtime-git-client'
+import { resolveGitBlameRuntimeContext } from '@/lib/git-blame-runtime-context'
+import { getRuntimeGitBlame } from '@/runtime/runtime-git-diff-client'
 import { useAppStore } from '@/store'
-import { findWorktreeById } from '@/store/slices/worktree-helpers'
-import {
-  getRepoIdFromWorktreeId,
-  splitWorktreeIdForFilesystem
-} from '../../../../shared/worktree/id'
 import {
   indexBlameLinesByNumber,
   type GitBlameContentsSource,
@@ -136,31 +130,16 @@ export function useGitLineBlame(args: {
         clearTimeout(debounce)
       }
       debounce = setTimeout(() => {
-        const state = useAppStore.getState()
-        const worktree = findWorktreeById(state.worktreesByRepo, worktreeId)
-        const worktreePath =
-          worktree?.path ?? splitWorktreeIdForFilesystem(worktreeId)?.worktreePath ?? null
-        if (!worktreePath) {
+        const context = resolveGitBlameRuntimeContext(worktreeId)
+        if (!context) {
           return
         }
-        const repoId = worktree?.repoId ?? getRepoIdFromWorktreeId(worktreeId)
-        const repo = state.repos.find((entry) => entry.id === repoId) ?? null
         queued?.cancel()
         const generation = ++fetchGeneration
         const model = editorInstance.getModel()
         const modelVersion = model?.getAlternativeVersionId()
         const request = enqueueGitBlameRequest(() =>
-          getRuntimeGitBlame(
-            {
-              settings: getRepoOwnerRoutedSettings(state.settings, repo),
-              worktreeId,
-              worktreePath,
-              connectionId: getConnectionId(worktreeId) ?? undefined
-            },
-            relativePath,
-            revision,
-            contentsSource
-          )
+          getRuntimeGitBlame(context, relativePath, revision, contentsSource)
         )
         queued = request
         void request.promise

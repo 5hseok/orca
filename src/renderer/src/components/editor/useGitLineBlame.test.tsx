@@ -6,7 +6,9 @@ import type { GitBlameResult } from '../../../../shared/git-blame'
 
 const mocks = vi.hoisted(() => ({ getRuntimeGitBlame: vi.fn() }))
 
-vi.mock('@/runtime/runtime-git-client', () => ({ getRuntimeGitBlame: mocks.getRuntimeGitBlame }))
+vi.mock('@/runtime/runtime-git-diff-client', () => ({
+  getRuntimeGitBlame: mocks.getRuntimeGitBlame
+}))
 vi.mock('@/lib/monaco-setup', () => ({
   monaco: {
     editor: {
@@ -17,17 +19,19 @@ vi.mock('@/lib/monaco-setup', () => ({
   }
 }))
 vi.mock('@/store', () => {
-  const state = { worktreesByRepo: {}, repos: [], settings: null, gitStatusHeadByWorktree: {} }
+  const state = { gitStatusHeadByWorktree: {} }
   const useAppStore = (selector: (s: typeof state) => unknown): unknown => selector(state)
   useAppStore.getState = () => state
   return { useAppStore }
 })
-vi.mock('@/store/slices/worktree-helpers', () => ({
-  findWorktreeById: () => ({ path: '/repo', repoId: 'repo' })
+vi.mock('@/lib/git-blame-runtime-context', () => ({
+  resolveGitBlameRuntimeContext: (worktreeId: string) => ({
+    target: { kind: 'local' },
+    worktreeId,
+    worktreePath: '/repo'
+  })
 }))
 vi.mock('@/i18n/i18n', () => ({ translate: (_key: string, fallback: string) => fallback }))
-vi.mock('@/lib/connection-context', () => ({ getConnectionId: () => null }))
-vi.mock('@/lib/repo-runtime-owner', () => ({ getRepoOwnerRoutedSettings: () => null }))
 vi.mock('@/lib/open-git-blame-commit-diff', () => ({ openGitBlameCommitDiff: vi.fn() }))
 
 import { useGitLineBlame } from './useGitLineBlame'

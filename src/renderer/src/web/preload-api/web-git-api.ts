@@ -3,6 +3,8 @@ import { callAbortableRuntimeEnvironment } from '../../runtime/abortable-runtime
 import { toRuntimeWorktreeSelector } from '../../runtime/runtime-worktree-selector'
 import { translate } from '@/i18n/i18n'
 import { callRuntimeResult } from './web-runtime-calls'
+import { webGitBlame } from './web-git-blame-api'
+import { requireGitStageWorktreeScopeReceipt } from '../../../../shared/git-stage-worktree-scope'
 import { requireActiveEnvironment, updateEnvironmentFromResponse } from './web-runtime-session'
 import {
   resolveRuntimeFilePath,
@@ -137,15 +139,7 @@ export function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
         commitId
       })
     },
-    blame: async ({ worktreePath, filePath, revision, contentsSource }) => {
-      const file = await resolveRuntimeFilePath(filePath, worktreePath)
-      return callRuntimeResult('git.blame', {
-        worktree: toRuntimeWorktreeSelector(file.worktree.id),
-        filePath: file.relativePath,
-        ...(revision ? { revision } : {}),
-        ...(contentsSource ? { contentsSource } : {})
-      })
-    },
+    blame: webGitBlame,
     upstreamStatus: async ({ worktreePath, pushTarget }) => {
       const worktree = await resolveRuntimeWorktreeByPath(worktreePath)
       return callRuntimeResult('git.upstreamStatus', {
@@ -250,8 +244,19 @@ export function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
     }),
     cancelGeneratePullRequestFields: () => Promise.resolve(),
     stage: async ({ worktreePath, filePath }) => mutateGitPath('git.stage', worktreePath, filePath),
-    bulkStage: async ({ worktreePath, filePaths }) =>
-      mutateGitPaths('git.bulkStage', worktreePath, filePaths),
+    bulkStage: async ({ worktreePath, filePaths, scope }) => {
+      if (!scope) {
+        return mutateGitPaths('git.bulkStage', worktreePath, filePaths)
+      }
+      const worktree = await resolveRuntimeWorktreeByPath(worktreePath)
+      // Why no paths: an older host strips `scope` and stages `filePaths`, so an empty list makes that a no-op.
+      const reply = await callRuntimeResult<unknown>('git.bulkStage', {
+        worktree: toRuntimeWorktreeSelector(worktree.id),
+        filePaths: [],
+        scope
+      })
+      requireGitStageWorktreeScopeReceipt(reply, scope)
+    },
     unstage: async ({ worktreePath, filePath }) =>
       mutateGitPath('git.unstage', worktreePath, filePath),
     bulkUnstage: async ({ worktreePath, filePaths }) =>

@@ -3,11 +3,10 @@ import { toast } from 'sonner'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import { useAppStore } from '../../store'
 import { focusTerminalTabSurface } from '../../lib/focus-terminal-tab-surface'
-import {
-  createWebRuntimeSessionBrowserTab,
-  createWebRuntimeSessionTerminal,
-  isWebRuntimeSessionActive
-} from '../../runtime/web-runtime-session'
+import { createBrowserUuid } from '../../lib/browser-uuid'
+import { createWebRuntimeSessionBrowserTab } from '../../runtime/web-runtime-browser-creation'
+import { createWebRuntimeSessionTerminal } from '../../runtime/web-runtime-terminal-creation'
+import { isWebRuntimeSessionActive } from '../../runtime/web-runtime-session-environment'
 import { openTabBarEntry, type TabCreateEntryArgs } from '../tab-bar/tab-create-entry-action'
 import { openMobileEmulatorTab } from '@/lib/open-mobile-emulator-tab'
 import { ensureSimulatorTab, getSimulatorTabForWorktree } from '@/lib/ensure-simulator-tab'
@@ -161,10 +160,11 @@ export function useTabGroupCreationCommands({
         if (outcome.status === 'created' || isWebRuntimeSessionActive(environmentId)) {
           return
         }
-        const terminal = createTab(worktreeId, groupId, shellOverride)
-        setActiveTab(terminal.id)
+        const tabId = createBrowserUuid()
+        createTab(worktreeId, groupId, shellOverride, { id: tabId })
+        setActiveTab(tabId)
         setActiveTabType('terminal', worktreeId)
-        focusTerminalTabSurface(terminal.id)
+        focusTerminalTabSurface(tabId)
       })()
     }
   }
