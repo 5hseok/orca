@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { DiffEditor, type DiffOnMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useAppStore } from '@/store'
@@ -30,6 +30,7 @@ import { useDiffEditorRegistration } from './diff-navigation-context'
 import { preserveDiffViewStateAcrossModelSwaps } from './diff-model-swap-view-state'
 import { monacoFindOptions } from './monaco-find-options'
 import { useMonacoLspForDiff } from './use-monaco-lsp-for-diff'
+import { useDiffPaneGitLineBlame } from './useDiffPaneGitLineBlame'
 import { useDocumentDarkTheme } from '@/hooks/use-document-dark-theme'
 
 export default function DiffViewer({
@@ -51,7 +52,13 @@ export default function DiffViewer({
   onContentChange,
   onSave,
   largeDiffRenderLimit,
-  largeDiffSaveContentAvailable
+  largeDiffSaveContentAvailable,
+  originalBlamePath,
+  originalBlameRevision,
+  originalContentsSource,
+  modifiedBlameRevision,
+  modifiedContentsSource,
+  modifiedBufferDirty
 }: DiffViewerProps): React.JSX.Element {
   const settings = useAppStore((s) => s.settings)
   const isDark = useDocumentDarkTheme()
@@ -82,7 +89,23 @@ export default function DiffViewer({
   useLayoutEffect(() => {
     diffWordWrapRef.current = diffWordWrap
   }, [diffWordWrap])
-  const [modifiedEditor, setModifiedEditor] = useState<editor.ICodeEditor | null>(null)
+
+  const renderLimit = useMemo(
+    () => largeDiffRenderLimit ?? getLargeDiffRenderLimit({ originalContent, modifiedContent }),
+    [largeDiffRenderLimit, originalContent, modifiedContent]
+  )
+  const { modifiedEditor, setOriginalEditor, setModifiedEditor } = useDiffPaneGitLineBlame({
+    worktreeId,
+    relativePath,
+    originalBlamePath,
+    originalBlameRevision,
+    originalContentsSource,
+    modifiedBlameRevision,
+    modifiedContentsSource,
+    modifiedBufferDirty,
+    widgetKeyPrefix: 'diff',
+    extraEnabled: renderLimit.limited !== true
+  })
   useMonacoLspForDiff({
     modifiedEditor,
     relativePath,
@@ -90,11 +113,6 @@ export default function DiffViewer({
     language,
     modelIdentity: modifiedModelKey ?? modelKey
   })
-
-  const renderLimit = useMemo(
-    () => largeDiffRenderLimit ?? getLargeDiffRenderLimit({ originalContent, modifiedContent }),
-    [largeDiffRenderLimit, originalContent, modifiedContent]
-  )
   const hasLineCommentAction = Boolean(worktreeId || onAddLineComment)
 
   // Why: only forward the pending scroll id when this viewer owns the comment, else unrelated viewers race to ack it.
@@ -188,8 +206,9 @@ export default function DiffViewer({
     if (fallenBackEditor) {
       unregisterDiffEditor(fallenBackEditor)
     }
+    setOriginalEditor(null)
     setModifiedEditor(null)
-  }, [unregisterDiffEditor])
+  }, [setModifiedEditor, setOriginalEditor, unregisterDiffEditor])
 
   // Keep refs to latest callbacks so the mounted editor always calls current versions
   const onSaveRef = useRef(onSave)
@@ -241,12 +260,14 @@ export default function DiffViewer({
         wordWrapOptionsSubRef.current = null
         unregisterDiffEditor(diffEditor)
         diffEditorRef.current = null
+        setOriginalEditor(null)
         setModifiedEditor(null)
       })
       diffEditor.onDidDispose(preserveDiffViewStateAcrossModelSwaps(diffEditor).dispose)
 
       setupCopy(originalEditor, monaco, filePath, propsRef)
       setupCopy(modifiedEditor, monaco, filePath, propsRef)
+      setOriginalEditor(originalEditor)
       setModifiedEditor(modifiedEditor)
 
       // Why: restore full diff view state (not just scrollTop) so cursor/selection stay consistent across both panes.
@@ -283,7 +304,17 @@ export default function DiffViewer({
         diffEditor.focus()
       }
     },
-    [editable, setupCopy, modelKey, filePath, sideBySide, registerDiffEditor, unregisterDiffEditor]
+    [
+      editable,
+      setupCopy,
+      modelKey,
+      filePath,
+      sideBySide,
+      registerDiffEditor,
+      unregisterDiffEditor,
+      setOriginalEditor,
+      setModifiedEditor
+    ]
   )
 
   // Why: snapshot view state on deactivation (layoutEffect cleanup fires before unmount), not on scroll.
