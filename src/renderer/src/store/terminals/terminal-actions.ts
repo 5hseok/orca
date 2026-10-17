@@ -1,9 +1,9 @@
 import type { TerminalState } from './terminal-state'
 import type { Tab } from '../../../../shared/tab-types'
+import type { TabSplitTarget } from '../slices/tabs/tabs-slice-contract'
 import type { TerminalLayoutSnapshot, TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import type { WorkspaceSessionState } from '../../../../shared/workspace-session-state-types'
-import type { SetupSplitDirection } from '../../../../shared/worktree/launch-types'
 import type {
   AgentProviderSessionMetadata,
   SleepingAgentLaunchConfig
@@ -69,6 +69,8 @@ export type TerminalActions = {
       /** Published atomically with pendingStartup for automatic resume ownership. */
       automaticResumeClaim?: AutomaticAgentResumeClaim
       activate?: boolean
+      /** Creates the tab in a new split group instead of targetGroupId. */
+      split?: TabSplitTarget
       recordInteraction?: boolean
       id?: string
       launchAgent?: TuiAgent
@@ -136,7 +138,6 @@ export type TerminalActions = {
   markUnverifiedPtyLoss: (tabId: string) => void
   /** Records the relay's own answer that a PTY id is gone; the one `exited` a respawn may act on. */
   markPtySourceDisowned: (ptyId: string) => void
-  clearDirectSshTargetPtyBindings: (targetId: string) => number
   /** Awaited verified shutdown; unlike closeTab, physical teardown gates the state commit. */
   shutdownWorktreeTerminals: (
     worktreeId: string,
@@ -233,19 +234,6 @@ export type TerminalActions = {
     }
     showSessionRestoredBanner?: boolean
     telemetry?: AgentStartedTelemetry
-  } | null
-  queueTabSetupSplit: (
-    tabId: string,
-    startup: {
-      command: string
-      env?: Record<string, string>
-      direction: SetupSplitDirection
-    }
-  ) => void
-  consumeTabSetupSplit: (tabId: string) => {
-    command: string
-    env?: Record<string, string>
-    direction: SetupSplitDirection
   } | null
   queueTabIssueCommandSplit: (
     tabId: string,

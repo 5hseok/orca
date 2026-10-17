@@ -23,6 +23,9 @@ import {
 import { omitRecordKeys } from '../worktrees/teardown/record-key-omission'
 import { removeTabsAttention } from '../workspace-attention/subject-attention-transitions'
 import { settleAttentionRemovedBy } from '../workspace-attention/attention-removal-follow-up'
+import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../../shared/layout-owner-switch'
+import { recordClosedEditorTabInLayoutOwner } from '../editor/tabs/editor-tab-layout-owner'
+import { recordClosedAgentSessionTabInLayoutOwner } from '@/runtime/agent-session-tab-layout-owner'
 
 export function createTabsCloseActions(
   set: TabsSliceSet,
@@ -205,6 +208,11 @@ export function createTabsCloseActions(
           }
         })
       )
+      // Switch point: main records an editor or chat tab the window just closed.
+      if (ORCA_LAYOUT_OWNER_IS_MAIN) {
+        recordClosedEditorTabInLayoutOwner(get(), tab)
+        recordClosedAgentSessionTabInLayoutOwner(get(), tab)
+      }
 
       if (opts?.recordInteraction !== false) {
         get().recordFeatureInteraction?.('terminal-tabs')
