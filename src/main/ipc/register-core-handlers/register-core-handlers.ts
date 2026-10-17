@@ -9,6 +9,7 @@ import { registerFilesystemHandlers } from '../filesystem'
 import type { CommitMessageAgentEnvironmentResolvers } from '../../text-generation/commit-message-agent-environment'
 import { registerFilesystemWatcherHandlers } from '../filesystem-watcher'
 import { registerCopilotInlineCompletionHandlers } from '../copilot-inline-completion'
+import { registerLspHandlers } from '../lsp'
 import { registerUsageProviderHandlers } from '../usage-provider-handlers'
 import { registerGitHubHandlers } from '../github'
 import { registerGitLabHandlers } from '../gitlab'
@@ -250,6 +251,7 @@ export function registerCoreHandlers(
   }
   registerFilesystemWatcherHandlers()
   registerCopilotInlineCompletionHandlers(store)
+  registerLspHandlers(store)
   registerRuntimeHandlers(runtime)
   registerRuntimeEnvironmentHandlers(store)
   registerWslHostHandlers({

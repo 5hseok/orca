@@ -47,6 +47,7 @@ import { macosTccPromptsApi } from './api/macos-tcc-prompts-bridge'
 import { developerPermissionsApi } from './api/developer-permissions-bridge'
 import { computerUsePermissionsApi } from './api/computer-use-permissions-bridge'
 import { copilotCompletionApi } from './api/copilot-completion-bridge'
+import { lspApi } from './api/lsp-bridge'
 import { shellApi } from './api/shell-bridge'
 import { skillsApi } from './api/skills-bridge'
 import { petApi } from './api/pet-bridge'
@@ -162,6 +163,7 @@ const api = {
   notebook: notebookApi,
   fs: fsApi,
   copilotCompletion: copilotCompletionApi,
+  lsp: lspApi,
   git: gitApi,
   ui: uiApi,
   stats: statsApi,
