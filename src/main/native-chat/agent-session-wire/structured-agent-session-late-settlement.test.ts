@@ -9,7 +9,8 @@ import type {
   AgentSessionMutationEnvelope,
   AgentSessionSubscribeEvent
 } from '../../../shared/agent-session-wire'
-import { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import { openTestAgentSessionRecordStore } from '../../runtime/agent-session-record-store-test-harness'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type {
   AgentSessionDispatchOutcome,
@@ -28,6 +29,10 @@ import {
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
 import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from './structured-agent-session-logger'
+import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
+import { NO_STRUCTURED_AGENTS } from './structured-agent-session-adapter-router-test-support'
+import { startsWhenPublished } from './structured-agent-session-instant-start.test-support'
 
 const CALLER = { callerKey: 'client-1' }
 
@@ -92,32 +97,38 @@ beforeEach(async () => {
   resetHostTestOperationIds()
   dispatch = vi.fn(async () => accepted())
   closeSession = vi.fn(async () => true)
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  store = await openTestAgentSessionRecordStore(root)
   host = new StructuredAgentSessionHost({
+    agents: NO_STRUCTURED_AGENTS,
+    logger: createStructuredAgentSessionLogger(),
     store,
-    adapter: {
-      acquire: vi.fn(async ({ fence }) => ({
-        process: {
-          hostId: 'local',
-          pid: 4242,
-          processStartTimeMs: 1_700_000_000_000,
-          spawnToken: store.getRecord(SESSION)?.lease.reservedSpawnToken ?? 'spawn-a'
-        },
-        link: {
-          linkId: `link-${fence}`,
-          handle: { provider: 'codex' as const, threadId: THREAD },
-          origin: 'created' as const,
-          mintedAtFence: fence,
-          observedAt: NOW
-        }
-      })),
-      releaseAcquisition: vi.fn(async () => true),
-      dispatch,
-      closeSession,
-      cancelTurn: vi.fn(async () => ({ cancelled: true })),
-      answerPrompt: vi.fn(async () => undefined),
-      setOption: vi.fn(async () => undefined)
-    },
+    adapter: startsWhenPublished(
+      {
+        acquire: vi.fn(async ({ fence }) => ({
+          providerChildPhase: 'starting' as const,
+          process: {
+            hostId: 'local',
+            pid: 4242,
+            processStartTimeMs: 1_700_000_000_000,
+            spawnToken: store.getRecord(SESSION)?.lease.reservedSpawnToken ?? 'spawn-a'
+          },
+          link: {
+            linkId: `link-${fence}`,
+            handle: codexProviderHandle(THREAD),
+            origin: 'created' as const,
+            mintedAtFence: fence,
+            observedAt: NOW
+          }
+        })),
+        releaseAcquisition: vi.fn(async () => true),
+        dispatch,
+        closeSession,
+        cancelTurn: vi.fn(async () => ({ cancelled: true })),
+        answerPrompt: vi.fn(async () => undefined),
+        setOption: vi.fn(async () => undefined)
+      },
+      () => host
+    ),
     journalDatabase: openTestJournalHostDatabase(root),
     claimKeyId: 'key-1',
     mintSpawnToken: () => 'spawn-a',
@@ -128,7 +139,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await host.flushAllStreamedEvents()
-  await host.close(SESSION)
+  await host.close(SESSION, 'evict')
   await rm(root, { recursive: true, force: true })
 })
 
@@ -201,7 +212,7 @@ describe('settling a send the provider proves it received after the ack window',
       return true
     })
 
-    await host.close(SESSION)
+    await host.close(SESSION, 'evict')
     await expect(settlement).resolves.toBeUndefined()
     await host.revealSession(SESSION)
     expect(await submissions()).toMatchObject([{ dispatchState: 'accepted' }])

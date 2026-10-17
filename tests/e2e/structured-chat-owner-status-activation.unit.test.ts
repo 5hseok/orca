@@ -18,12 +18,17 @@ import {
   resetHostTestOperationIds
 } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-host-test-data'
 import { STRUCTURED_AGENT_SESSION_IDLE_MS } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-idle-sweep'
-import { AgentSessionRecordStore } from '../../src/main/runtime/agent-session-record-store'
+import type { AgentSessionRecordStore } from '../../src/main/runtime/agent-session-record-store'
+import { openTestAgentSessionRecordStore } from '../../src/main/runtime/agent-session-record-store-test-harness'
 import { useAppStore } from '../../src/renderer/src/store'
 import { runWorktreeAgentActivationGate } from '../../src/renderer/src/lib/worktree-agent-activation-gate'
 import { readWorktreeStructuredActivationInventory } from '../../src/renderer/src/lib/worktree-agent-structured-inventory'
 import type { RuntimeMobileSessionTabsResult } from '../../src/shared/runtime-types'
 import { openTestJournalHostDatabase } from '../../src/main/native-chat/agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-logger'
+import { codexProviderHandle } from '../../src/shared/agent-session-provider-handle-encoding'
+import { startsWhenPublished } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-instant-start.test-support'
+import { NO_STRUCTURED_AGENTS } from '../../src/main/native-chat/agent-session-wire/structured-agent-session-adapter-router-test-support'
 
 const WORKTREE = 'repo-1::/workspace/repo'
 
@@ -35,25 +40,37 @@ let closeSession: Mock<NonNullable<StructuredAgentSessionAdapter['closeSession']
 
 function openHost(): void {
   host = new StructuredAgentSessionHost({
+    agents: NO_STRUCTURED_AGENTS,
+    logger: createStructuredAgentSessionLogger(),
     store,
-    adapter: {
-      acquire: async ({ fence, spawnToken }) => ({
-        process: { hostId: 'local', pid: 4242, processStartTimeMs: 1_700_000_000_000, spawnToken },
-        link: {
-          linkId: `link-${fence}`,
-          handle: { provider: 'codex', threadId: THREAD },
-          origin: store.getRecord(SESSION)?.providerHandleChain.length ? 'resumed' : 'created',
-          mintedAtFence: fence,
-          observedAt: NOW
-        }
-      }),
-      closeSession,
-      releaseAcquisition: async () => true,
-      dispatch: async () => ({ state: 'rejected', reason: 'unused' }),
-      cancelTurn: async () => ({ cancelled: false }),
-      answerPrompt: async () => undefined,
-      setOption: async () => undefined
-    },
+    // A ready provider proves its start as soon as it is published.
+    adapter: startsWhenPublished(
+      {
+        acquire: async ({ fence, spawnToken }) => ({
+          providerChildPhase: 'starting' as const,
+          process: {
+            hostId: 'local',
+            pid: 4242,
+            processStartTimeMs: 1_700_000_000_000,
+            spawnToken
+          },
+          link: {
+            linkId: `link-${fence}`,
+            handle: codexProviderHandle(THREAD),
+            origin: store.getRecord(SESSION)?.providerHandleChain.length ? 'resumed' : 'created',
+            mintedAtFence: fence,
+            observedAt: NOW
+          }
+        }),
+        closeSession,
+        releaseAcquisition: async () => true,
+        dispatch: async () => ({ state: 'rejected', reason: 'unused' }),
+        cancelTurn: async () => ({ cancelled: false }),
+        answerPrompt: async () => undefined,
+        setOption: async () => undefined
+      },
+      () => host
+    ),
     journalDatabase: openTestJournalHostDatabase(root),
     claimKeyId: 'key-1',
     mintSpawnToken: () => 'spawn-a',
@@ -91,7 +108,10 @@ function serveDesktopRuntime(): void {
       try {
         return { ok: true, result: host.handoffStatus(params.sessionId ?? '') }
       } catch (error) {
-        return { ok: false, error: { code: String(error), message: String(error) } }
+        return {
+          ok: false,
+          error: { code: String(error), message: String(error) }
+        }
       }
     }
     throw new Error(`Unexpected runtime method: ${method}`)
@@ -114,7 +134,7 @@ beforeEach(async () => {
   clock = NOW
   resetHostTestOperationIds()
   closeSession = vi.fn(async () => true)
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  store = await openTestAgentSessionRecordStore(root)
   openHost()
   expect(await host.attach({ callerKey: 'client-1' }, hostTestAttachParams(null))).toMatchObject({
     ok: true
@@ -140,7 +160,7 @@ describe('a chat at rest keeps its worktree activatable', () => {
 
   it('after an app restart restored it for reading', async () => {
     await host.flushAllStreamedEvents()
-    store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+    store = await openTestAgentSessionRecordStore(root)
     openHost()
     await host.restoreReadableSessions()
     expect(host.hasSession(SESSION)).toBe(true)

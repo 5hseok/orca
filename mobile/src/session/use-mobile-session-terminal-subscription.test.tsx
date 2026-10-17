@@ -83,12 +83,13 @@ function subscriptionHarness(opts: {
     unsubscribeTerminal: (handle: string) => {
       terminalUnsubsRef.current.delete(handle)
       subscribingHandlesRef.current.delete(handle)
+      initializedHandlesRef.current.delete(handle)
       subscribeSeqRef.current.set(handle, (subscribeSeqRef.current.get(handle) ?? 0) + 1)
     },
     unsubscribeTerminalRef: { current: vi.fn() },
     signalTerminalInventoryRecovery: vi.fn(),
     terminalRefs: { current: new Map([[HANDLE, terminal]]) },
-    pendingActiveTerminalHandleRef: { current: null },
+    pendingSelectionRef: { current: null },
     nativeChatStream: { notifyWebReady: vi.fn() },
     terminalGestureInputBucketsRef: { current: new Map() },
     terminalGestureInputQueuesRef: { current: new Map() },

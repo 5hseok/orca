@@ -1,9 +1,4 @@
-import {
-  isWslHookRelayConnectionId,
-  wslHookRelayConnectionId
-} from '../../../shared/wsl-hook-relay-contract'
-import { splitWorktreeIdForFilesystem, worktreeIdsEqual } from '../../../shared/worktree/id'
-import { parseWslUncPath } from '../../../shared/wsl-paths'
+import { sameAgentStatusTerminalOwner } from '../../../shared/agent-status-terminal-owner'
 import { structuralValuesEqualIgnoringUndefined } from '../../../shared/structural-value-equality'
 import type { AgentHookEventPayload } from '../../../shared/agent-hook-listener/listener-event'
 import type {
@@ -55,13 +50,6 @@ function semanticRowsEqual(
   return structuralValuesEqualIgnoringUndefined(semanticRow(before), semanticRow(after))
 }
 
-function wslDistroForWorktree(worktreeId: string | undefined): string | null {
-  const worktreePath = worktreeId
-    ? splitWorktreeIdForFilesystem(worktreeId)?.worktreePath
-    : undefined
-  return worktreePath ? (parseWslUncPath(worktreePath)?.distro ?? null) : null
-}
-
 export abstract class AgentHookServerRowOwnership extends AgentHookServerListeners {
   _resetRowOwnershipForTests(): void {
     this.paneKeyByTerminalHandle.clear()
@@ -79,37 +67,24 @@ export abstract class AgentHookServerRowOwnership extends AgentHookServerListene
   }
 
   protected sameTerminalOwner(
-    previous: EnrichedAgentHookEventPayload,
+    previous: Pick<AgentHookEventPayload, 'connectionId' | 'worktreeId'>,
     incoming: Pick<AgentHookEventPayload, 'connectionId' | 'worktreeId'>
   ): boolean {
-    if (
-      previous.worktreeId &&
+    return sameAgentStatusTerminalOwner(previous, incoming)
+  }
+
+  protected retainedOwnerLaunchTokenHash(
+    paneKey: string,
+    incoming: Pick<AgentHookEventPayload, 'connectionId' | 'worktreeId'>
+  ): string | undefined {
+    const fence = this.restartedStatusLaunchTokenHashByPaneKey.get(paneKey)
+    const authority = this.persistedAuthorityCommitmentsByPaneKey.get(paneKey)
+    return fence?.allowRetainedOwner &&
+      authority?.worktreeId &&
       incoming.worktreeId &&
-      !worktreeIdsEqual(previous.worktreeId, incoming.worktreeId)
-    ) {
-      return false
-    }
-    if (previous.connectionId === incoming.connectionId) {
-      return true
-    }
-    const relayConnection = isWslHookRelayConnectionId(previous.connectionId)
-      ? previous.connectionId
-      : isWslHookRelayConnectionId(incoming.connectionId)
-        ? incoming.connectionId
-        : null
-    const localConnection = previous.connectionId === null || incoming.connectionId === null
-    if (!relayConnection || !localConnection || !previous.worktreeId || !incoming.worktreeId) {
-      return false
-    }
-    const previousDistro = wslDistroForWorktree(previous.worktreeId)
-    const incomingDistro = wslDistroForWorktree(incoming.worktreeId)
-    return (
-      previousDistro !== null &&
-      incomingDistro !== null &&
-      previousDistro === incomingDistro &&
-      relayConnection === wslHookRelayConnectionId(previousDistro) &&
-      worktreeIdsEqual(previous.worktreeId, incoming.worktreeId)
-    )
+      this.sameTerminalOwner(authority, incoming)
+      ? authority.launchTokenHash
+      : undefined
   }
 
   protected commitStatusRowMutation(

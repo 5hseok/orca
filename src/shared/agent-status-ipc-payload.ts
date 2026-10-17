@@ -67,6 +67,8 @@ export type AgentStatusIpcPayload = ParsedAgentStatusPayload & {
   promptInteractionKey?: string
   /** See AgentStatusEntry.restoredUnconfirmed — hydrated nonterminal provenance. */
   restoredUnconfirmed?: boolean
+  /** A re-send of a cached row (reconnect or listener replay), not a new transition. */
+  isReplay?: boolean
   /** Present on rows the structured session host projects; `owned` keeps them fresh past the
    *  staleness window because the host still runs the provider child. */
   structuredHost?: StructuredHostStatus
@@ -84,7 +86,7 @@ export type AgentStatusCacheIdentity = {
 
 /** Wire shape for ordinary pane teardown or a stamped SSH disconnect batch. */
 export type AgentStatusClearIpcPayload =
-  | { paneKey: string }
+  | { paneKey: string; statusUnavailable?: true }
   | {
       transient: true
       connectionId: string
