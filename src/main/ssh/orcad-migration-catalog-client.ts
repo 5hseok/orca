@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { pairedRuntimeConnectionFromOffer } from '../../shared/paired-runtime-connection'
 import {
   parseOrcadMigrationCatalogAbortResult,
@@ -29,6 +30,7 @@ import type { RuntimeRpcResponse } from '../../shared/runtime-rpc-envelope'
 import { AUTOMATION_EXTRA_AGENT_ARGS_RUNTIME_CAPABILITY } from '../../shared/protocol-version'
 import { hasExtraAgentArgs } from '../../shared/automation-extra-agent-args'
 import { requiredOrcadMigrationSourceCapability } from '../../shared/orcad-migration-source-kind'
+import type { OrcadServerRepository } from './orcad-migration-repository-link'
 
 type OrcadCatalogMigrationOperation = 'abort' | 'commit' | 'stage' | 'state'
 
@@ -45,7 +47,7 @@ export const ORCAD_MIGRATION_DESTINATION_EXTRA_AGENT_ARGS_UNSUPPORTED =
 export const ORCAD_MIGRATION_DESTINATION_SOURCE_KIND_UNSUPPORTED =
   'orcad_migration_destination_source_kind_unsupported:Update Orca on this host to move this project to it.'
 
-type CatalogRequestOptions = {
+export type CatalogRequestOptions = {
   signal?: AbortSignal
   timeoutMs?: number
   expectedRuntimeId?: string
@@ -149,6 +151,54 @@ export async function stageRemoteOrcadMigrationBlobChunk(
     throw new Error(`orcad_migration_blob_failed:${response.error.message}`)
   }
   return parseOrcadMigrationBlobChunkResult(response.result, request)
+}
+
+/** One `*.list` read of the server's own rows, through the same migration preflight. */
+export async function listServerRows(
+  pairingCode: string,
+  method: string,
+  rows: string,
+  options: CatalogRequestOptions
+): Promise<unknown> {
+  const pairing = parsePairingCode(pairingCode)
+  if (!pairing) {
+    throw new Error('orcad_migration_pairing_code_invalid')
+  }
+  const response = await sendSupportedMigrationRequest(pairing, method, undefined, options)
+  if (!response.ok) {
+    throw new Error(`orcad_migration_${rows}_failed:${response.error.message}`)
+  }
+  return response.result
+}
+
+// Every orcad's repo.list returns stored rows whole, so a row without host fields is its own.
+const ServerRepositoriesSchema = z.object({
+  repos: z.array(
+    z.object({
+      id: z.string().min(1),
+      path: z.string().min(1),
+      connectionId: z.string().nullish(),
+      executionHostId: z.string().nullish(),
+      projectGroupId: z.string().nullish()
+    })
+  )
+})
+
+/** The projects the destination already holds, with the host each one's files are on. */
+export async function listRemoteOrcadRepositories(
+  pairingCode: string,
+  options: CatalogRequestOptions = {}
+): Promise<OrcadServerRepository[]> {
+  const result = await listServerRows(pairingCode, 'repo.list', 'repositories', options)
+  return ServerRepositoriesSchema.parse(result).repos.map(
+    ({ id, path, connectionId, executionHostId, projectGroupId }) => ({
+      id,
+      path,
+      ...(connectionId != null ? { connectionId } : {}),
+      ...(executionHostId != null ? { executionHostId } : {}),
+      ...(projectGroupId != null ? { projectGroupId } : {})
+    })
+  )
 }
 
 async function requestCatalogState(

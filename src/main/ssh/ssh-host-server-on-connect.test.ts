@@ -9,6 +9,8 @@ import {
   type HostServerOnConnectDeps
 } from './ssh-host-server-on-connect'
 import { hostServerDepsStub } from './ssh-host-server-on-connect-test-deps'
+import { unservedServerStatus } from './ssh-host-unserved-status'
+import { admitSshManagedServerStatus } from '../../shared/ssh-managed-server-status-admission'
 
 const target: SshTarget = { id: 'ssh-1', label: 'Box', host: 'box', port: 22, username: 'me' }
 
@@ -148,6 +150,24 @@ describe('which server an SSH host runs on connect', () => {
     })
   })
 
+  it('offers "Move anyway" when only saved state refuses', async () => {
+    const d = deps({
+      convert: async () => ({
+        outcome: 'refused',
+        verdict: 'live',
+        code: 'orcad_migration_preflight_blocked',
+        reason: 'This SSH host cannot move yet: saved tabs and panes (2).',
+        canLeaveBehind: true
+      })
+    })
+    await expect(resolveHostServerOnConnect(target, d)).resolves.toEqual({
+      route: 'unserved',
+      reason: 'refused',
+      detail: 'This SSH host cannot move yet: saved tabs and panes (2).',
+      canLeaveBehind: true
+    })
+  })
+
   it('falls back to the relay ladder for good when orcad cannot run, and remembers why', async () => {
     const d = deps({
       isEmptyHost: () => true,
@@ -238,6 +258,130 @@ describe('which server an SSH host runs on connect', () => {
       detail: 'Connection lost'
     })
     expect(d.recordUnavailable).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('names a conflict the server will keep refusing, and the way out, instead of a retry', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const d = deps({
+      convert: async () => {
+        throw new Error(
+          'orcad_migration_stage_failed:orcad_migration_repository_path_conflict:/root/migrepo'
+        )
+      }
+    })
+    const result = await resolveHostServerOnConnect(target, d)
+    expect(result).toMatchObject({ route: 'unserved', reason: 'refused' })
+    const detail = result.route === 'unserved' ? result.detail : ''
+    expect(detail).toContain('/root/migrepo')
+    expect(detail).toContain('remove that project from this desktop and connect again')
+    expect(d.abandonConversion).toHaveBeenCalledWith(target)
+    warn.mockRestore()
+  })
+
+  it('names relay terminals that hold a linked project, and how to end them', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const d = deps({
+      convert: async () => {
+        throw new Error('orcad_migration_linked_project_terminals:/root/my repo')
+      }
+    })
+    const result = await resolveHostServerOnConnect(target, d)
+    expect(result).toMatchObject({ route: 'unserved', reason: 'refused' })
+    const detail = result.route === 'unserved' ? result.detail : ''
+    expect(detail).toContain('started in /root/my repo are still running')
+    expect(detail).toContain('remove that project from this desktop and connect again')
+    warn.mockRestore()
+  })
+
+  it('keeps a host connected for the bridge when only its relay terminals stop the link (STA-10604)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    for (const code of ['linked_project_terminals', 'linked_project_unowned_terminals']) {
+      const d = deps({
+        relayTerminals: vi.fn(async () => ({
+          verdict: 'live' as const,
+          count: 1,
+          bridged: true as const
+        })),
+        convert: async () => {
+          throw new Error(`orcad_migration_${code}:/root/my repo`)
+        }
+      })
+      const result = await resolveHostServerOnConnect(target, d)
+      expect(result).toMatchObject({
+        route: 'unserved',
+        reason: 'relay_terminals_live',
+        terminals: 1,
+        bridged: true
+      })
+      expect(result.route === 'unserved' ? result.detail : '').toContain('/root/my repo')
+      // What the renderer admits keeps the mark its bridged panes and status line read.
+      if (result.route === 'unserved') {
+        expect(admitSshManagedServerStatus(unservedServerStatus(result))).toMatchObject({
+          managedServer: { kind: 'relay', bridged: true }
+        })
+      }
+      // The fence goes, so the next connect after the terminal exits links the project.
+      expect(d.abandonConversion).toHaveBeenCalledWith(target)
+    }
+    warn.mockRestore()
+  })
+
+  it('never keeps a host connected for the bridge on any other refusal or a held move', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const bridgedTerminals = vi.fn(async () => ({
+      verdict: 'live' as const,
+      count: 1,
+      bridged: true as const
+    }))
+    const conflict = deps({
+      relayTerminals: bridgedTerminals,
+      convert: async () => {
+        throw new Error('orcad_migration_repository_path_conflict:/root/migrepo')
+      }
+    })
+    const refused = await resolveHostServerOnConnect(target, conflict)
+    expect(refused).toMatchObject({ route: 'unserved', reason: 'refused' })
+    expect(refused).not.toHaveProperty('bridged')
+    const held = deps({
+      relayTerminals: bridgedTerminals,
+      hasUnfinishedConversion: () => true,
+      convert: async () => {
+        throw new Error('orcad_migration_linked_project_terminals:/root/my repo')
+      }
+    })
+    const heldResult = await resolveHostServerOnConnect(target, held)
+    expect(heldResult).toMatchObject({ route: 'unserved', reason: 'refused', held: true })
+    expect(heldResult).not.toHaveProperty('bridged')
+    warn.mockRestore()
+  })
+
+  it('never pins a relay terminal of unknown project on the linked one, and offers the way out', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const d = deps({
+      convert: async () => {
+        throw new Error('orcad_migration_linked_project_unowned_terminals:/root/my repo')
+      }
+    })
+    const result = await resolveHostServerOnConnect(target, d)
+    expect(result).toMatchObject({ route: 'unserved', reason: 'refused' })
+    const detail = result.route === 'unserved' ? result.detail : ''
+    expect(detail).toContain('can’t tell which project it belongs to')
+    expect(detail).not.toContain('started in /root/my repo')
+    expect(detail).toContain('copy of /root/my repo, remove that project from this desktop')
+    warn.mockRestore()
+  })
+
+  it('keeps a staged claim of another desktop’s move a retry, since it expires', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const d = deps({
+      convert: async () => {
+        throw new Error('orcad_migration_staged_claim_conflict:repository-path:/root/migrepo')
+      }
+    })
+    await expect(resolveHostServerOnConnect(target, d)).resolves.toMatchObject({
+      reason: 'failed'
+    })
     warn.mockRestore()
   })
 
