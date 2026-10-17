@@ -2,7 +2,7 @@ import type { KeybindingActionId } from '../../../../shared/keybindings'
 import { useAppStore } from '../../store'
 import type { TabSplitDirection } from '../../store/slices/tabs'
 import { resolveBrowserWorkspaceOwner } from '@/lib/browser-workspace-source-resolution'
-import { canMoveTabToNewPaneColumn } from './tab-move-to-pane-column'
+import { canMoveTabToNewPaneColumn, moveTabToNewPaneColumn } from './tab-move-to-pane-column'
 
 export type TabPaneColumnTarget = {
   unifiedTabId: string
@@ -26,6 +26,25 @@ export function resolveActiveTabPaneColumnTarget(
     return null
   }
   return { unifiedTabId: activeTab.id, groupId: activeTab.groupId }
+}
+
+/**
+ * Runs the first matching "Move Tab to Split" shortcut on the worktree's active tab. Returns false
+ * when no chord matches or the active tab cannot split, so the key falls through.
+ */
+export function dispatchActiveTabSplitShortcut(
+  worktreeId: string | null | undefined,
+  matchShortcut: (actionId: KeybindingActionId) => boolean,
+  onHandled: (actionId: KeybindingActionId) => void
+): boolean {
+  const match = TAB_SPLIT_SHORTCUT_DIRECTIONS.find(([actionId]) => matchShortcut(actionId))
+  const target = match ? resolveActiveTabPaneColumnTarget(worktreeId) : null
+  if (!match || !target) {
+    return false
+  }
+  onHandled(match[0])
+  moveTabToNewPaneColumn({ ...target, direction: match[1] })
+  return true
 }
 
 /** The tab owning a focused browser guest, or null when it is unknown or cannot split. */

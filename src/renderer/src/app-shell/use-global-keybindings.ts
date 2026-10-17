@@ -20,11 +20,7 @@ import {
 } from '../components/right-sidebar/file-search-include-pattern'
 import { usePluginCommands } from '@/store/plugin-panels'
 import { useAppStore } from '../store'
-import {
-  TAB_SPLIT_SHORTCUT_DIRECTIONS,
-  resolveActiveTabPaneColumnTarget
-} from '../components/tab-bar/active-tab-pane-column-split'
-import { moveTabToNewPaneColumn } from '../components/tab-bar/tab-move-to-pane-column'
+import { dispatchActiveTabSplitShortcut } from '../components/tab-bar/active-tab-pane-column-split'
 import {
   keybindingMatchesAction,
   type KeybindingActionId,
@@ -196,20 +192,15 @@ export function useGlobalKeybindings(args: {
       // Keyboard path for "Move Tab to Split". Ahead of the editable-target guard because it is a
       // layout command, not text input: Monaco's EditContext div passes the guard today, but its
       // legacy textarea path would not. A single-tab group has nothing to split, so the chord falls through.
-      if (workspaceChromeActive && !isFloatingWorkspacePanelFocused()) {
-        for (const [actionId, direction] of TAB_SPLIT_SHORTCUT_DIRECTIONS) {
-          if (!matchShortcut(actionId)) {
-            continue
-          }
-          const target = resolveActiveTabPaneColumnTarget(activeWorktreeId)
-          if (!target) {
-            break
-          }
+      if (
+        workspaceChromeActive &&
+        !isFloatingWorkspacePanelFocused() &&
+        dispatchActiveTabSplitShortcut(activeWorktreeId, matchShortcut, (actionId) => {
           input.preventDefault()
           notifyTerminalCapture(actionId)
-          moveTabToNewPaneColumn({ ...target, direction })
-          return
-        }
+        })
+      ) {
+        return
       }
 
       // Skip editable surfaces so TipTap's Cmd+B bold works; this renderer-side fallback covers the blur→press IPC race (docs/markdown-cmd-b-bold-design.md).

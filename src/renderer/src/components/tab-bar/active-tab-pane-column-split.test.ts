@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '../../store'
 import type { Tab } from '../../../../shared/tab-types'
 import {
   TAB_SPLIT_SHORTCUT_DIRECTIONS,
+  dispatchActiveTabSplitShortcut,
   resolveActiveTabPaneColumnTarget,
   resolveBrowserSourcePaneColumnTarget
 } from './active-tab-pane-column-split'
@@ -101,6 +102,29 @@ describe('active-tab-pane-column-split', () => {
     })
 
     expect(resolveActiveTabPaneColumnTarget(WT)).toBeNull()
+  })
+
+  describe('dispatchActiveTabSplitShortcut', () => {
+    it('falls through without claiming the key when no split chord matches', () => {
+      const onHandled = vi.fn()
+
+      expect(dispatchActiveTabSplitShortcut(WT, () => false, onHandled)).toBe(false)
+      expect(onHandled).not.toHaveBeenCalled()
+    })
+
+    it('falls through when the matched chord has no splittable active tab', () => {
+      const onHandled = vi.fn()
+
+      expect(dispatchActiveTabSplitShortcut('wt-missing', () => true, onHandled)).toBe(false)
+      expect(onHandled).not.toHaveBeenCalled()
+    })
+
+    it('claims the key and reports the matched action before moving the tab', () => {
+      const onHandled = vi.fn()
+
+      expect(dispatchActiveTabSplitShortcut(WT, () => true, onHandled)).toBe(true)
+      expect(onHandled).toHaveBeenCalledWith('tab.moveToSplitRight')
+    })
   })
 
   describe('resolveBrowserSourcePaneColumnTarget', () => {
