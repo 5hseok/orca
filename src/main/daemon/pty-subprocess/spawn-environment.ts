@@ -6,6 +6,7 @@ import { dropInheritedOrcaFishHistory } from '../../fish-history-session'
 import { removeAppImageRuntimeEnv } from '../../pty/appimage-terminal-env'
 import { removeChromiumDisabledSessionBus } from '../../pty/chromium-session-bus-env'
 import { stripInheritedBuildModeEnv } from '../../pty/build-mode-env'
+import { stripInheritedTmuxEnv } from '../../pty/inherited-tmux-env'
 import { stripPiProcessOwnerEnv } from '../../pty/pi-process-owner-env'
 import { dropIncoherentCondaActivationEnv } from '../../pty/conda-activation-env'
 import { stripLegacyTerminalShimEnv } from '../../pty/legacy-terminal-shim-dir'
@@ -172,7 +173,7 @@ function removeInheritedDevAgentHookEndpoint(
 
 /** A persistent daemon's inherited environment cannot supply ownership for a new pane. */
 export function createDaemonPtyEnvironment(opts: PtySubprocessOptions): Record<string, string> {
-  const inheritedEnv = stripInheritedBuildModeEnv(process.env)
+  const inheritedEnv = stripInheritedTmuxEnv(stripInheritedBuildModeEnv(process.env))
   restoreManagedDataAccountEnvironment(inheritedEnv)
   const env: Record<string, string> = {
     ...mergeGitConfigEnvProtocol(inheritedEnv, opts.env),

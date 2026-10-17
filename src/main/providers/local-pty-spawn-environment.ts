@@ -7,6 +7,7 @@ import {
 import { removeAppImageRuntimeEnv } from '../pty/appimage-terminal-env'
 import { removeChromiumDisabledSessionBus } from '../pty/chromium-session-bus-env'
 import { stripInheritedBuildModeEnv } from '../pty/build-mode-env'
+import { stripInheritedTmuxEnv } from '../pty/inherited-tmux-env'
 import { stripPiProcessOwnerEnv } from '../pty/pi-process-owner-env'
 import { removeInheritedNoColor } from '../pty/terminal-color-env'
 import { isWindowsGitBashShellPath } from '../git-bash'
@@ -24,7 +25,7 @@ export function buildLocalPtySpawnEnvironment(args: {
   plan: LocalPtyLaunchPlan
 }): Record<string, string> | Promise<Record<string, string>> {
   const { id, spawn, getOptions, plan } = args
-  const inheritedEnv = stripInheritedBuildModeEnv(process.env)
+  const inheritedEnv = stripInheritedTmuxEnv(stripInheritedBuildModeEnv(process.env))
   restoreManagedDataAccountEnvironment(inheritedEnv)
   const spawnEnv: Record<string, string> = {
     ...mergeGitConfigEnvProtocol(inheritedEnv, spawn.env),
