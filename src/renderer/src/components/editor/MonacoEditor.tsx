@@ -23,6 +23,7 @@ import { useMonacoMarkdownAnnotations } from './use-monaco-markdown-annotations'
 import { useMonacoEditorDecorations } from './use-monaco-editor-decorations'
 import { useMonacoEditorMount } from './use-monaco-editor-mount'
 import { useMonacoCopilot } from './use-monaco-copilot'
+import { useMonacoLsp } from './use-monaco-lsp'
 import { useDocumentDarkTheme } from '@/hooks/use-document-dark-theme'
 import { snapshotMonacoViewState } from './monaco-view-state-persistence'
 import { MonacoMarkdownAnnotationOverlay } from './MonacoMarkdownAnnotationOverlay'
@@ -141,6 +142,7 @@ export default function MonacoEditor({
     modelKey: modelUri,
     onContentChange
   })
+  useMonacoLsp({ mountedEditor, fileId, filePath, language, worktreeId, liveTail })
   useMonacoCopilot({ mountedEditor, fileId, filePath, language, worktreeId, readOnly, liveTail })
   const annotations = useMonacoMarkdownAnnotations({
     mountedEditor,

@@ -4325,6 +4325,11 @@
             "signIn": "Cliquez pour vous connecter à GitHub Copilot",
             "deviceCode": "Code de connexion Copilot {{code}} copié : collez-le dans le navigateur.",
             "signInFailed": "Échec de la connexion à Copilot"
+          },
+          "LspStatusSegment": {
+            "badge": "LSP",
+            "starting": "Démarrage du serveur de langage…",
+            "running": "Serveur de langage"
           }
         }
       },

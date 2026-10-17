@@ -4212,6 +4212,11 @@
             "signIn": "Haz clic para iniciar sesión en GitHub Copilot",
             "deviceCode": "Código de inicio de sesión de Copilot {{code}} copiado: pégalo en el navegador.",
             "signInFailed": "No se pudo iniciar sesión en Copilot"
+          },
+          "LspStatusSegment": {
+            "badge": "LSP",
+            "starting": "Iniciando el servidor de lenguaje…",
+            "running": "Servidor de lenguaje"
           }
         }
       },

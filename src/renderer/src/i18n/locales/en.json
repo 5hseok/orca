@@ -4461,6 +4461,11 @@
             "signIn": "Click to sign in to GitHub Copilot",
             "deviceCode": "Copilot sign-in code {{code}} copied — paste it in the browser.",
             "signInFailed": "Copilot sign-in failed"
+          },
+          "LspStatusSegment": {
+            "badge": "LSP",
+            "starting": "Language server starting…",
+            "running": "Language server"
           }
         }
       },

@@ -4217,6 +4217,11 @@
             "signIn": "クリックして GitHub Copilot にサインイン",
             "deviceCode": "Copilot のサインインコード {{code}} をコピーしました。ブラウザーに貼り付けてください。",
             "signInFailed": "Copilot へのサインインに失敗しました"
+          },
+          "LspStatusSegment": {
+            "badge": "LSP",
+            "starting": "言語サーバーを起動中…",
+            "running": "言語サーバー"
           }
         }
       },
