@@ -81,6 +81,9 @@ export function shouldKeepClaudePermissionVisible(
   if (isClaudePermissionOwningChildEnding(previous, next)) {
     return false
   }
+  if (isClaudeLeadTurnEndingOwnPermission(previous, next)) {
+    return false
+  }
   if (isClaudePermissionSettledByReplay(previous, next)) {
     return false
   }
@@ -110,6 +113,18 @@ function isClaudePermissionOwningChildEnding(
     next.teammateName !== undefined &&
     claudeTeammateIdMatchesName(ownerId, next.teammateName)
   )
+}
+
+// Why: a lead turn that ended has settled its own prompt; background work keeps the fold
+// 'working' after Stop, which otherwise pins the lead's permission latch indefinitely.
+function isClaudeLeadTurnEndingOwnPermission(
+  previous: EnrichedAgentHookEventPayload,
+  next: AgentHookEventPayload
+): boolean {
+  if (previous.toolAgentId?.trim() || next.toolAgentId?.trim()) {
+    return false
+  }
+  return next.hookEventName === 'Stop' || next.hookEventName === 'StopFailure'
 }
 
 function isClaudePermissionResumingApprovedTool(
