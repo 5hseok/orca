@@ -34,6 +34,11 @@ import {
 } from './lib/sidebar-shadow/paired-server-rows-shadow'
 import { desktopFactsShadow } from './lib/sidebar-shadow/desktop-facts-shadow'
 import { workspaceReviewShadow } from './lib/sidebar-shadow/workspace-review-shadow'
+import { installReactDevPerformanceMeasureTrim } from './lib/react-dev-performance-measure-trim'
+
+if (import.meta.env.DEV) {
+  installReactDevPerformanceMeasureTrim()
+}
 
 const disposeOsFileDropGuard = installOsFileDropCancellationGuard()
 import.meta.hot?.dispose(disposeOsFileDropGuard)
