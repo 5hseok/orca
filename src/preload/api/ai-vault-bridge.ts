@@ -12,6 +12,10 @@ import type {
   AiVaultSubagentListArgs
 } from '../../shared/ai-vault-types'
 import type { AiVaultSessionTitlesArgs } from '../../shared/ai-vault-session-title'
+import type {
+  ClaudeTranscriptRelocationArgs,
+  ClaudeTranscriptRelocationResult
+} from '../../shared/claude-transcript-relocation'
 import type { AiVaultPrepareSessionResumeRequest } from '../../shared/ai-vault-resume-preparation'
 import type { PreloadApi } from '../api-types'
 import {
@@ -57,6 +61,10 @@ export const aiVaultApi = {
     ipcRenderer.invoke('aiVault:getFirstUserPrompt', args),
   deleteSession: (args: AiVaultDeleteSessionArgs): Promise<AiVaultDeleteSessionResult> =>
     ipcRenderer.invoke('aiVault:deleteSession', args),
+  relocateClaudeTranscript: (
+    args: ClaudeTranscriptRelocationArgs
+  ): Promise<ClaudeTranscriptRelocationResult> =>
+    ipcRenderer.invoke('aiVault:relocateClaudeTranscript', args),
   onWindowFocused: (callback: () => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent) => callback()
     ipcRenderer.on('aiVault:windowFocused', listener)

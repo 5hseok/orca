@@ -23,6 +23,10 @@ import type {
   AiVaultPrepareSessionResumeRequest,
   AiVaultPrepareSessionResumeResult
 } from '../../shared/ai-vault-resume-preparation'
+import type {
+  ClaudeTranscriptRelocationArgs,
+  ClaudeTranscriptRelocationResult
+} from '../../shared/claude-transcript-relocation'
 import type { ExecutionHostId, ExecutionHostScope } from '../../shared/execution-host'
 import type {
   AiVaultScanProgress,
@@ -60,6 +64,10 @@ export type AiVaultApi = {
   getFirstUserPrompt: (args: AiVaultFirstUserPromptArgs) => Promise<AiVaultFirstUserPromptResult>
   /** Moves a deletable session's transcript to the OS trash; local sessions only. */
   deleteSession: (args: AiVaultDeleteSessionArgs) => Promise<AiVaultDeleteSessionResult>
+  /** Moves a local Claude transcript into the projects bucket of another cwd. */
+  relocateClaudeTranscript: (
+    args: ClaudeTranscriptRelocationArgs
+  ) => Promise<ClaudeTranscriptRelocationResult>
   /** Fires when any app window regains OS focus; returns an unsubscribe. */
   onWindowFocused: (callback: () => void) => () => void
   /** The local scan entry for a request key, if it is still retained. */

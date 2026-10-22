@@ -25,6 +25,8 @@ export type ResumeSleepingAgentSessionsOptions = {
   /** Called with the tab id of each freshly launched resume tab, so
    *  navigation-suppressed callers can background-mount exactly those tabs. */
   onSessionLaunched?: (tabId: string) => void
+  /** The target workspace was chosen on purpose, so resume there instead of the recorded cwd. */
+  resumeInLaunchCwd?: boolean
 }
 
 function getResumeLaunchTarget(worktreeId: string): AgentResumeLaunchTarget {
@@ -62,7 +64,8 @@ export function launchSleepingAgentSession(
     cmdOverrides: state.settings?.agentCmdOverrides ?? {},
     ...resolveResumeLaunchRecipe(launchConfig),
     platform: resumeTarget.platform,
-    shell: resumeTarget.shell
+    shell: resumeTarget.shell,
+    ...(options?.resumeInLaunchCwd ? { resumeInLaunchCwd: true } : {})
   })
   if (!startupPlan) {
     toast.error(

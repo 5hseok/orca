@@ -82,6 +82,8 @@ function renderMenu(overrides: Record<string, unknown> = {}): string {
     canContinueAgentSessionInNewSession: false,
     onContinueAgentSessionInNewSession: vi.fn(),
     onForkAgentSession: vi.fn(),
+    agentSessionMoveTargets: [],
+    onMoveAgentSession: vi.fn(),
     canToggleNativeChat: false,
     isNativeChatView: false,
     onToggleNativeChat: vi.fn(),

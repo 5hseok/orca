@@ -20003,6 +20003,16 @@
       "stepDownload": "Download",
       "stepUnpack": "Unpack",
       "stepCheck": "Check"
+    },
+    "terminal": {
+      "pane": {
+        "agentSessionMove": {
+          "menu": "Move Agent Session to Worktree",
+          "transcriptNotMoved": "The conversation resumed, but its history file stayed in the old folder.",
+          "unavailable": "This agent session cannot be moved.",
+          "busy": "Wait until the agent finishes its turn, then move it."
+        }
+      }
     }
   },
   "dashboardPopout": {

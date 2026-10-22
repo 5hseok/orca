@@ -97,6 +97,9 @@ export function createWebAiVaultApi(): NonNullable<Partial<PreloadApi>['aiVault'
         agent: args.agent,
         reason: 'non-local-host' as const
       }),
+    // Why: transcripts live on the runtime host's disk, which a web client cannot rearrange.
+    relocateClaudeTranscript: () =>
+      Promise.resolve({ outcome: 'rejected', reason: 'non-local-host' as const }),
     onWindowFocused: () => noopUnsubscribe,
     // Why: the runtime RPC has no progress stream, so the panel keeps its plain spinner here.
     getScanProgress: () => Promise.resolve(null),

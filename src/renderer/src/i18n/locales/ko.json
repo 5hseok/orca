@@ -19616,6 +19616,16 @@
       "stepDownload": "다운로드",
       "stepUnpack": "압축 해제",
       "stepCheck": "확인"
+    },
+    "terminal": {
+      "pane": {
+        "agentSessionMove": {
+          "menu": "에이전트 세션을 워크트리로 이동",
+          "transcriptNotMoved": "대화는 이어졌지만 기록 파일은 이전 폴더에 남아 있습니다.",
+          "unavailable": "이 에이전트 세션은 이동할 수 없습니다.",
+          "busy": "에이전트가 응답을 마친 뒤에 이동하세요."
+        }
+      }
     }
   },
   "dashboardPopout": {

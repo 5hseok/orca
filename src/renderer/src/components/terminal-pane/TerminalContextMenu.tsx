@@ -36,6 +36,8 @@ import { AgentSessionContextCopyMenuItem } from './AgentSessionContextCopyMenuIt
 import { ClearPaneTitleMenuItem } from './ClearPaneTitleMenuItem'
 import type { TerminalQuickCommandMenuHost } from '@/hooks/use-terminal-quick-command-hosts'
 import { TerminalQuickCommandsSubmenu } from './TerminalQuickCommandsSubmenu'
+import { MoveAgentSessionSubmenu } from './MoveAgentSessionSubmenu'
+import type { AgentSessionMoveTarget } from './terminal-agent-session-move'
 
 type TerminalContextMenuProps = {
   open: boolean
@@ -59,6 +61,8 @@ type TerminalContextMenuProps = {
   canContinueAgentSessionInNewSession: boolean
   onContinueAgentSessionInNewSession: () => void
   onForkAgentSession: () => void
+  agentSessionMoveTargets: readonly AgentSessionMoveTarget[]
+  onMoveAgentSession: (worktreeId: string) => void
   /** True when this pane may switch between the terminal and native chat views.
    *  Structured sessions are excluded — they have no terminal underneath. */
   canToggleNativeChat: boolean
@@ -151,6 +155,8 @@ function TerminalContextMenuItems({
   canContinueAgentSessionInNewSession,
   onContinueAgentSessionInNewSession,
   onForkAgentSession,
+  agentSessionMoveTargets,
+  onMoveAgentSession,
   canToggleNativeChat,
   isNativeChatView,
   onToggleNativeChat,
@@ -226,6 +232,7 @@ function TerminalContextMenuItems({
           'Fork Agent Session…'
         )}
       </DropdownMenuItem>
+      <MoveAgentSessionSubmenu targets={agentSessionMoveTargets} onMove={onMoveAgentSession} />
       <AgentSessionContextCopyMenuItem onSelect={onCopyAgentSessionContext} />
       {canToggleNativeChat ? (
         <DropdownMenuItem onSelect={onToggleNativeChat}>

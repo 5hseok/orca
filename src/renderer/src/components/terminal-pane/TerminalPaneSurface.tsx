@@ -30,6 +30,7 @@ import type { TerminalPaneController } from './use-terminal-pane-controller'
 import { useAppStore } from '@/store'
 import { getKnownExecutionHostIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
+import { useAgentSessionMoveMenu } from './use-agent-session-move-menu'
 
 export function TerminalPaneSurface({
   controller
@@ -120,6 +121,14 @@ export function TerminalPaneSurface({
     visibleTerminalError,
     worktreeId
   } = controller
+  const agentSessionMove = useAgentSessionMoveMenu({
+    managerRef,
+    menuOpen: contextMenu.open,
+    menuPaneId: contextMenu.menuPaneId,
+    paneCount: contextMenu.paneCount,
+    tabId,
+    worktreeId
+  })
   // Why: an SSH, runtime, or not-yet-known host must not be described with this client's OS/shell.
   const paneOnClient = useAppStore(
     (state) => getKnownExecutionHostIdForWorktree(state, worktreeId) === LOCAL_EXECUTION_HOST_ID
@@ -268,6 +277,8 @@ export function TerminalPaneSurface({
         canContinueAgentSessionInNewSession={contextMenuCanContinueInNewSession}
         onContinueAgentSessionInNewSession={contextMenu.onContinueAgentSessionInNewSession}
         onForkAgentSession={() => void contextMenu.onForkAgentSession()}
+        agentSessionMoveTargets={agentSessionMove.targets}
+        onMoveAgentSession={agentSessionMove.onMove}
         canToggleNativeChat={contextMenuCanToggleChat}
         isNativeChatView={contextMenuIsChatView}
         onToggleNativeChat={handleContextMenuToggleNativeChat}

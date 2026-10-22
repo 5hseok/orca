@@ -8,6 +8,8 @@ import {
 } from '../ai-vault/cached-session-list'
 import { deleteAiVaultSession, registerAiVaultDeleteHandler } from './ai-vault-delete'
 import { listAiVaultSubagentSessions } from './ai-vault-subagent-list'
+import { relocateClaudeTranscript } from '../claude/claude-transcript-relocation'
+import type { ClaudeTranscriptRelocationArgs } from '../../shared/claude-transcript-relocation'
 import {
   aiVaultScanIssueResult,
   cancelledAiVaultListResult,
@@ -288,6 +290,10 @@ export function registerAiVaultHandlers(options: AiVaultHandlerOptions = {}): vo
     handleAiVaultGetFirstUserPrompt(args)
   )
   registerAiVaultDeleteHandler(aiVaultDeleteDeps)
+  ipcMain.handle(
+    'aiVault:relocateClaudeTranscript',
+    (_event, args?: ClaudeTranscriptRelocationArgs) => relocateClaudeTranscript(args)
+  )
   registerAiVaultScanProgressBroadcast()
   // macOS app activation skips DOM focus events, so emit the refresh signal here.
   app.on('browser-window-focus', (_event, window) => {
